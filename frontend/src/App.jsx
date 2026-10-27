@@ -28,10 +28,12 @@ export default function App() {
   const [replayGraph, setReplayGraph] = useState(null)
   const { data, conn } = useLive(hours, live)
 
+  // 3D is the default; the URL remembers only the window, so reopening the page always starts in 3D
+  // (an explicit ?view=2d link still opens 2D).
   useEffect(() => {
-    const p = new URLSearchParams(); p.set('hours', hours); p.set('view', view)
+    const p = new URLSearchParams(); p.set('hours', hours)
     history.replaceState(null, '', '?' + p.toString())
-  }, [hours, view])
+  }, [hours])
 
   // ---- replay: scrub the window; off the right edge = live --------------
   const windowSec = hours > 0 ? hours * 3600 : Math.max(3600, (Date.now() / 1000) - (minStart(data?.graph) || Date.now() / 1000))

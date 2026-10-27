@@ -55,7 +55,9 @@ export function layoutTargets(nodes, links, windowSec, view) {
     if (!groups.has(key)) groups.set(key, [])
     groups.get(key).push(s)
   }
-  const recency = n => Math.min(1, Math.max(0, (n.age ?? windowSec) / (windowSec || 1)))  // 0 fresh … 1 oldest
+  const now = Date.now() / 1000
+  // 0 = started just now … 1 = started at the far edge of the window (position encodes START time)
+  const recency = n => Math.min(1, Math.max(0, (n.started ? now - n.started : windowSec) / (windowSec || 1)))
   for (const [key, list] of groups) {
     const sec = sectorOf.get(key) || { angle: -Math.PI / 2, width: Math.PI / 2 }
     list.sort((a, b) => (b.started || 0) - (a.started || 0))
@@ -117,3 +119,17 @@ function findParent(n, links, byId) {
   }
   return null
 }
+
+/** Nice tick marks for the time axis: [{ frac (0 = now … 1 = window edge), label }]. */
+export function timeTicks(windowSec) {
+  const steps = [600, 1800, 3600, 7200, 4 * 3600, 6 * 3600, 12 * 3600, 86400, 2 * 86400, 7 * 86400, 30 * 86400]
+  const step = steps.find(st => windowSec / st <= 8) || steps[steps.length - 1]
+  const out = [{ frac: 0, label: 'now' }]
+  for (let t = step; t <= windowSec + 1; t += step) out.push({ frac: t / windowSec, label: '−' + fmtSpan(t) })
+  return out
+}
+const fmtSpan = s => (s < 3600 ? `${s / 60 | 0}m` : s < 86400 ? `${s / 3600 | 0}h` : `${s / 86400 | 0}d`)
+
+/** Where a recency fraction lands: y in 3D, radius in 2D (mirrors layoutTargets). */
+export const recencyY = frac => 30 - frac * LAYOUT.depth
+export const recencyR = frac => LAYOUT.sessionRadius2d[0] + frac * (LAYOUT.sessionRadius2d[1] - LAYOUT.sessionRadius2d[0])

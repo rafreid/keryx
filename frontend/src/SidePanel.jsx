@@ -67,8 +67,8 @@ function Overview({ cost, status, graph, hidden, toggleHidden, showAll }) {
       <h3>Reading the layout</h3>
       <div className="small">
         Shape says <b>what</b> a node is; colour says <b>how</b> it is doing; opacity says <b>how long ago</b>.<br />
-        Hermes sits at the centre with platforms on a ring around it; each platform owns a wedge, and its sessions sit in that wedge ordered by start time.
-        In 3D, fresh work floats near the top and older work settles downward; in 2D, recent sessions sit close to the hub and older ones drift outward.
+        Hermes sits at the centre with platforms on a ring around it; each platform owns a wedge, and its sessions sit in that wedge.
+        The time axis shows when a session <b>started</b>: in 3D the rings step downward from "now" at the top; in 2D the rings grow outward from the hub.
         Subagents orbit the session that spawned them, tools cluster tightly around the session that called them, models sit on a shelf above, cron jobs fan out below their platform.
         Running sessions breathe. Hover to highlight a neighbourhood, click a platform to collapse it, drag the replay bar to scrub the window.
       </div>

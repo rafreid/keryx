@@ -5,7 +5,7 @@ import SpriteText from 'three-spritetext'
 import * as THREE from 'three'
 import { forceCollide, forceX, forceY, forceZ } from 'd3-force-3d'
 import { ACTIVE, STATUS, TYPE, ageAlpha, nodeBaseColor, withAlpha } from './util.js'
-import { layoutTargets, LAYOUT } from './layout.js'
+import { layoutTargets, LAYOUT, timeTicks, recencyY, recencyR } from './layout.js'
 
 const LABELLED = new Set(['hub', 'source', 'session', 'subagent', 'cron', 'model'])
 
@@ -80,6 +80,56 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
     return { nodes: visible, links }
   }, [graph, collapsed, windowSec, view, hidden])
 
+  // ---- time axis (3D): faint horizontal rings at nice intervals + labels on one side ----
+  const axisRef = useRef(null)
+  useEffect(() => {
+    const fg = fgRef.current
+    if (!fg || view !== '3d') return
+    const t = setTimeout(() => {
+      const scene = fg.scene?.()
+      if (!scene) return
+      if (axisRef.current) scene.remove(axisRef.current)
+      const g = new THREE.Group()
+      const R = LAYOUT.sessionRadius + 22
+      const axisX = -(LAYOUT.sessionRadius + 48)
+      const ticks = timeTicks(windowSec)
+      const lineMat = new THREE.LineBasicMaterial({ color: '#6ad1ff', transparent: true, opacity: 0.16 })
+      const axisMat = new THREE.LineBasicMaterial({ color: '#8fa0b8', transparent: true, opacity: 0.5 })
+      // vertical spine
+      g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(axisX, recencyY(0), 0), new THREE.Vector3(axisX, recencyY(1), 0)]), axisMat))
+      for (const tk of ticks) {
+        const y = recencyY(tk.frac)
+        const pts = []
+        for (let i = 0; i <= 72; i++) { const a = (2 * Math.PI * i) / 72; pts.push(new THREE.Vector3(Math.cos(a) * R, y, Math.sin(a) * R)) }
+        g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), lineMat))
+        g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(axisX - 4, y, 0), new THREE.Vector3(axisX + 4, y, 0)]), axisMat))
+        const label = new SpriteText(tk.label, 4.6, tk.frac === 0 ? '#e6edf7' : '#8fa0b8')
+        label.position.set(axisX - 12, y, 0)
+        g.add(label)
+      }
+      const title = new SpriteText('session start ↓', 4.2, '#6ad1ff')
+      title.position.set(axisX, recencyY(0) + 10, 0)
+      g.add(title)
+      scene.add(g)
+      axisRef.current = g
+    }, 80)
+    return () => clearTimeout(t)
+  }, [view, windowSec])
+
+  // 2D: concentric rings, recent sessions inside, drawn under the graph
+  const paintRings = useCallback((ctx, scale) => {
+    if (view !== '2d') return
+    for (const tk of timeTicks(windowSec)) {
+      const r = recencyR(tk.frac)
+      ctx.beginPath(); ctx.arc(0, 0, r, 0, 2 * Math.PI)
+      ctx.lineWidth = 0.8 / scale; ctx.strokeStyle = 'rgba(106,209,255,0.16)'; ctx.stroke()
+      ctx.font = `${Math.max(3, 9 / scale)}px sans-serif`; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom'
+      ctx.fillStyle = tk.frac === 0 ? 'rgba(230,237,247,0.85)' : 'rgba(143,160,184,0.85)'
+      ctx.fillText(tk.frac === 0 ? 'started now' : `started ${tk.label}`, r * 0.707 + 2 / scale, -r * 0.707 - 2 / scale)
+    }
+  }, [view, windowSec])
+
   // ---- semantic forces --------------------------------------------------
   useEffect(() => {
     const fg = fgRef.current
@@ -111,7 +161,7 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
     if (!fg) return
     if (view === '3d') {
       // frame the whole structure: platform ring + session ring + recency depth + model shelf
-      const span = Math.max(...data.nodes.map(n => Math.hypot(n.x || 0, n.y || 0, n.z || 0)), 150)
+      const span = Math.max(...data.nodes.map(n => Math.hypot(n.x || 0, n.y || 0, n.z || 0)), LAYOUT.sessionRadius + 60)
       fg.cameraPosition({ x: 0, y: span * 1.05, z: span * 1.75 }, { x: 0, y: -15, z: 0 }, ms)
     } else {
       fg.zoomToFit(ms, 50)
@@ -343,7 +393,7 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
         ? <ForceGraph3D {...common} backgroundColor="#0b0f17" showNavInfo={false}
             nodeThreeObject={threeObject} nodeThreeObjectExtend={false} linkOpacity={0.8} />
         : <ForceGraph2D {...common} backgroundColor="#0b0f17" nodeCanvasObject={paint2d} nodeCanvasObjectMode={() => 'replace'}
-            linkDirectionalArrowLength={0} autoPauseRedraw={false} />}
+            linkDirectionalArrowLength={0} autoPauseRedraw={false} onRenderFramePre={paintRings} />}
     </div>
   )
 }
