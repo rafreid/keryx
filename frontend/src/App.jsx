@@ -16,6 +16,7 @@ export default function App() {
   const [search, setSearch] = useState('')
   const [collapsed, setCollapsed] = useState(() => new Set())
   const [replayPos, setReplayPos] = useState(100)        // 100 = now
+  const [recenterSignal, setRecenterSignal] = useState(0)
   // legend visibility toggles: keys like 'type:tool', 'status:stale', 'flag:active'
   const [hidden, setHidden] = useState(() => { try { return new Set(JSON.parse(localStorage.getItem('keryx.hidden') || '[]')) } catch { return new Set() } })
   const toggleHidden = useCallback(key => setHidden(h => {
@@ -58,7 +59,7 @@ export default function App() {
           <NowStrip now={data?.now} selected={selected} onSelect={setSelected} />
           <div className="graphwrap">
             <GraphView graph={graph} view={view} windowSec={windowSec} selected={selected} onSelect={setSelected}
-                       search={search} collapsed={collapsed} toggleCollapse={toggleCollapse} hidden={hidden} />
+                       search={search} collapsed={collapsed} toggleCollapse={toggleCollapse} hidden={hidden} recenterSignal={recenterSignal} />
             <div className="toolbar">
               <input type="search" placeholder="search sessions, requests, tools…" value={search} onChange={e => setSearch(e.target.value)} />
               <div className="replay">
@@ -67,6 +68,7 @@ export default function App() {
                 <span className="t">{replayAt ? `as of ${fmtTime(replayAt)}` : 'now (live)'}</span>
                 {replayAt && <button onClick={() => setReplayPos(100)}>back to live</button>}
               </div>
+              <button onClick={() => setRecenterSignal(n => n + 1)} title="frame the whole graph">⌖ recenter</button>
               {collapsed.size > 0 && <button onClick={() => setCollapsed(new Set())}>expand all</button>}
             </div>
             <div className="stats">

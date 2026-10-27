@@ -26,7 +26,7 @@ export function layoutTargets(nodes, links, windowSec, view) {
   const K = Math.max(1, platforms.length)
   const sectorOf = new Map()
 
-  for (const n of nodes) { delete n.fx; delete n.fy; delete n.fz; n.ts = 0 }
+  for (const n of nodes) { if (n.fanned) continue; delete n.fx; delete n.fy; delete n.fz; n.ts = 0 }
 
   // hub: pinned at the origin
   const hub = byId.get('hermes')

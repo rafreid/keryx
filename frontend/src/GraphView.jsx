@@ -28,7 +28,7 @@ export const radiusOf = n => Math.cbrt(n.val || 3) * (n.type === 'hub' ? 3.8 : n
  *  - stable node objects across live updates, hover highlight, search dimming, platform collapse
  *  - a breathing pulse on running sessions
  */
-export default function GraphView({ graph, view, windowSec, selected, onSelect, search, collapsed, toggleCollapse, hidden }) {
+export default function GraphView({ graph, view, windowSec, selected, onSelect, search, collapsed, toggleCollapse, hidden, recenterSignal }) {
   const fgRef = useRef()
   const wrapRef = useRef()
   const nodesRef = useRef(new Map())
@@ -106,17 +106,78 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
       return () => clearTimeout(t)
     }
   }, [view])
-  const onEngineStop = useCallback(() => {
-    if (fitted.current || !fgRef.current) return
-    fitted.current = true
+  const frameAll = useCallback((ms = 900) => {
+    const fg = fgRef.current
+    if (!fg) return
     if (view === '3d') {
       // frame the whole structure: platform ring + session ring + recency depth + model shelf
       const span = Math.max(...data.nodes.map(n => Math.hypot(n.x || 0, n.y || 0, n.z || 0)), 150)
-      fgRef.current.cameraPosition({ x: 0, y: span * 1.05, z: span * 1.75 }, { x: 0, y: -15, z: 0 }, 900)
+      fg.cameraPosition({ x: 0, y: span * 1.05, z: span * 1.75 }, { x: 0, y: -15, z: 0 }, ms)
     } else {
-      fgRef.current.zoomToFit(900, 50)
+      fg.zoomToFit(ms, 50)
     }
   }, [view, data])
+  const onEngineStop = useCallback(() => {
+    if (fitted.current) return
+    fitted.current = true
+    frameAll()
+  }, [frameAll])
+  useEffect(() => { if (recenterSignal) frameAll(700) }, [recenterSignal])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ---- fan-out: pin the selected session's tools on a ring facing the camera ----
+  const fanned = useRef([])
+  useEffect(() => {
+    const fg = fgRef.current
+    for (const n of fanned.current) { n.fanned = false; delete n.fx; delete n.fy; delete n.fz }
+    fanned.current = []
+    const owner = selected && data.nodes.find(n => n.id === selected)
+    if (!fg || !owner || (owner.type !== 'session' && owner.type !== 'subagent')) { fg?.d3ReheatSimulation?.(); return }
+    const sid = owner.id.replace('session:', '')
+    const tools = data.nodes.filter(n => n.type === 'tool' && n.session === sid)
+    if (!tools.length) return
+    const cx = owner.x || 0, cy = owner.y || 0, cz = owner.z || 0
+    // ring radius grows with count so neighbours stay ~16 units apart; a second ring beyond 14 tools
+    const place = (list, radius, phase) => list.forEach((n, i) => {
+      const a = phase + (2 * Math.PI * i) / list.length
+      if (view === '3d') {
+        const cam = fg.camera().position
+        const d = new THREE.Vector3(cam.x - cx, cam.y - cy, cam.z - cz).normalize()
+        const u = new THREE.Vector3().crossVectors(d, new THREE.Vector3(0, 1, 0)).normalize()
+        if (!u.length()) u.set(1, 0, 0)
+        const v = new THREE.Vector3().crossVectors(u, d).normalize()
+        n.fx = cx + radius * (Math.cos(a) * u.x + Math.sin(a) * v.x)
+        n.fy = cy + radius * (Math.cos(a) * u.y + Math.sin(a) * v.y)
+        n.fz = cz + radius * (Math.cos(a) * u.z + Math.sin(a) * v.z)
+      } else {
+        n.fx = cx + radius * Math.cos(a); n.fy = cy + radius * Math.sin(a)
+      }
+      n.fanned = true
+      fanned.current.push(n)
+    })
+    const inner = tools.slice(0, 14), outer = tools.slice(14)
+    place(inner, Math.max(22, inner.length * 2.8), -Math.PI / 2)
+    if (outer.length) place(outer, Math.max(22, inner.length * 2.8) + 20, -Math.PI / 2 + Math.PI / outer.length)
+    // subagents spawned by this session get their own ring outside the tools
+    const kids = data.nodes.filter(n => n.type === 'subagent' && n.parent === sid)
+    if (kids.length) place(kids, Math.max(22, inner.length * 2.8) + (outer.length ? 42 : 26), Math.PI / 2)
+    owner.fx = cx; owner.fy = cy; if (view === '3d') owner.fz = cz   // hold the session still while fanned
+    owner.fanned = true; fanned.current.push(owner)
+    fg.d3ReheatSimulation?.()
+    // frame the ring (selection may come from a card, not a graph click)
+    const ring = Math.max(22, inner.length * 2.8) + (outer.length ? 42 : kids.length ? 26 : 0)
+    if (!framedFor.current.has(selected)) {
+      framedFor.current.add(selected)
+      if (view === '3d') {
+        const cam = fg.camera().position
+        const d = new THREE.Vector3(cam.x - cx, cam.y - cy, cam.z - cz).normalize().multiplyScalar(ring * 2.6 + 60)
+        fg.cameraPosition({ x: cx + d.x, y: cy + d.y, z: cz + d.z }, { x: cx, y: cy, z: cz }, 800)
+      } else {
+        fg.centerAt(cx, cy, 600); fg.zoom(Math.max(1.5, Math.min(5, 260 / (ring + 40))), 600)
+      }
+    }
+  }, [selected, data, view])
+  const framedFor = useRef(new Set())
+  useEffect(() => { if (!selected) framedFor.current.clear() }, [selected])
 
   // ---- neighbourhood for hover highlight ---------------------------------
   const neighbours = useMemo(() => {
@@ -146,7 +207,7 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
     if (!emphasised(n)) a *= 0.18
     return withAlpha(base, a)
   }, [windowSec, emphasised, showActive])
-  styleRef.current = { colorOf, emphasised, selected, focusId }
+  styleRef.current = { colorOf, emphasised, selected, focusId, hoverId: hover }
 
   const linkColor = useCallback(l => {
     const s = typeof l.source === 'object' ? l.source : nodesRef.current.get(l.source)
@@ -169,6 +230,7 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
   const handleClick = useCallback(n => {
     if (n.type === 'source') { toggleCollapse(n.id); return }
     onSelect(n.id)
+    if (n.type === 'session' || n.type === 'subagent') return   // the fan-out effect frames these
     if (view === '3d' && fgRef.current && n.x != null) {
       const d = 70, r = Math.hypot(n.x, n.y, n.z) || 1
       fgRef.current.cameraPosition({ x: n.x * (1 + d / r), y: n.y * (1 + d / r) + 20, z: n.z * (1 + d / r) }, n, 800)
@@ -207,11 +269,12 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
       group.add(wire)
     }
     let label = null
-    if (LABELLED.has(n.type)) {
-      const text = n.collapsedCount ? `${n.label} (+${n.collapsedCount})` : n.label
+    if (LABELLED.has(n.type) || n.type === 'tool') {
+      const text = n.collapsedCount ? `${n.label} (+${n.collapsedCount})` : n.type === 'tool' ? `${n.label}${n.errors ? ` ✕${n.errors}` : ''} ×${n.calls}` : n.label
       label = new SpriteText(text.length > 34 ? text.slice(0, 33) + '…' : text)
-      label.textHeight = n.type === 'hub' ? 8 : n.type === 'source' ? 6 : 3.4
+      label.textHeight = n.type === 'hub' ? 8 : n.type === 'source' ? 6 : n.type === 'tool' ? 2.8 : 3.4
       label.position.y = -(r + (n.type === 'hub' ? 7 : 3.5))
+      if (n.type === 'tool') label.visible = false
       group.add(label)
     }
     meshes.current.set(n.id, { group, mesh, wire, label, node: n })
@@ -236,7 +299,10 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
         mesh.scale.setScalar(radiusOf(node) * breathe * sel)
         if (node.type !== 'source') mesh.rotation.y = node.type === 'tool' || node.type === 'subagent' ? t / 4000 : 0
         if (wire) { wire.rotation.y = t / 6000; wire.rotation.x = t / 9000 }
-        if (label) label.color = withAlpha(node.type === 'hub' ? '#ffffff' : '#e6edf7', emphasised(node) ? 0.9 : 0.12)
+        if (label) {
+          label.color = withAlpha(node.type === 'hub' ? '#ffffff' : '#e6edf7', emphasised(node) ? 0.9 : 0.12)
+          if (node.type === 'tool') label.visible = !!node.fanned || node.id === styleRef.current.hoverId
+        }
       }
       raf = requestAnimationFrame(tick)
     }
@@ -251,13 +317,14 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
     const breathe = n.status === 'running' ? 1 + 0.12 * Math.sin(performance.now() / 420) : 1
     drawShape(ctx, n.type, n.x, n.y, r * breathe, col)
     if (n.id === selected) { ctx.lineWidth = 1.5 / scale; ctx.strokeStyle = '#fff'; ctx.stroke() }
-    if (LABELLED.has(n.type) && (scale > 1.4 || n.type === 'hub' || n.type === 'source')) {
-      const text = n.collapsedCount ? `${n.label} (+${n.collapsedCount})` : n.label
+    const showToolLabel = n.type === 'tool' && (n.fanned || n.id === hover)
+    if (showToolLabel || (LABELLED.has(n.type) && (scale > 1.4 || n.type === 'hub' || n.type === 'source'))) {
+      const text = n.collapsedCount ? `${n.label} (+${n.collapsedCount})` : n.type === 'tool' ? `${n.label}${n.errors ? ` ✕${n.errors}` : ''} ×${n.calls}` : n.label
       ctx.font = `${Math.max(2.5, 10 / scale)}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'top'
       ctx.fillStyle = withAlpha('#e6edf7', emphasised(n) ? 0.9 : 0.15)
       ctx.fillText(text.length > 40 ? text.slice(0, 39) + '…' : text, n.x, n.y + r + 1.5)
     }
-  }, [colorOf, emphasised, selected])
+  }, [colorOf, emphasised, selected, hover])
 
   const common = {
     ref: fgRef, graphData: data, width: size.w, height: size.h, nodeId: 'id',
