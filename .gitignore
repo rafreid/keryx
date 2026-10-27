@@ -1,0 +1,12 @@
+# dependencies and build output
+frontend/node_modules/
+backend/static/
+# python
+__pycache__/
+*.pyc
+# editor / os
+.DS_Store
+.vscode/
+.idea/
+# local screenshots from playwright checks
+.playwright-mcp/

@@ -1,0 +1,24 @@
+# Standalone Keryx service. On the Proxmox host this block lives inside
+# /opt/hermes/docker-compose.yml next to the hermes service; the build context is
+# a copy of ./backend with the front end already built into backend/static.
+services:
+  keryx:
+    build: ./backend
+    image: keryx:local
+    container_name: keryx
+    restart: unless-stopped
+    user: "10000:10000"            # same uid as the Hermes container, owns the data volume
+    environment:
+      - HERMES_DATA=/opt/data
+      - GRAPH_PORT=9120
+      - ACTIVE_WINDOW=300          # seconds: "touched recently"
+      - STALE_AFTER=1800           # seconds: running-but-idle becomes stale
+    ports:
+      - "9120:9120"
+    volumes:
+      - /opt/hermes-data:/opt/data # Hermes home; read in ro mode by the app
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.5"
