@@ -16,6 +16,14 @@ export default function App() {
   const [search, setSearch] = useState('')
   const [collapsed, setCollapsed] = useState(() => new Set())
   const [replayPos, setReplayPos] = useState(100)        // 100 = now
+  // legend visibility toggles: keys like 'type:tool', 'status:stale', 'flag:active'
+  const [hidden, setHidden] = useState(() => { try { return new Set(JSON.parse(localStorage.getItem('keryx.hidden') || '[]')) } catch { return new Set() } })
+  const toggleHidden = useCallback(key => setHidden(h => {
+    const n = new Set(h); n.has(key) ? n.delete(key) : n.add(key)
+    try { localStorage.setItem('keryx.hidden', JSON.stringify([...n])) } catch {}
+    return n
+  }), [])
+  const showAll = useCallback(() => { setHidden(new Set()); try { localStorage.removeItem('keryx.hidden') } catch {} }, [])
   const [replayGraph, setReplayGraph] = useState(null)
   const { data, conn } = useLive(hours, live)
 
@@ -50,7 +58,7 @@ export default function App() {
           <NowStrip now={data?.now} selected={selected} onSelect={setSelected} />
           <div className="graphwrap">
             <GraphView graph={graph} view={view} windowSec={windowSec} selected={selected} onSelect={setSelected}
-                       search={search} collapsed={collapsed} toggleCollapse={toggleCollapse} />
+                       search={search} collapsed={collapsed} toggleCollapse={toggleCollapse} hidden={hidden} />
             <div className="toolbar">
               <input type="search" placeholder="search sessions, requests, tools…" value={search} onChange={e => setSearch(e.target.value)} />
               <div className="replay">
@@ -68,7 +76,8 @@ export default function App() {
             </div>
           </div>
         </div>
-        <SidePanel node={selectedNode} cost={data?.cost} status={data?.status} graph={graph} onClose={() => setSelected(null)} />
+        <SidePanel node={selectedNode} cost={data?.cost} status={data?.status} graph={graph} onClose={() => setSelected(null)}
+                   hidden={hidden} toggleHidden={toggleHidden} showAll={showAll} />
       </div>
     </div>
   )

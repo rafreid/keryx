@@ -67,3 +67,9 @@ button:hover { border-color: var(--muted); }
   .card { flex-basis: 240px; }
   .replay input[type=range] { width: 140px; }
 }
+
+.legend label { cursor: pointer; display: inline-flex; align-items: center; gap: 2px; }
+.legend input[type=checkbox] { margin: 0 6px 0 0; accent-color: var(--accent); width: 13px; height: 13px; }
+.legend tr.off td { opacity: .45; }
+.legend tr.off td:first-child { text-decoration: line-through; }
+.side a { color: var(--accent); text-decoration: none; }

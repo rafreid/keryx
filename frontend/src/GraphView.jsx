@@ -28,7 +28,7 @@ export const radiusOf = n => Math.cbrt(n.val || 3) * (n.type === 'hub' ? 3.8 : n
  *  - stable node objects across live updates, hover highlight, search dimming, platform collapse
  *  - a breathing pulse on running sessions
  */
-export default function GraphView({ graph, view, windowSec, selected, onSelect, search, collapsed, toggleCollapse }) {
+export default function GraphView({ graph, view, windowSec, selected, onSelect, search, collapsed, toggleCollapse, hidden }) {
   const fgRef = useRef()
   const wrapRef = useRef()
   const nodesRef = useRef(new Map())
@@ -56,25 +56,29 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
     }
     for (const id of [...nodesRef.current.keys()]) if (!incoming.has(id)) { nodesRef.current.delete(id); meshes.current.delete(id) }
 
-    const hidden = new Set()
+    const hidden_ = new Set()
     const childrenOf = new Map()
     for (const l of graph.links) {
       if (l.kind === 'platform' || l.kind === 'model') continue
       if (!childrenOf.has(l.source)) childrenOf.set(l.source, [])
       childrenOf.get(l.source).push(l.target)
     }
-    const hide = id => { for (const c of childrenOf.get(id) || []) if (!hidden.has(c)) { hidden.add(c); hide(c) } }
+    const hide = id => { for (const c of childrenOf.get(id) || []) if (!hidden_.has(c)) { hidden_.add(c); hide(c) } }
     for (const src of collapsed) hide(src)
     for (const n of byId.values()) n.collapsedCount = collapsed.has(n.id) ? (childrenOf.get(n.id) || []).length : 0
 
-    const nodes = [...byId.values()].filter(n => !hidden.has(n.id))
+    // legend toggles: hide whole roles, session statuses; tools follow their session
+    const off = n => hidden?.has(`type:${n.type}`) || ((n.type === 'session' || n.type === 'subagent') && hidden?.has(`status:${n.status}`))
+    const gone = new Set([...byId.values()].filter(off).map(n => n.id))
+    for (const n of byId.values()) if (n.type === 'tool' && gone.has(`session:${n.session}`)) gone.add(n.id)
+    const nodes = [...byId.values()].filter(n => !hidden_.has(n.id) && !gone.has(n.id))
     const keep = new Set(nodes.map(n => n.id))
     const links = graph.links.filter(l => keep.has(l.source) && keep.has(l.target)).map(l => ({ ...l }))
     const linked = new Set(links.flatMap(l => [l.source, l.target]))
     const visible = nodes.filter(n => n.type !== 'model' || linked.has(n.id))
     layoutTargets(visible, links, windowSec, view)      // writes tx/ty/tz (+ fx/fy/fz for pinned nodes)
     return { nodes: visible, links }
-  }, [graph, collapsed, windowSec, view])
+  }, [graph, collapsed, windowSec, view, hidden])
 
   // ---- semantic forces --------------------------------------------------
   useEffect(() => {
@@ -135,26 +139,27 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
     return n.id === focusId || neighbours.get(focusId)?.has(n.id)
   }, [q, matches, focusId, neighbours])
 
+  const showActive = !hidden?.has('flag:active')
   const colorOf = useCallback(n => {
-    const base = n.active ? ACTIVE : nodeBaseColor(n)
+    const base = n.active && showActive ? ACTIVE : nodeBaseColor(n)
     let a = n.type === 'hub' || n.type === 'source' || n.type === 'model' ? 1 : ageAlpha(n.age, windowSec)
     if (!emphasised(n)) a *= 0.18
     return withAlpha(base, a)
-  }, [windowSec, emphasised])
+  }, [windowSec, emphasised, showActive])
   styleRef.current = { colorOf, emphasised, selected, focusId }
 
   const linkColor = useCallback(l => {
     const s = typeof l.source === 'object' ? l.source : nodesRef.current.get(l.source)
     const t = typeof l.target === 'object' ? l.target : nodesRef.current.get(l.target)
     const emph = (s && emphasised(s)) && (t && emphasised(t))
-    const base = l.active ? ACTIVE : l.errors > 0 ? '#f85149' : l.kind === 'spawn' ? '#c3a6ff' : l.kind === 'model' ? '#f778ba' : '#8ea0bf'
+    const base = l.active && showActive ? ACTIVE : l.errors > 0 ? '#f85149' : l.kind === 'spawn' ? '#c3a6ff' : l.kind === 'model' ? '#f778ba' : '#8ea0bf'
     // model links stay whisper-faint unless their session is in focus
     const modelFaint = l.kind === 'model' && !(focusId && (s?.id === focusId || t?.id === focusId))
     const a = (l.kind === 'platform' ? 0.7 : ageAlpha(l.age, windowSec, 0.15) * 0.75) * (emph ? 1 : 0.1) * (modelFaint ? 0.25 : 1)
     return withAlpha(base, a)
-  }, [windowSec, emphasised, focusId])
+  }, [windowSec, emphasised, focusId, showActive])
 
-  const particles = l => (l.active ? 3 + Math.min(6, l.value || 1) : l.kind === 'tool' && (l.value || 0) > 3 ? 1 : 0)
+  const particles = l => (l.active && showActive ? 3 + Math.min(6, l.value || 1) : l.kind === 'tool' && (l.value || 0) > 3 ? 1 : 0)
   const particleSpeed = l => {
     const s = typeof l.source === 'object' ? l.source : nodesRef.current.get(l.source)
     const rate = s?.calls_per_min || 0

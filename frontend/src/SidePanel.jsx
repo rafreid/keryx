@@ -2,8 +2,8 @@ import React from 'react'
 import { STATUS, TYPE, ago, dur, fmtT, num } from './util.js'
 import Shape from './Shapes.jsx'
 
-export default function SidePanel({ node, cost, status, onClose, graph }) {
-  if (!node) return <Overview cost={cost} status={status} graph={graph} />
+export default function SidePanel({ node, cost, status, onClose, graph, hidden, toggleHidden, showAll }) {
+  if (!node) return <Overview cost={cost} status={status} graph={graph} hidden={hidden} toggleHidden={toggleHidden} showAll={showAll} />
   const rows = [['type', <span><Shape type={node.type} color={TYPE[node.type]?.color} />{TYPE[node.type]?.label || node.type}</span>]]
   if (node.type === 'session' || node.type === 'subagent') rows.push(
     ['status', <span className={cls(node.status)}>{STATUS[node.status]?.label || node.status}</span>],
@@ -34,7 +34,7 @@ export default function SidePanel({ node, cost, status, onClose, graph }) {
   )
 }
 
-function Overview({ cost, status, graph }) {
+function Overview({ cost, status, graph, hidden, toggleHidden, showAll }) {
   const s = graph?.stats || {}
   return (
     <div className="side">
@@ -58,11 +58,11 @@ function Overview({ cost, status, graph }) {
       </tbody></table>
       {cost?.totals?.cost_usd ? <div className="small">estimated spend in window: ${cost.totals.cost_usd}</div>
         : <div className="small">subscription providers report no per-token cost; cache hit shows how much prompt reuse you get.</div>}
-      <h3>Legend</h3>
-      <table><tbody>
-        {Object.entries(TYPE).map(([k, v]) => <tr key={k}><td><Shape type={k} color={v.color} />{k}</td><td>{v.label}</td></tr>)}
-        {Object.entries(STATUS).map(([k, v]) => <tr key={k}><td><i className="dot" style={{ background: v.color }} />{k.replace(/_/g, ' ')}</td><td>{v.label}</td></tr>)}
-        <tr><td><i className="dot" style={{ background: '#ff4d4d' }} />active</td><td>touched in the last 5 min; particles flow along active links</td></tr>
+      <h3>Legend <span className="small" style={{ textTransform: 'none', letterSpacing: 0 }}>· untick to hide{hidden?.size ? <> · <a href="#" onClick={e => { e.preventDefault(); showAll() }}>show all</a></> : null}</span></h3>
+      <table className="legend"><tbody>
+        {Object.entries(TYPE).map(([k, v]) => <LegendRow key={k} id={`type:${k}`} hidden={hidden} toggle={toggleHidden} glyph={<Shape type={k} color={v.color} />} name={k} desc={v.label} />)}
+        {Object.entries(STATUS).map(([k, v]) => <LegendRow key={k} id={`status:${k}`} hidden={hidden} toggle={toggleHidden} glyph={<i className="dot" style={{ background: v.color }} />} name={k.replace(/_/g, ' ')} desc={v.label} />)}
+        <LegendRow id="flag:active" hidden={hidden} toggle={toggleHidden} glyph={<i className="dot" style={{ background: '#ff4d4d' }} />} name="active" desc="red highlight + particles for the last 5 min" />
       </tbody></table>
       <h3>Reading the layout</h3>
       <div className="small">
@@ -73,6 +73,15 @@ function Overview({ cost, status, graph }) {
         Running sessions breathe. Hover to highlight a neighbourhood, click a platform to collapse it, drag the replay bar to scrub the window.
       </div>
     </div>
+  )
+}
+function LegendRow({ id, hidden, toggle, glyph, name, desc }) {
+  const on = !hidden?.has(id)
+  return (
+    <tr className={on ? '' : 'off'}>
+      <td><label><input type="checkbox" checked={on} onChange={() => toggle(id)} />{glyph}{name}</label></td>
+      <td>{desc}</td>
+    </tr>
   )
 }
 const cls = s => (s === 'running' ? 'ok' : s === 'stale' ? 'warn' : s === 'orphaned' || s === 'failed' ? 'err' : '')
