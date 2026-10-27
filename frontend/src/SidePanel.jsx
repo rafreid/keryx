@@ -1,9 +1,10 @@
 import React from 'react'
 import { STATUS, TYPE, ago, dur, fmtT, num } from './util.js'
+import Shape from './Shapes.jsx'
 
 export default function SidePanel({ node, cost, status, onClose, graph }) {
   if (!node) return <Overview cost={cost} status={status} graph={graph} />
-  const rows = [['type', TYPE[node.type]?.label || node.type]]
+  const rows = [['type', <span><Shape type={node.type} color={TYPE[node.type]?.color} />{TYPE[node.type]?.label || node.type}</span>]]
   if (node.type === 'session' || node.type === 'subagent') rows.push(
     ['status', <span className={cls(node.status)}>{STATUS[node.status]?.label || node.status}</span>],
     ['request', node.request || '–'], ['latest step', node.last_step || '–'],
@@ -59,11 +60,18 @@ function Overview({ cost, status, graph }) {
         : <div className="small">subscription providers report no per-token cost; cache hit shows how much prompt reuse you get.</div>}
       <h3>Legend</h3>
       <table><tbody>
-        {Object.entries(TYPE).map(([k, v]) => <tr key={k}><td><i className="dot" style={{ background: v.color }} />{k}</td><td>{v.label}</td></tr>)}
+        {Object.entries(TYPE).map(([k, v]) => <tr key={k}><td><Shape type={k} color={v.color} />{k}</td><td>{v.label}</td></tr>)}
         {Object.entries(STATUS).map(([k, v]) => <tr key={k}><td><i className="dot" style={{ background: v.color }} />{k.replace(/_/g, ' ')}</td><td>{v.label}</td></tr>)}
         <tr><td><i className="dot" style={{ background: '#ff4d4d' }} />active</td><td>touched in the last 5 min; particles flow along active links</td></tr>
       </tbody></table>
-      <div className="small" style={{ marginTop: 10 }}>Older nodes fade with age. Hover to highlight a neighbourhood, click a platform to collapse it, drag the replay bar to scrub the window.</div>
+      <h3>Reading the layout</h3>
+      <div className="small">
+        Shape says <b>what</b> a node is; colour says <b>how</b> it is doing; opacity says <b>how long ago</b>.<br />
+        Hermes sits at the centre with platforms on a ring around it; each platform owns a wedge, and its sessions sit in that wedge ordered by start time.
+        In 3D, fresh work floats near the top and older work settles downward; in 2D, recent sessions sit close to the hub and older ones drift outward.
+        Subagents orbit the session that spawned them, tools cluster tightly around the session that called them, models sit on a shelf above, cron jobs fan out below their platform.
+        Running sessions breathe. Hover to highlight a neighbourhood, click a platform to collapse it, drag the replay bar to scrub the window.
+      </div>
     </div>
   )
 }

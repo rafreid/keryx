@@ -405,6 +405,7 @@ def build_graph(hours: float, at: Optional[float]) -> dict:
             messages=s.get("message_count") or 0, user_messages=d.get("user_messages", 0),
             tool_calls=d.get("tool_calls", 0), tool_errors=d.get("tool_errors", 0),
             calls_per_min=len(recent), children=children.get(sid, 0), end_reason=s.get("end_reason"),
+            parent=s.get("parent_session_id") if s.get("parent_session_id") in id_set else None,
             val=3 + math.log1p(s.get("message_count") or 0),
         )
         parent = s.get("parent_session_id")
