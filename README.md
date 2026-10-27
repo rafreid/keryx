@@ -8,6 +8,7 @@ sessions, and a 3D/2D force graph of sessions, subagents, tools, models and cron
 - Away from home (Tailscale): http://100.99.160.22:9120/
 - On the home LAN: http://192.168.1.100:9120/
 - Deep links: `?hours=24&view=2d`
+- Repository: https://github.com/rafreid/keryx
 
 ## Layout
 
