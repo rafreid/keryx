@@ -28,7 +28,7 @@ export const radiusOf = n => Math.cbrt(n.val || 3) * (n.type === 'hub' ? 3.8 : n
  *  - stable node objects across live updates, hover highlight, search dimming, platform collapse
  *  - a breathing pulse on running sessions
  */
-export default function GraphView({ graph, view, windowSec, selected, onSelect, search, collapsed, toggleCollapse, hidden, recenterSignal }) {
+export default function GraphView({ graph, view, windowSec, selected, onSelect, search, collapsed, toggleCollapse, hidden, recenterSignal, band, onVisible }) {
   const fgRef = useRef()
   const wrapRef = useRef()
   const nodesRef = useRef(new Map())
@@ -69,7 +69,14 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
 
     // legend toggles: hide whole roles, session statuses; tools follow their session
     const off = n => hidden?.has(`type:${n.type}`) || ((n.type === 'session' || n.type === 'subagent') && hidden?.has(`status:${n.status}`))
-    const gone = new Set([...byId.values()].filter(off).map(n => n.id))
+    // time band: keep only sessions/subagents that STARTED inside the selected span
+    const nowS = Date.now() / 1000
+    const inBand = n => {
+      if (!band || (n.type !== 'session' && n.type !== 'subagent')) return true
+      const age = n.started ? nowS - n.started : Infinity
+      return age >= band.from * windowSec && age < band.to * windowSec + (band.to >= 1 ? Infinity : 0)
+    }
+    const gone = new Set([...byId.values()].filter(n => off(n) || !inBand(n)).map(n => n.id))
     for (const n of byId.values()) if (n.type === 'tool' && gone.has(`session:${n.session}`)) gone.add(n.id)
     const nodes = [...byId.values()].filter(n => !hidden_.has(n.id) && !gone.has(n.id))
     const keep = new Set(nodes.map(n => n.id))
@@ -78,7 +85,7 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
     const visible = nodes.filter(n => n.type !== 'model' || linked.has(n.id))
     layoutTargets(visible, links, windowSec, view)      // writes tx/ty/tz (+ fx/fy/fz for pinned nodes)
     return { nodes: visible, links }
-  }, [graph, collapsed, windowSec, view, hidden])
+  }, [graph, collapsed, windowSec, view, hidden, band])
 
   // ---- time axis (3D): faint horizontal rings at nice intervals + labels on one side ----
   const axisRef = useRef(null)
@@ -98,11 +105,13 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
       // vertical spine
       g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([
         new THREE.Vector3(axisX, recencyY(0), 0), new THREE.Vector3(axisX, recencyY(1), 0)]), axisMat))
+      const hiMat = new THREE.LineBasicMaterial({ color: '#6ad1ff', transparent: true, opacity: 0.7 })
       for (const tk of ticks) {
         const y = recencyY(tk.frac)
         const pts = []
         for (let i = 0; i <= 72; i++) { const a = (2 * Math.PI * i) / 72; pts.push(new THREE.Vector3(Math.cos(a) * R, y, Math.sin(a) * R)) }
-        g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), lineMat))
+        const edge = band && (Math.abs(tk.frac - band.from) < 1e-6 || Math.abs(tk.frac - band.to) < 1e-6)
+        g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), edge ? hiMat : lineMat))
         g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(axisX - 4, y, 0), new THREE.Vector3(axisX + 4, y, 0)]), axisMat))
         const label = new SpriteText(tk.label, 4.6, tk.frac === 0 ? '#e6edf7' : '#8fa0b8')
         label.position.set(axisX - 12, y, 0)
@@ -111,15 +120,27 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
       const title = new SpriteText('session start ↓', 4.2, '#6ad1ff')
       title.position.set(axisX, recencyY(0) + 10, 0)
       g.add(title)
+      if (band) {   // translucent band between the two selected rings
+        const y0 = recencyY(band.from), y1 = recencyY(Math.min(1, band.to))
+        const cyl = new THREE.Mesh(new THREE.CylinderGeometry(R, R, Math.abs(y0 - y1), 72, 1, true),
+          new THREE.MeshBasicMaterial({ color: '#6ad1ff', transparent: true, opacity: 0.05, side: THREE.DoubleSide, depthWrite: false }))
+        cyl.position.y = (y0 + y1) / 2
+        g.add(cyl)
+      }
       scene.add(g)
       axisRef.current = g
     }, 80)
     return () => clearTimeout(t)
-  }, [view, windowSec])
+  }, [view, windowSec, band])
 
   // 2D: concentric rings, recent sessions inside, drawn under the graph
   const paintRings = useCallback((ctx, scale) => {
     if (view !== '2d') return
+    if (band) {
+      const r0 = recencyR(band.from), r1 = recencyR(Math.min(1, band.to))
+      ctx.beginPath(); ctx.arc(0, 0, r1, 0, 2 * Math.PI); ctx.arc(0, 0, r0, 0, 2 * Math.PI, true)
+      ctx.fillStyle = 'rgba(106,209,255,0.07)'; ctx.fill()
+    }
     for (const tk of timeTicks(windowSec)) {
       const r = recencyR(tk.frac)
       ctx.beginPath(); ctx.arc(0, 0, r, 0, 2 * Math.PI)
@@ -128,7 +149,16 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
       ctx.fillStyle = tk.frac === 0 ? 'rgba(230,237,247,0.85)' : 'rgba(143,160,184,0.85)'
       ctx.fillText(tk.frac === 0 ? 'started now' : `started ${tk.label}`, r * 0.707 + 2 / scale, -r * 0.707 - 2 / scale)
     }
-  }, [view, windowSec])
+  }, [view, windowSec, band])
+
+  // report what is actually drawn (band / legend / collapse filters) for the stats bar
+  useEffect(() => {
+    if (!onVisible) return
+    const sess = data.nodes.filter(n => n.type === 'session' || n.type === 'subagent')
+    onVisible({ sessions: sess.length, running: sess.filter(n => n.status === 'running').length, active: sess.filter(n => n.active).length,
+      tool_calls: sess.reduce((a, n) => a + (n.tool_calls || 0), 0), errors: sess.reduce((a, n) => a + (n.tool_errors || 0), 0),
+      filtered: !!band || (hidden && hidden.size > 0) || collapsed.size > 0 })
+  }, [data, band, hidden, collapsed, onVisible])
 
   // ---- semantic forces --------------------------------------------------
   useEffect(() => {

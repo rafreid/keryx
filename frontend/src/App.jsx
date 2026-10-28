@@ -3,6 +3,7 @@ import Header from './Header.jsx'
 import NowStrip from './NowStrip.jsx'
 import GraphView from './GraphView.jsx'
 import SidePanel from './SidePanel.jsx'
+import TimeAxis from './TimeAxis.jsx'
 import { fetchGraphAt, useDebounced, useLive } from './api.js'
 import { fmtTime } from './util.js'
 
@@ -17,6 +18,9 @@ export default function App() {
   const [collapsed, setCollapsed] = useState(() => new Set())
   const [replayPos, setReplayPos] = useState(100)        // 100 = now
   const [recenterSignal, setRecenterSignal] = useState(0)
+  const [band, setBand] = useState(null)       // {from, to} fractions of the window, or null
+  const [visible, setVisible] = useState(null)
+  useEffect(() => { setBand(null) }, [hours])
   const [tab, setTab] = useState('overview')
   const [theme, setTheme] = useState(() => { try { return localStorage.getItem('keryx.theme') || 'dark' } catch { return 'dark' } })
   useEffect(() => { document.documentElement.dataset.theme = theme; try { localStorage.setItem('keryx.theme', theme) } catch {} }, [theme])
@@ -72,7 +76,8 @@ export default function App() {
           <NowStrip now={data?.now} selected={selected} onSelect={setSelected} />
           <div className="graphwrap">
             <GraphView graph={graph} view={view} windowSec={windowSec} selected={selected} onSelect={setSelected}
-                       search={search} collapsed={collapsed} toggleCollapse={toggleCollapse} hidden={hidden} recenterSignal={recenterSignal} />
+                       search={search} collapsed={collapsed} toggleCollapse={toggleCollapse} hidden={hidden} recenterSignal={recenterSignal} band={band} onVisible={setVisible} />
+            <TimeAxis windowSec={windowSec} band={band} setBand={setBand} />
             <div className="toolbar">
               <input id="search" type="search" placeholder="search sessions, requests, tools…  (⌘K)" value={search} onChange={e => setSearch(e.target.value)} />
               <div className="replay">
@@ -83,10 +88,12 @@ export default function App() {
               </div>
               <button onClick={() => setRecenterSignal(n => n + 1)} title="frame the whole graph">⌖ recenter</button>
               {collapsed.size > 0 && <button onClick={() => setCollapsed(new Set())}>expand all</button>}
+              {band && <span className="chip">started {band.from === 0 ? 'within' : 'between'} {band.from === 0 ? '' : fmtFrac(band.from, windowSec) + ' and '}{fmtFrac(band.to, windowSec)} ago <a href="#" onClick={e => { e.preventDefault(); setBand(null) }}>✕</a></span>}
             </div>
             <div className="stats">
-              sessions <b>{stats.sessions ?? '–'}</b> · running <b>{stats.running ?? 0}</b> · active <b>{stats.active ?? 0}</b> ·
-              tool calls <b>{stats.tool_calls ?? 0}</b>{stats.errors ? <> · <span className="err">{stats.errors} failed</span></> : null} ·
+              {visible?.filtered ? <>showing </> : null}
+              sessions <b>{visible?.filtered ? `${visible.sessions} of ${stats.sessions ?? '–'}` : (stats.sessions ?? '–')}</b> · running <b>{visible?.filtered ? visible.running : (stats.running ?? 0)}</b> · active <b>{visible?.filtered ? visible.active : (stats.active ?? 0)}</b> ·
+              tool calls <b>{visible?.filtered ? visible.tool_calls : (stats.tool_calls ?? 0)}</b>{(visible?.filtered ? visible.errors : stats.errors) ? <> · <span className="err">{visible?.filtered ? visible.errors : stats.errors} failed</span></> : null} ·
               {graph?.generated_at ? ` updated ${fmtTime(graph.as_of || graph.generated_at)}` : ' loading…'}
             </div>
           </div>
@@ -98,4 +105,5 @@ export default function App() {
   )
 }
 
+const fmtFrac = (f, w) => { const sec = f * w; return sec < 3600 ? `${sec / 60 | 0}m` : sec < 86400 ? `${sec / 3600 | 0}h` : `${sec / 86400 | 0}d` }
 const minStart = g => g ? Math.min(...g.nodes.filter(n => n.started).map(n => n.started)) : null

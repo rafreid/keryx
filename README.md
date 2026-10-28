@@ -44,6 +44,8 @@ links touched in the last 5 minutes and speed up with calls per minute. Hover hi
 search dims non-matches, clicking a platform collapses it, the replay bar re-queries the graph as of any
 moment in the window.
 
+The time axis at the left of the graph is clickable: each label selects the span between that tick and the next ("now" = the most recent step, "−1d" = started between one and two days ago) and the graph shows only sessions that started in it; the stats bar then reads "showing N of M". Click the label again or "show all" to clear.
+
 Keyboard: `⌘K` / `Ctrl+K` focuses search and opens the sessions tab; `Esc` clears the selection. The ☾/☀ button toggles light and dark themes.
 
 Ideas borrowed from [Ekko Studio](https://github.com/EKKOLearnAI/ekko-studio): usage analytics with a daily trend and model distribution, tool-call traces with argument/result expansion, sessions grouped by source with live ones pinned, a filterable log viewer, per-turn usage and cache-hit reporting, session search, and themes.
