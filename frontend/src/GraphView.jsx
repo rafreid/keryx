@@ -5,7 +5,7 @@ import SpriteText from 'three-spritetext'
 import * as THREE from 'three'
 import { forceCollide, forceX, forceY, forceZ } from 'd3-force-3d'
 import { ACTIVE, STATUS, TYPE, ageAlpha, nodeBaseColor, withAlpha } from './util.js'
-import { layoutTargets, LAYOUT, timeTicks, recencyY, recencyR } from './layout.js'
+import { layoutTargets, LAYOUT, setSpread, timeTicks, recencyY, recencyR } from './layout.js'
 
 const LABELLED = new Set(['hub', 'source', 'session', 'subagent', 'cron', 'model'])
 
@@ -28,12 +28,13 @@ export const radiusOf = n => Math.cbrt(n.val || 3) * (n.type === 'hub' ? 3.8 : n
  *  - stable node objects across live updates, hover highlight, search dimming, platform collapse
  *  - a breathing pulse on running sessions
  */
-export default function GraphView({ graph, view, windowSec, selected, onSelect, search, collapsed, toggleCollapse, hidden, recenterSignal, band, onVisible }) {
+export default function GraphView({ graph, view, windowSec, selected, onSelect, search, collapsed, toggleCollapse, hidden, recenterSignal, band, onVisible, spread = 1 }) {
   const fgRef = useRef()
   const wrapRef = useRef()
   const nodesRef = useRef(new Map())
   const meshes = useRef(new Map())          // node id -> { group, mesh, wire, label }
   const styleRef = useRef({ colorOf: () => '#fff', emphasised: () => true })
+  const prevSpread = useRef(spread)
   const [size, setSize] = useState({ w: 800, h: 600 })
   const [hover, setHover] = useState(null)
 
@@ -83,9 +84,21 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
     const links = graph.links.filter(l => keep.has(l.source) && keep.has(l.target)).map(l => ({ ...l }))
     const linked = new Set(links.flatMap(l => [l.source, l.target]))
     const visible = nodes.filter(n => n.type !== 'model' || linked.has(n.id))
+    setSpread(spread)
     layoutTargets(visible, links, windowSec, view)      // writes tx/ty/tz (+ fx/fy/fz for pinned nodes)
+    // spacing changed: move everything immediately (pinned → anchor, others scale), then let forces refine
+    if (prevSpread.current !== spread) {
+      const ratio = spread / (prevSpread.current || 1)
+      prevSpread.current = spread
+      for (const n of visible) {
+        if (n.fx != null) { n.x = n.fx; n.y = n.fy ?? n.y; if (n.fz != null) n.z = n.fz }
+        else if (n.x != null) { n.x *= ratio; n.y *= ratio; if (n.z != null) n.z *= ratio }
+        if (n.vx != null) { n.vx = 0; n.vy = 0; if (n.vz != null) n.vz = 0 }
+      }
+    }
+    window.__keryx = { nodes: visible, layout: LAYOUT }   // debug handle
     return { nodes: visible, links }
-  }, [graph, collapsed, windowSec, view, hidden, band])
+  }, [graph, collapsed, windowSec, view, hidden, band, spread])
 
   // ---- time axis (3D): faint horizontal rings at nice intervals + labels on one side ----
   const axisRef = useRef(null)
@@ -131,7 +144,7 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
       axisRef.current = g
     }, 80)
     return () => clearTimeout(t)
-  }, [view, windowSec, band])
+  }, [view, windowSec, band, spread])
 
   // 2D: concentric rings, recent sessions inside, drawn under the graph
   const paintRings = useCallback((ctx, scale) => {
@@ -168,8 +181,9 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
     fg.d3Force('x', forceX(n => n.tx ?? 0).strength(s))
     fg.d3Force('y', forceY(n => n.ty ?? 0).strength(s))
     if (view === '3d') fg.d3Force('z', forceZ(n => n.tz ?? 0).strength(s)); else fg.d3Force('z', null)
-    fg.d3Force('collide', forceCollide(n => radiusOf(n) + (view === '3d' ? 2 : 3)).strength(0.8))
-    fg.d3Force('charge')?.strength(n => (n.type === 'tool' ? -15 : n.type === 'subagent' ? -40 : -70))
+    const k = LAYOUT.spread
+    fg.d3Force('collide', forceCollide(n => radiusOf(n) + (view === '3d' ? 2 : 3) * k).strength(0.8))
+    fg.d3Force('charge')?.strength(n => (n.type === 'tool' ? -15 : n.type === 'subagent' ? -40 : -70) * k)
     fg.d3Force('link')?.distance(l => LAYOUT.linkDistance[l.kind] ?? 50)
       .strength(l => LAYOUT.linkStrength[l.kind] ?? 0.3)
     fg.d3ReheatSimulation?.()
@@ -203,6 +217,8 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
     frameAll()
   }, [frameAll])
   useEffect(() => { if (recenterSignal) frameAll(700) }, [recenterSignal])  // eslint-disable-line react-hooks/exhaustive-deps
+  const firstSpread = useRef(true)
+  useEffect(() => { if (firstSpread.current) { firstSpread.current = false; return } const t = setTimeout(() => frameAll(700), 900); return () => clearTimeout(t) }, [spread])  // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---- fan-out: pin the selected session's tools on a ring facing the camera ----
   const fanned = useRef([])
@@ -414,7 +430,7 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
     linkDirectionalParticles: particles, linkDirectionalParticleSpeed: particleSpeed,
     linkDirectionalParticleWidth: l => (l.active ? 2.2 : 1),
     linkLabel: l => (l.kind === 'spawn' && l.goal ? `${l.state || ''} ${l.delivery || ''} — ${esc(l.goal)}` : ''),
-    cooldownTicks: 200, warmupTicks: 30, onEngineStop,
+    cooldownTicks: 500, warmupTicks: 60, d3AlphaDecay: 0.012, d3VelocityDecay: 0.35, onEngineStop,
   }
 
   const bg = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#0b0f17'

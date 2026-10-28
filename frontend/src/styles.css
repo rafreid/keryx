@@ -130,3 +130,8 @@ kbd { background: var(--panel2); border: 1px solid var(--line); border-radius: 4
 .ta-clear { margin-top: 4px; font-size: 11px; padding: 2px 6px; }
 .chip { font-size: 12px; background: var(--panel2); border: 1px solid var(--accent); color: var(--text); border-radius: 12px; padding: 3px 10px; }
 .chip a { color: var(--accent); text-decoration: none; margin-left: 4px; }
+
+/* spacing control */
+.spacing { position: relative; }
+.popover { position: absolute; top: 34px; left: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px; width: 280px; z-index: 5; box-shadow: 0 8px 24px rgba(0,0,0,.35); }
+.popover input[type=range] { width: 100%; margin: 6px 0 2px; }

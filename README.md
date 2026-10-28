@@ -46,6 +46,8 @@ moment in the window.
 
 The time axis at the left of the graph is clickable: each label selects the span between that tick and the next ("now" = the most recent step, "−1d" = started between one and two days ago) and the graph shows only sessions that started in it; the stats bar then reads "showing N of M". Click the label again or "show all" to clear.
 
+The ⇔ spacing button (toolbar) scales how far apart everything sits: compact / normal / airy / wide presets or a slider from 0.5× to 2.5×. It scales the platform and session rings, the time-axis depth, the model shelf, link lengths, repulsion and collision padding together, so the structure keeps its shape. The setting is remembered per browser.
+
 Keyboard: `⌘K` / `Ctrl+K` focuses search and opens the sessions tab; `Esc` clears the selection. The ☾/☀ button toggles light and dark themes.
 
 Ideas borrowed from [Ekko Studio](https://github.com/EKKOLearnAI/ekko-studio): usage analytics with a daily trend and model distribution, tool-call traces with argument/result expansion, sessions grouped by source with live ones pinned, a filterable log viewer, per-turn usage and cache-hit reporting, session search, and themes.

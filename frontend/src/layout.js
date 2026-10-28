@@ -9,15 +9,28 @@
  *      subagents orbit their parent; tools orbit their session; cron jobs sit below their platform ring.
  * 2D:  same sectors, with recency mapped to distance from the hub instead (recent = close).
  */
-export const LAYOUT = {
+const BASE = {
   platformRadius: 60,
   sessionRadius: 125,       // 3D ring radius for sessions
   sessionRadius2d: [110, 260], // 2D: recent → far
   depth: 120,               // 3D: vertical span of the recency axis
   modelShelf: 110,
   linkDistance: { platform: 75, session: 60, spawn: 30, tool: 14, model: 120, cron: 45 },
-  linkStrength: { platform: 0.05, session: 0.15, spawn: 0.6, tool: 0.9, model: 0.02, cron: 0.2 },
+  linkStrength: { platform: 0.05, session: 0.04, spawn: 0.5, tool: 0.9, model: 0.01, cron: 0.1 },
 }
+const scaled = k => ({
+  spread: k,
+  platformRadius: BASE.platformRadius * k,
+  sessionRadius: BASE.sessionRadius * k,
+  sessionRadius2d: BASE.sessionRadius2d.map(v => v * k),
+  depth: BASE.depth * k,
+  modelShelf: BASE.modelShelf * k,
+  linkDistance: Object.fromEntries(Object.entries(BASE.linkDistance).map(([a, v]) => [a, v * k])),
+  linkStrength: BASE.linkStrength,
+})
+/** Live layout constants; `setSpread` rescales every distance (1 = default, <1 compact, >1 airy). */
+export let LAYOUT = scaled(1)
+export function setSpread(k) { LAYOUT = scaled(Math.max(0.4, Math.min(3, k || 1))) }
 
 export function layoutTargets(nodes, links, windowSec, view) {
   const is3d = view === '3d'
@@ -74,7 +87,7 @@ export function layoutTargets(nodes, links, windowSec, view) {
         s.tx = Math.cos(angle) * r
         s.ty = Math.sin(angle) * r
       }
-      s.ts = 0.22
+      s.ts = 0.5
     })
   }
 
@@ -83,14 +96,14 @@ export function layoutTargets(nodes, links, windowSec, view) {
     if (n.type !== 'subagent') continue
     const parent = byId.get(`session:${n.parent}`) || findParent(n, links, byId)
     if (parent && parent.tx != null) {
-      n.tx = parent.tx; n.ty = (parent.ty ?? 0) + (is3d ? -12 : 0); n.tz = parent.tz; n.ts = 0.06
+      n.tx = parent.tx; n.ty = (parent.ty ?? 0) + (is3d ? -12 : 0); n.tz = parent.tz; n.ts = 0.12
     } else {
       // orphan subagent (parent outside the window): treat like a session in its sector
       const sec = sectorOf.get(`src:${n.source || 'unknown'}`) || { angle: Math.PI / 2 }
       const rec = recency(n)
       if (is3d) { n.tx = Math.cos(sec.angle) * LAYOUT.sessionRadius; n.tz = Math.sin(sec.angle) * LAYOUT.sessionRadius; n.ty = 30 - rec * LAYOUT.depth }
       else { const r = LAYOUT.sessionRadius2d[0] + rec * 180; n.tx = Math.cos(sec.angle) * r; n.ty = Math.sin(sec.angle) * r }
-      n.ts = 0.15
+      n.ts = 0.35
     }
   }
 
@@ -108,7 +121,7 @@ export function layoutTargets(nodes, links, windowSec, view) {
     const angle = (csec?.angle ?? Math.PI / 2) + (i - (crons.length - 1) / 2) * 0.25
     const r = LAYOUT.platformRadius + 45
     if (is3d) { c.tx = Math.cos(angle) * r; c.tz = Math.sin(angle) * r; c.ty = -25 } else { c.tx = Math.cos(angle) * r; c.ty = Math.sin(angle) * r }
-    c.ts = 0.3
+    c.ts = 0.5
   })
 }
 

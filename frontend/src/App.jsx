@@ -20,6 +20,9 @@ export default function App() {
   const [recenterSignal, setRecenterSignal] = useState(0)
   const [band, setBand] = useState(null)       // {from, to} fractions of the window, or null
   const [visible, setVisible] = useState(null)
+  const [spread, setSpread] = useState(() => { try { return Number(localStorage.getItem('keryx.spread')) || 1 } catch { return 1 } })
+  const [spacingOpen, setSpacingOpen] = useState(false)
+  useEffect(() => { try { localStorage.setItem('keryx.spread', String(spread)) } catch {} }, [spread])
   useEffect(() => { setBand(null) }, [hours])
   const [tab, setTab] = useState('overview')
   const [theme, setTheme] = useState(() => { try { return localStorage.getItem('keryx.theme') || 'dark' } catch { return 'dark' } })
@@ -76,7 +79,7 @@ export default function App() {
           <NowStrip now={data?.now} selected={selected} onSelect={setSelected} />
           <div className="graphwrap">
             <GraphView graph={graph} view={view} windowSec={windowSec} selected={selected} onSelect={setSelected}
-                       search={search} collapsed={collapsed} toggleCollapse={toggleCollapse} hidden={hidden} recenterSignal={recenterSignal} band={band} onVisible={setVisible} />
+                       search={search} collapsed={collapsed} toggleCollapse={toggleCollapse} hidden={hidden} recenterSignal={recenterSignal} band={band} onVisible={setVisible} spread={spread} />
             <TimeAxis windowSec={windowSec} band={band} setBand={setBand} />
             <div className="toolbar">
               <input id="search" type="search" placeholder="search sessions, requests, tools…  (⌘K)" value={search} onChange={e => setSearch(e.target.value)} />
@@ -87,6 +90,19 @@ export default function App() {
                 {replayAt && <button onClick={() => setReplayPos(100)}>back to live</button>}
               </div>
               <button onClick={() => setRecenterSignal(n => n + 1)} title="frame the whole graph">⌖ recenter</button>
+              <div className="spacing">
+                <button className={spacingOpen || spread !== 1 ? 'on' : ''} onClick={() => setSpacingOpen(o => !o)} title="how far apart elements sit">⇔ spacing{spread !== 1 ? ` ${spread.toFixed(1)}×` : ''}</button>
+                {spacingOpen && <div className="popover">
+                  <div className="row">
+                    <button className={spread === 0.7 ? 'on' : ''} onClick={() => setSpread(0.7)}>compact</button>
+                    <button className={spread === 1 ? 'on' : ''} onClick={() => setSpread(1)}>normal</button>
+                    <button className={spread === 1.5 ? 'on' : ''} onClick={() => setSpread(1.5)}>airy</button>
+                    <button className={spread === 2.2 ? 'on' : ''} onClick={() => setSpread(2.2)}>wide</button>
+                  </div>
+                  <input type="range" min="0.5" max="2.5" step="0.05" value={spread} onChange={e => setSpread(Number(e.target.value))} />
+                  <div className="small">{spread.toFixed(2)}× · scales rings, link lengths and repulsion; the time axis follows</div>
+                </div>}
+              </div>
               {collapsed.size > 0 && <button onClick={() => setCollapsed(new Set())}>expand all</button>}
               {band && <span className="chip">started {band.from === 0 ? 'within' : 'between'} {band.from === 0 ? '' : fmtFrac(band.from, windowSec) + ' and '}{fmtFrac(band.to, windowSec)} ago <a href="#" onClick={e => { e.preventDefault(); setBand(null) }}>✕</a></span>}
             </div>
