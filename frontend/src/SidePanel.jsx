@@ -170,3 +170,14 @@ function Overview({ cost, status, graph, hidden, toggleHidden, showAll, onSelect
     </div>
   )
 }
+
+function LegendRow({ id, hidden, toggle, glyph, name, desc }) {
+  const on = !hidden?.has(id)
+  return (
+    <tr className={on ? '' : 'off'}>
+      <td><label><input type="checkbox" checked={on} onChange={() => toggle(id)} />{glyph}{name}</label></td>
+      <td>{desc}</td>
+    </tr>
+  )
+}
+const cls = s => (s === 'running' ? 'ok' : s === 'waiting' ? 'info' : s === 'stale' ? 'warn' : s === 'orphaned' || s === 'failed' ? 'err' : '')
