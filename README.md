@@ -1,12 +1,7 @@
 # Keryx
 
-Keryx (κῆρυξ, the Greek herald who carried messages for Hermes) watches the Hermes agent.
-Live view of what the Hermes agent is doing: a health header, a "right now" strip of running
-sessions, and a 3D/2D force graph of sessions, subagents, tools, models and cron jobs, built on
-[3d-force-graph](https://github.com/vasturiano/3d-force-graph) via react-force-graph.
+Keryx is a live visual activity monitor for Hermes-Agents. It reads the agent's own records, its SQLite state, cron store and logs, without touching them, and turns them into a 3D force graph dashboard where shape, color and position inform. Keryx runs as a small FastAPI container beside Hermes-Agent and serves a React front end on port 9120.
 
-- Away from home (Tailscale): http://100.99.160.22:9120/
-- On the home LAN: http://192.168.1.100:9120/
 - Deep links: `?hours=24&view=2d`
 - Repository: https://github.com/rafreid/keryx
 
