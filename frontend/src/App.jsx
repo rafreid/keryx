@@ -17,6 +17,17 @@ export default function App() {
   const [collapsed, setCollapsed] = useState(() => new Set())
   const [replayPos, setReplayPos] = useState(100)        // 100 = now
   const [recenterSignal, setRecenterSignal] = useState(0)
+  const [tab, setTab] = useState('overview')
+  const [theme, setTheme] = useState(() => { try { return localStorage.getItem('keryx.theme') || 'dark' } catch { return 'dark' } })
+  useEffect(() => { document.documentElement.dataset.theme = theme; try { localStorage.setItem('keryx.theme', theme) } catch {} }, [theme])
+  // ⌘K / Ctrl+K focuses the search box and opens the sessions tab
+  useEffect(() => {
+    const onKey = e => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setSelected(null); setTab('sessions'); document.getElementById('search')?.focus() }
+      if (e.key === 'Escape') { setSelected(null); document.activeElement?.blur?.() }
+    }
+    window.addEventListener('keydown', onKey); return () => window.removeEventListener('keydown', onKey)
+  }, [])
   // legend visibility toggles: keys like 'type:tool', 'status:stale', 'flag:active'
   const [hidden, setHidden] = useState(() => { try { return new Set(JSON.parse(localStorage.getItem('keryx.hidden') || '[]')) } catch { return new Set() } })
   const toggleHidden = useCallback(key => setHidden(h => {
@@ -55,7 +66,7 @@ export default function App() {
   return (
     <div className="app">
       <Header status={data?.status} hours={hours} setHours={setHours} view={view} setView={setView}
-              live={live} setLive={setLive} conn={conn} cost={data?.cost} />
+              live={live} setLive={setLive} conn={conn} cost={data?.cost} theme={theme} setTheme={setTheme} />
       <div className="body">
         <div className="main">
           <NowStrip now={data?.now} selected={selected} onSelect={setSelected} />
@@ -63,7 +74,7 @@ export default function App() {
             <GraphView graph={graph} view={view} windowSec={windowSec} selected={selected} onSelect={setSelected}
                        search={search} collapsed={collapsed} toggleCollapse={toggleCollapse} hidden={hidden} recenterSignal={recenterSignal} />
             <div className="toolbar">
-              <input type="search" placeholder="search sessions, requests, tools…" value={search} onChange={e => setSearch(e.target.value)} />
+              <input id="search" type="search" placeholder="search sessions, requests, tools…  (⌘K)" value={search} onChange={e => setSearch(e.target.value)} />
               <div className="replay">
                 <span>replay</span>
                 <input type="range" min="0" max="100" step="0.5" value={replayPos} onChange={e => setReplayPos(Number(e.target.value))} />
@@ -81,7 +92,7 @@ export default function App() {
           </div>
         </div>
         <SidePanel node={selectedNode} cost={data?.cost} status={data?.status} graph={graph} onClose={() => setSelected(null)}
-                   hidden={hidden} toggleHidden={toggleHidden} showAll={showAll} />
+                   hidden={hidden} toggleHidden={toggleHidden} showAll={showAll} search={search} onSelect={setSelected} tab={tab} setTab={setTab} />
       </div>
     </div>
   )

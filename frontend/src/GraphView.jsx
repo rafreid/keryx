@@ -387,12 +387,13 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
     cooldownTicks: 200, warmupTicks: 30, onEngineStop,
   }
 
+  const bg = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#0b0f17'
   return (
     <div className="canvas" ref={wrapRef}>
       {view === '3d'
-        ? <ForceGraph3D {...common} backgroundColor="#0b0f17" showNavInfo={false}
+        ? <ForceGraph3D {...common} backgroundColor={bg} showNavInfo={false}
             nodeThreeObject={threeObject} nodeThreeObjectExtend={false} linkOpacity={0.8} />
-        : <ForceGraph2D {...common} backgroundColor="#0b0f17" nodeCanvasObject={paint2d} nodeCanvasObjectMode={() => 'replace'}
+        : <ForceGraph2D {...common} backgroundColor={bg} nodeCanvasObject={paint2d} nodeCanvasObjectMode={() => 'replace'}
             linkDirectionalArrowLength={0} autoPauseRedraw={false} onRenderFramePre={paintRings} />}
     </div>
   )

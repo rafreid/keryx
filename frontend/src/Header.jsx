@@ -2,7 +2,7 @@ import React from 'react'
 
 const WINDOWS = [[1, 'last hour'], [6, '6 hours'], [24, '24 hours'], [168, '7 days'], [0, 'all time']]
 
-export default function Header({ status, hours, setHours, view, setView, live, setLive, conn, cost }) {
+export default function Header({ status, hours, setHours, view, setView, live, setLive, conn, cost, theme, setTheme }) {
   const level = status?.level || 'amber'
   return (
     <div className="header">
@@ -24,6 +24,7 @@ export default function Header({ status, hours, setHours, view, setView, live, s
         </select>
         <button className={view === '3d' ? 'on' : ''} onClick={() => setView('3d')}>3D</button>
         <button className={view === '2d' ? 'on' : ''} onClick={() => setView('2d')}>2D</button>
+        <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} title="toggle theme">{theme === 'dark' ? '☾' : '☀'}</button>
         <button className={live ? 'on' : ''} onClick={() => setLive(!live)} title={`connection: ${conn}`}>
           {live ? (conn === 'live' ? '● live' : `● ${conn}`) : '○ paused'}
         </button>

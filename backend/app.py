@@ -338,6 +338,18 @@ def build_graph(hours: float, at: Optional[float]) -> dict:
     id_set = set(ids)
     digests = load_messages(db, ids, upto=at)
     usage = load_usage(db, ids)
+    per_session_usage: dict[str, dict] = {}
+    if ids:
+        try:
+            q = ",".join("?" * len(ids))
+            for r in db.execute(f"select session_id, sum(input_tokens) i, sum(output_tokens) o, sum(cache_read_tokens) c, "
+                                f"sum(api_call_count) n, sum(coalesce(estimated_cost_usd,0)) cost from session_model_usage "
+                                f"where session_id in ({q}) group by 1", ids):
+                per_session_usage[r["session_id"]] = {"tokens_in": r["i"] or 0, "tokens_out": r["o"] or 0,
+                                                      "cache_read": r["c"] or 0, "api_calls": r["n"] or 0,
+                                                      "cost_usd": round(r["cost"] or 0, 4)}
+        except sqlite3.OperationalError:
+            pass
     delegations = [d for d in load_delegations(db) if d["origin_session"] in id_set]
     jobs, execs = load_cron()
 
@@ -406,6 +418,7 @@ def build_graph(hours: float, at: Optional[float]) -> dict:
             tool_calls=d.get("tool_calls", 0), tool_errors=d.get("tool_errors", 0),
             calls_per_min=len(recent), children=children.get(sid, 0), end_reason=s.get("end_reason"),
             parent=s.get("parent_session_id") if s.get("parent_session_id") in id_set else None,
+            usage=per_session_usage.get(sid),
             val=3 + math.log1p(s.get("message_count") or 0),
         )
         parent = s.get("parent_session_id")
@@ -599,6 +612,184 @@ def build_cost(hours: float) -> dict:
     return {"generated_at": now, "window_hours": hours, "models": models, "totals": tot}
 
 
+# ----------------------------------------------------------------- analytics / trace / logs
+def _day(t: float) -> str:
+    return datetime.fromtimestamp(t, timezone.utc).strftime("%Y-%m-%d")
+
+
+def build_analytics(days: int) -> dict:
+    db = STATE.get()
+    now = time.time()
+    start = now - days * 86400
+    if db is None:
+        return {"days": [], "models": [], "totals": {}}
+    sessions = [s for s in load_sessions(db) if (s["started_at"] or 0) >= start]
+    ids = [s["id"] for s in sessions]
+    per_day: dict[str, dict] = {}
+    for i in range(days):
+        per_day[_day(start + i * 86400 + 1)] = {"sessions": 0, "subagents": 0, "user_messages": 0, "tool_calls": 0,
+                                                 "tool_errors": 0, "tokens_in": 0, "tokens_out": 0, "cache_read": 0}
+    per_day.setdefault(_day(now), {"sessions": 0, "subagents": 0, "user_messages": 0, "tool_calls": 0,
+                                   "tool_errors": 0, "tokens_in": 0, "tokens_out": 0, "cache_read": 0})
+    day_of_session = {}
+    for s in sessions:
+        d = _day(s["started_at"])
+        day_of_session[s["id"]] = d
+        b = per_day.setdefault(d, dict.fromkeys(per_day[next(iter(per_day))].keys(), 0))
+        b["sessions"] += 1
+        if s.get("parent_session_id") or str(s["title"]).lower().startswith("subagent"):
+            b["subagents"] += 1
+    if ids:
+        q = ",".join("?" * len(ids))
+        for r in db.execute(f"select session_id, role, content, timestamp from messages where session_id in ({q}) "
+                            f"and role in ('user','tool') and timestamp >= ?", (*ids, start)):
+            t = ts(r["timestamp"]) or 0
+            b = per_day.setdefault(_day(t), dict.fromkeys(per_day[next(iter(per_day))].keys(), 0))
+            if r["role"] == "user":
+                b["user_messages"] += 1
+            else:
+                b["tool_calls"] += 1
+                if tool_result_failed(r["content"]):
+                    b["tool_errors"] += 1
+        try:
+            for r in db.execute(f"select session_id, sum(input_tokens) i, sum(output_tokens) o, sum(cache_read_tokens) c "
+                                f"from session_model_usage where session_id in ({q}) group by 1", ids):
+                d = day_of_session.get(r["session_id"])
+                if d and d in per_day:
+                    per_day[d]["tokens_in"] += r["i"] or 0
+                    per_day[d]["tokens_out"] += r["o"] or 0
+                    per_day[d]["cache_read"] += r["c"] or 0
+        except sqlite3.OperationalError:
+            pass
+    usage = load_usage(db, ids)
+    models = sorted(usage.values(), key=lambda u: -(u["input"] + u["output"]))
+    total_tok = sum(u["input"] + u["output"] for u in models) or 1
+    for u in models:
+        u["share"] = round((u["input"] + u["output"]) / total_tok, 4)
+    days_list = [{"day": d, **v} for d, v in sorted(per_day.items())]
+    active_days = sum(1 for v in per_day.values() if v["sessions"]) or 1
+    tot = {
+        "sessions": len(sessions), "subagents": sum(v["subagents"] for v in per_day.values()),
+        "sessions_per_day": round(len(sessions) / days, 2), "active_days": active_days,
+        "tool_calls": sum(v["tool_calls"] for v in per_day.values()), "tool_errors": sum(v["tool_errors"] for v in per_day.values()),
+        "user_messages": sum(v["user_messages"] for v in per_day.values()),
+        "tokens_in": sum(u["input"] for u in models), "tokens_out": sum(u["output"] for u in models),
+        "cache_read": sum(u["cache_read"] for u in models), "api_calls": sum(u["calls"] for u in models),
+        "cost_usd": round(sum(u["cost_usd"] for u in models), 4),
+    }
+    denom = tot["tokens_in"] + tot["cache_read"]
+    tot["cache_hit"] = round(tot["cache_read"] / denom, 3) if denom else 0.0
+    busiest = max(days_list, key=lambda d: d["tool_calls"], default=None)
+    tot["busiest_day"] = busiest["day"] if busiest and busiest["tool_calls"] else None
+    return {"generated_at": now, "window_days": days, "days": days_list, "models": models, "totals": tot}
+
+
+def _result_text(content: Any) -> str:
+    try:
+        d = json.loads(content) if isinstance(content, str) else content
+    except Exception:
+        return str(content or "")
+    if isinstance(d, dict):
+        if d.get("error"):
+            return f"error: {d['error']}"
+        return str(d.get("output") or d.get("result") or d.get("content") or json.dumps(d)[:400])
+    return str(d)
+
+
+def build_trace(sid: str, tool: Optional[str], limit: int) -> dict:
+    db = STATE.get()
+    if db is None:
+        return {"error": "no state db"}
+    srow = db.execute("select * from sessions where id = ?", (sid,)).fetchone()
+    if not srow:
+        return {"error": "session not found", "steps": []}
+    s = dict(srow)
+    for k in ("started_at", "ended_at", "last_activity_at"):
+        s[k] = ts(s.get(k))
+    rows = db.execute("select role, content, tool_name, tool_call_id, tool_calls, timestamp, finish_reason, token_count "
+                      "from messages where session_id = ? order by timestamp asc, id asc", (sid,)).fetchall()
+    steps: list[dict] = []
+    pending: dict[str, dict] = {}
+    for r in rows:
+        t = ts(r["timestamp"]) or 0
+        role = r["role"]
+        if role == "user":
+            steps.append({"kind": "user", "ts": t, "text": short(r["content"], 800)})
+        elif role == "assistant":
+            calls = []
+            try:
+                calls = json.loads(r["tool_calls"]) if r["tool_calls"] else []
+            except Exception:
+                calls = []
+            for c in calls:
+                fn = c.get("function", {}) if isinstance(c, dict) else {}
+                step = {"kind": "tool_call", "ts": t, "name": fn.get("name") or c.get("name") or "?",
+                        "args": short(fn.get("arguments") or "", 600), "id": c.get("call_id") or c.get("id"),
+                        "result": None, "failed": None, "duration": None}
+                steps.append(step)
+                if step["id"]:
+                    pending[step["id"]] = step
+            if r["content"]:
+                steps.append({"kind": "assistant", "ts": t, "text": short(r["content"], 800), "finish": r["finish_reason"]})
+        elif role == "tool":
+            step = pending.pop(r["tool_call_id"], None) if r["tool_call_id"] else None
+            failed = tool_result_failed(r["content"])
+            res = short(_result_text(r["content"]), 700)
+            if step:
+                step.update(result=res, failed=failed, duration=max(0.0, t - step["ts"]), result_ts=t,
+                            name=step["name"] or r["tool_name"])
+            else:
+                steps.append({"kind": "tool_call", "ts": t, "name": r["tool_name"] or "tool", "args": "", "result": res,
+                              "failed": failed, "duration": None})
+    if tool:
+        steps = [st for st in steps if st["kind"] == "tool_call" and st["name"] == tool]
+    total = len(steps)
+    usage = load_usage(db, [sid])
+    return {"session": {"id": sid, "title": s.get("title") or s.get("display_name") or sid, "source": s.get("source"),
+                        "model": s.get("model"), "started": s["started_at"], "ended": s["ended_at"],
+                        "end_reason": s.get("end_reason"), "messages": s.get("message_count")},
+            "usage": list(usage.values()), "steps": steps[-limit:], "total": total, "truncated": total > limit}
+
+
+LOG_FILES = {"errors": "errors.log", "gateway": "gateway.log", "agent": "agent.log", "boot": "container-boot.log",
+             "restart": "gateway-restart.log", "dashboard-auth": "dashboard-auth.log"}
+LEVELS = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+LOG_RE = re.compile(r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})(?:,\d+)? +(DEBUG|INFO|WARNING|ERROR|CRITICAL) +([\w.\[\]-]+): ?(.*)$")
+
+
+def build_logs(file: str, level: str, q: str, lines: int) -> dict:
+    name = LOG_FILES.get(file, LOG_FILES["errors"])
+    path = DATA / "logs" / name
+    raw = tail_lines(path, 2_000_000)
+    min_idx = LEVELS.index(level) if level in LEVELS else 0
+    ql = (q or "").lower()
+    out, counts = [], dict.fromkeys(LEVELS, 0)
+    for line in raw:
+        m = LOG_RE.match(line)
+        if m:
+            when, lvl, logger, msg = m.groups()
+            entry = {"ts": log_line_ts(line), "level": lvl, "logger": logger, "msg": msg}
+        else:
+            entry = {"ts": None, "level": "INFO", "logger": "", "msg": line}
+            if out and out[-1].get("msg") is not None and not m:   # continuation line (traceback)
+                out[-1]["msg"] += "\n" + line
+                continue
+        counts[entry["level"]] = counts.get(entry["level"], 0) + 1
+        if LEVELS.index(entry["level"]) < min_idx:
+            continue
+        if ql and ql not in line.lower():
+            continue
+        out.append(entry)
+    files = []
+    for key, fn in LOG_FILES.items():
+        p = DATA / "logs" / fn
+        if p.exists():
+            st = p.stat()
+            files.append({"key": key, "name": fn, "size": st.st_size, "mtime": st.st_mtime})
+    return {"generated_at": time.time(), "file": name, "entries": out[-lines:], "matched": len(out), "counts": counts,
+            "files": files}
+
+
 # ----------------------------------------------------------------- cache + routes
 _cache: dict[tuple, tuple] = {}
 _cache_lock = threading.Lock()
@@ -641,6 +832,21 @@ def api_status():
 @app.get("/api/cost")
 def api_cost(hours: float = Query(24, ge=0)):
     return cached("cost", build_cost, hours)
+
+
+@app.get("/api/analytics")
+def api_analytics(days: int = Query(30, ge=1, le=365)):
+    return cached("analytics", build_analytics, days)
+
+
+@app.get("/api/session/{sid}/trace")
+def api_trace(sid: str, tool: Optional[str] = Query(None), limit: int = Query(300, ge=1, le=2000)):
+    return cached("trace", build_trace, sid, tool, limit)
+
+
+@app.get("/api/logs")
+def api_logs(file: str = Query("errors"), level: str = Query(""), q: str = Query(""), lines: int = Query(200, ge=1, le=2000)):
+    return build_logs(file, level, q, lines)
 
 
 def bundle(hours: float) -> dict:

@@ -1,11 +1,32 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { STATUS, TYPE, ago, dur, fmtT, num } from './util.js'
 import Shape from './Shapes.jsx'
+import Analytics from './Analytics.jsx'
+import Sessions from './Sessions.jsx'
+import Logs from './Logs.jsx'
+import Trace from './Trace.jsx'
 
-export default function SidePanel({ node, cost, status, onClose, graph, hidden, toggleHidden, showAll }) {
-  if (!node) return <Overview cost={cost} status={status} graph={graph} hidden={hidden} toggleHidden={toggleHidden} showAll={showAll} />
+const TABS = ['overview', 'sessions', 'analytics', 'logs']
+
+export default function SidePanel({ node, cost, status, onClose, graph, hidden, toggleHidden, showAll, search, onSelect, tab, setTab }) {
+  return (
+    <div className="side">
+      <div className="tabs">
+        {TABS.map(t => <button key={t} className={tab === t && !node ? 'on' : ''} onClick={() => { onClose(); setTab(t) }}>{t}</button>)}
+      </div>
+      {node ? <NodeDetail node={node} graph={graph} onClose={onClose} />
+        : tab === 'sessions' ? <Sessions graph={graph} selected={null} onSelect={onSelect} search={search} />
+        : tab === 'analytics' ? <Analytics />
+        : tab === 'logs' ? <Logs />
+        : <Overview cost={cost} status={status} graph={graph} hidden={hidden} toggleHidden={toggleHidden} showAll={showAll} />}
+    </div>
+  )
+}
+
+function NodeDetail({ node, graph, onClose }) {
   const rows = [['type', <span><Shape type={node.type} color={TYPE[node.type]?.color} />{TYPE[node.type]?.label || node.type}</span>]]
-  if (node.type === 'session' || node.type === 'subagent') rows.push(
+  const isSession = node.type === 'session' || node.type === 'subagent'
+  if (isSession) rows.push(
     ['status', <span className={cls(node.status)}>{STATUS[node.status]?.label || node.status}</span>],
     ['request', node.request || '–'], ['latest step', node.last_step || '–'],
     ['platform', node.source], ['model', node.model],
@@ -14,7 +35,12 @@ export default function SidePanel({ node, cost, status, onClose, graph, hidden, 
     ['messages', `${node.messages} total · ${node.user_messages} from user`],
     ['tool calls', <span>{node.tool_calls}{node.tool_errors ? <span className="err"> · {node.tool_errors} failed</span> : null}</span>],
     ['rate', `${node.calls_per_min || 0} calls/min`], ['subagents', node.children || 0],
-    ['end reason', node.end_reason || '–'], ['id', node.id.replace('session:', '')])
+    ['end reason', node.end_reason || '–'])
+  if (isSession && node.usage) rows.push(
+    ['tokens', `${num(node.usage.tokens_in)} in · ${num(node.usage.tokens_out)} out`],
+    ['cache reads', `${num(node.usage.cache_read)} (${node.usage.tokens_in + node.usage.cache_read ? ((node.usage.cache_read / (node.usage.tokens_in + node.usage.cache_read)) * 100).toFixed(0) : 0}% hit)`],
+    ['API calls', node.usage.api_calls], ['est. cost', node.usage.cost_usd ? `$${node.usage.cost_usd}` : '–'])
+  if (isSession) rows.push(['id', node.id.replace('session:', '')])
   if (node.type === 'tool') rows.push(['session', node.session], ['calls', node.calls],
     ['failed', <span className={node.errors ? 'err' : 'ok'}>{node.errors}</span>], ['last call', `${fmtT(node.last)} (${ago(node.last)})`])
   if (node.type === 'model') rows.push(['providers', (node.providers || []).join(', ') || '–'],
@@ -26,10 +52,12 @@ export default function SidePanel({ node, cost, status, onClose, graph, hidden, 
   if (node.type === 'source') rows.push(['sessions', graph?.nodes.filter(n => n.source === node.label && (n.type === 'session' || n.type === 'subagent')).length || 0],
     ['tip', 'click the node to collapse / expand'])
   return (
-    <div className="side">
+    <div>
       <span className="close" onClick={onClose}>✕</span>
       <h2>{node.label}</h2>
       <table><tbody>{rows.map(([k, v]) => <tr key={k}><td>{k}</td><td>{v}</td></tr>)}</tbody></table>
+      {isSession && <><h3>Trace</h3><Trace sessionId={node.id.replace('session:', '')} /></>}
+      {node.type === 'tool' && <><h3>Calls</h3><Trace sessionId={node.session} tool={node.label} /></>}
     </div>
   )
 }
@@ -37,7 +65,7 @@ export default function SidePanel({ node, cost, status, onClose, graph, hidden, 
 function Overview({ cost, status, graph, hidden, toggleHidden, showAll }) {
   const s = graph?.stats || {}
   return (
-    <div className="side">
+    <div>
       <h2>Overview</h2>
       <table><tbody>
         <tr><td>sessions in window</td><td>{s.sessions ?? '–'} ({s.subagents ?? 0} subagents)</td></tr>
@@ -75,6 +103,7 @@ function Overview({ cost, status, graph, hidden, toggleHidden, showAll }) {
     </div>
   )
 }
+
 function LegendRow({ id, hidden, toggle, glyph, name, desc }) {
   const on = !hidden?.has(id)
   return (
