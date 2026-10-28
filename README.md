@@ -4,6 +4,8 @@ Keryx is a live visual activity monitor for [Hermes Agent](https://github.com/No
 
 Named after κῆρυξ, the Greek herald who carried messages for Hermes.
 
+![Keryx showing a Hermes session with its tool ring, seven subagents and the side panel](docs/keryx.png)
+
 - **Read-only.** Keryx opens Hermes' files, never writes them, and never talks to the agent.
 - **Live.** A server-sent-events stream pushes an update whenever a Hermes file changes.
 - **One rule for the picture.** Shape says *what* a thing is, colour says *how it is doing*, position says *when* it started.
