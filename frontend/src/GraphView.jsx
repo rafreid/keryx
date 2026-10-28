@@ -217,8 +217,7 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
     frameAll()
   }, [frameAll])
   useEffect(() => { if (recenterSignal) frameAll(700) }, [recenterSignal])  // eslint-disable-line react-hooks/exhaustive-deps
-  const firstSpread = useRef(true)
-  useEffect(() => { if (firstSpread.current) { firstSpread.current = false; return } const t = setTimeout(() => frameAll(700), 900); return () => clearTimeout(t) }, [spread])  // eslint-disable-line react-hooks/exhaustive-deps
+  // note: spacing changes deliberately do NOT reframe the camera, so the spread is visible on screen; use ⌖ recenter to refit
 
   // ---- fan-out: pin the selected session's tools on a ring facing the camera ----
   const fanned = useRef([])
