@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Header from './Header.jsx'
 import NowStrip from './NowStrip.jsx'
 import GraphView from './GraphView.jsx'
@@ -7,6 +7,7 @@ import TimeAxis from './TimeAxis.jsx'
 import { fetchGraphAt, useDebounced, useLive } from './api.js'
 import { fmtTime } from './util.js'
 import { useNotifications } from './notify.js'
+import { useNavHistory } from './history.js'
 
 const params = new URLSearchParams(location.search)
 
@@ -14,7 +15,13 @@ export default function App() {
   const [hours, setHours] = useState(Number(params.get('hours') ?? 24))
   const [view, setView] = useState(params.get('view') === '2d' ? '2d' : '3d')
   const [live, setLive] = useState(true)
-  const [selected, setSelected] = useState(null)
+  const [tab, setTab] = useState('overview')
+  // selection lives in the navigation history: every pick is a browser history entry (back/forward restore
+  // the selection, the tab and the camera), and the URL hash is a shareable deep link
+  const camRef = useRef(null)
+  const graphRef = useRef(null)
+  const labelOf = useCallback(id => graphRef.current?.nodes.find(n => n.id === id)?.label || id.split(':').pop(), [])
+  const { selected, navigate, back, forward, go, trail, idx, restore } = useNavHistory({ tab, setTab, camRef, labelOf })
   const [search, setSearch] = useState('')
   const [collapsed, setCollapsed] = useState(() => new Set())
   const [replayPos, setReplayPos] = useState(100)        // 100 = now
@@ -25,14 +32,13 @@ export default function App() {
   const [spacingOpen, setSpacingOpen] = useState(false)
   useEffect(() => { try { localStorage.setItem('keryx.spread', String(spread)) } catch {} }, [spread])
   useEffect(() => { setBand(null) }, [hours])
-  const [tab, setTab] = useState('overview')
   const [theme, setTheme] = useState(() => { try { return localStorage.getItem('keryx.theme') || 'dark' } catch { return 'dark' } })
   useEffect(() => { document.documentElement.dataset.theme = theme; try { localStorage.setItem('keryx.theme', theme) } catch {} }, [theme])
   // ⌘K / Ctrl+K focuses the search box and opens the sessions tab
   useEffect(() => {
     const onKey = e => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setSelected(null); setTab('sessions'); document.getElementById('search')?.focus() }
-      if (e.key === 'Escape') { setSelected(null); document.activeElement?.blur?.() }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); navigate(null, { tab: 'sessions' }); document.getElementById('search')?.focus() }
+      if (e.key === 'Escape') { navigate(null); document.activeElement?.blur?.() }
     }
     window.addEventListener('keydown', onKey); return () => window.removeEventListener('keydown', onKey)
   }, [])
@@ -54,7 +60,7 @@ export default function App() {
   // (an explicit ?view=2d link still opens 2D).
   useEffect(() => {
     const p = new URLSearchParams(); p.set('hours', hours)
-    history.replaceState(null, '', '?' + p.toString())
+    history.replaceState(history.state, '', '?' + p.toString() + location.hash)   // keep the selection's hash + history state
   }, [hours])
 
   // ---- replay: scrub the window; off the right edge = live --------------
@@ -70,6 +76,7 @@ export default function App() {
   useEffect(() => { setReplayPos(100); setReplayGraph(null) }, [hours])
 
   const graph = replayGraph || data?.graph
+  graphRef.current = graph
   const toggleCollapse = useCallback(id => setCollapsed(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n }), [])
   const selectedNode = useMemo(() => graph?.nodes.find(n => n.id === selected) || null, [graph, selected])
   const stats = graph?.stats || {}
@@ -80,10 +87,11 @@ export default function App() {
               live={live} setLive={setLive} conn={conn} cost={data?.cost} theme={theme} setTheme={setTheme} notify={notify} setNotify={setNotify} />
       <div className="body">
         <div className="main">
-          <NowStrip now={data?.now} selected={selected} onSelect={setSelected} />
+          <NowStrip now={data?.now} selected={selected} onSelect={navigate} />
           <div className="graphwrap">
-            <GraphView graph={graph} view={view} windowSec={windowSec} selected={selected} onSelect={setSelected}
-                       search={search} collapsed={collapsed} toggleCollapse={toggleCollapse} hidden={hidden} recenterSignal={recenterSignal} band={band} onVisible={setVisible} spread={spread} />
+            <GraphView graph={graph} view={view} windowSec={windowSec} selected={selected} onSelect={navigate}
+                       search={search} collapsed={collapsed} toggleCollapse={toggleCollapse} hidden={hidden} recenterSignal={recenterSignal} band={band} onVisible={setVisible} spread={spread}
+                       camRef={camRef} restore={restore} />
             <TimeAxis windowSec={windowSec} band={band} setBand={setBand} />
             <div className="toolbar">
               <input id="search" type="search" placeholder="search sessions, requests, tools…  (⌘K)" value={search} onChange={e => setSearch(e.target.value)} />
@@ -110,6 +118,7 @@ export default function App() {
               {collapsed.size > 0 && <button onClick={() => setCollapsed(new Set())}>expand all</button>}
               {band && <span className="chip">started {band.from === 0 ? 'within' : 'between'} {band.from === 0 ? '' : fmtFrac(band.from, windowSec) + ' and '}{fmtFrac(band.to, windowSec)} ago <a href="#" onClick={e => { e.preventDefault(); setBand(null) }}>✕</a></span>}
             </div>
+            <Trail trail={trail} idx={idx} back={back} forward={forward} go={go} />
             <div className="stats">
               {visible?.filtered ? <>showing </> : null}
               sessions <b>{visible?.filtered ? `${visible.sessions} of ${stats.sessions ?? '–'}` : (stats.sessions ?? '–')}</b> · running <b>{visible?.filtered ? visible.running : (stats.running ?? 0)}</b> · active <b>{visible?.filtered ? visible.active : (stats.active ?? 0)}</b> ·
@@ -118,14 +127,40 @@ export default function App() {
             </div>
           </div>
         </div>
-        <SidePanel node={selectedNode} cost={data?.cost} status={data?.status} graph={graph} tasks={data?.tasks} onClose={() => setSelected(null)}
-                   hidden={hidden} toggleHidden={toggleHidden} showAll={showAll} search={search} onSelect={setSelected} tab={tab} setTab={setTab} />
+        <SidePanel node={selectedNode} cost={data?.cost} status={data?.status} graph={graph} tasks={data?.tasks} onClose={() => navigate(null)}
+                   hidden={hidden} toggleHidden={toggleHidden} showAll={showAll} search={search} onSelect={navigate} tab={tab} setTab={setTab} />
       </div>
       <div className="toasts">
-        {toasts.map(t => <div key={t.id} className={`toast ${t.level}`} onClick={() => { if (t.node) { setSelected(t.node) } dismiss(t.id) }}>
+        {toasts.map(t => <div key={t.id} className={`toast ${t.level}`} onClick={() => { if (t.node) { navigate(t.node) } dismiss(t.id) }}>
           <b>{t.title}</b>{t.body && <div className="small">{t.body}</div>}
         </div>)}
       </div>
+    </div>
+  )
+}
+
+/**
+ * Where you have been: ‹ back, a few recent stops (click any to jump there), › forward.
+ * Mirrors the browser history, so Alt+← / ⌘[ and a trackpad swipe do the same thing.
+ */
+function Trail({ trail, idx, back, forward, go }) {
+  if (trail.length < 2) return null
+  const from = Math.max(0, Math.min(idx - 3, trail.length - 5))
+  const slice = trail.slice(from, from + 5)
+  const prev = trail[idx - 1], next = trail[idx + 1]
+  return (
+    <div className="trail">
+      <button disabled={!prev} onClick={back} title={prev ? `back to ${prev.label}  (Alt+← / ⌘[)` : 'nothing to go back to'}>‹</button>
+      {from > 0 && <span className="small">…</span>}
+      {slice.map((en, j) => {
+        const i = from + j
+        return <React.Fragment key={en.seq}>
+          {j > 0 && <span className="sep">›</span>}
+          <a href="#" className={i === idx ? 'cur' : i > idx ? 'ahead' : ''} onClick={e => { e.preventDefault(); go(i - idx) }} title={en.id || `${en.label} tab`}>{en.label}</a>
+        </React.Fragment>
+      })}
+      {from + 5 < trail.length && <span className="small">…</span>}
+      <button disabled={!next} onClick={forward} title={next ? `forward to ${next.label}  (Alt+→ / ⌘])` : 'nothing ahead'}>›</button>
     </div>
   )
 }

@@ -36,14 +36,14 @@ export function useNotifications(data, desktop) {
     }
     for (const [id, d] of Object.entries(cur.delegations)) {
       const old = was.delegations[id]
-      if (old && old !== d.state) {
+      if (old && old.state !== d.state) {
         if (d.state === 'completed') events.push({ level: 'ok', title: 'Delegation completed', body: d.goal, node: d.parent && `session:${d.parent}` })
         else if (/fail|error/.test(d.state)) events.push({ level: 'err', title: 'Delegation failed', body: d.goal, node: d.parent && `session:${d.parent}` })
       }
     }
     for (const [id, j] of Object.entries(cur.jobs)) {
       const old = was.jobs[id]
-      if (old && old !== j.state && (j.state === 'error' || j.state === 'missed'))
+      if (old && old.state !== j.state && (j.state === 'error' || j.state === 'missed'))
         events.push({ level: 'err', title: j.state === 'missed' ? 'Cron job missed its trigger' : 'Cron job failed', body: j.name, node: `cron:${id}` })
     }
     if (cur.errors === 'red' && was.errors !== 'red') events.push({ level: 'err', title: 'Errors piling up', body: cur.errorsDetail })

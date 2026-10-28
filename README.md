@@ -46,6 +46,8 @@ The ⇔ spacing button (toolbar) scales how far apart everything sits: compact /
 
 Keyboard: `⌘K` / `Ctrl+K` focuses search and opens the sessions tab; `Esc` clears the selection. The ☾/☀ button toggles light and dark themes.
 
+Navigation history: every selection (graph click, now-card, side-panel link, toast) is a browser history entry that remembers the selection, the side-panel tab and the camera pose just before the move. The trail under the toolbar shows `‹ back`, the last few stops (click one to jump there) and `› forward`; the browser's own back/forward (Alt+←/→, ⌘[ ], trackpad swipe) do the same. The URL hash (`#session:…`, `#cron:…`) is a deep link: share it, or scan it from the 📱 QR popover, and the page opens on that node.
+
 Ideas borrowed from [AionUi](https://github.com/iOfficeAI/AionUi):
 
 - **Waiting vs. running.** AionUi marks a conversation that is waiting for the user differently from one

@@ -28,8 +28,47 @@ export const radiusOf = n => Math.cbrt(n.val || 3) * (n.type === 'hub' ? 3.8 : n
  *  - stable node objects across live updates, hover highlight, search dimming, platform collapse
  *  - a breathing pulse on running sessions
  */
-export default function GraphView({ graph, view, windowSec, selected, onSelect, search, collapsed, toggleCollapse, hidden, recenterSignal, band, onVisible, spread = 1 }) {
+export default function GraphView({ graph, view, windowSec, selected, onSelect, search, collapsed, toggleCollapse, hidden, recenterSignal, band, onVisible, spread = 1, camRef, restore }) {
   const fgRef = useRef()
+  const framedFor = useRef(new Set())       // selections whose ring has already been framed by the camera
+  const camTarget = useRef(null)            // where the camera is flying to (history restore), while it flies
+
+  // ---- camera pose accessor for the navigation history ------------------------------------
+  // 3D: position + orbit target. 2D: centre + zoom. Tagged with the view so a pose from the other
+  // projection is ignored rather than misapplied.
+  useEffect(() => {
+    if (!camRef) return
+    camRef.current = {
+      get: () => {
+        const fg = fgRef.current
+        if (!fg) return null
+        if (view === '3d') {
+          const p = fg.camera()?.position, t = fg.controls()?.target
+          return p ? { view, x: p.x, y: p.y, z: p.z, tx: t?.x || 0, ty: t?.y || 0, tz: t?.z || 0 } : null
+        }
+        const c = fg.centerAt(); return c ? { view, x: c.x, y: c.y, k: fg.zoom() } : null
+      },
+      set: (pose, ms = 700) => {
+        const fg = fgRef.current
+        if (!fg || !pose || pose.view !== view) return
+        if (view === '3d') fg.cameraPosition({ x: pose.x, y: pose.y, z: pose.z }, { x: pose.tx, y: pose.ty, z: pose.tz }, ms)
+        else { fg.centerAt(pose.x, pose.y, ms); fg.zoom(pose.k, ms) }
+      },
+    }
+  }, [view, camRef])
+
+  // history back/forward: the entry brings its own camera pose, so the fan-out must not re-frame
+  // the selection; it should instead face the pose we are flying to.
+  useEffect(() => {
+    if (!restore) return
+    if (selected) framedFor.current.add(selected)
+    if (restore.pose && restore.pose.view === view) {
+      camTarget.current = restore.pose
+      camRef?.current?.set(restore.pose, 700)
+      const t = setTimeout(() => { camTarget.current = null }, 750)
+      return () => clearTimeout(t)
+    }
+  }, [restore])  // eslint-disable-line react-hooks/exhaustive-deps
   const wrapRef = useRef()
   const nodesRef = useRef(new Map())
   const meshes = useRef(new Map())          // node id -> { group, mesh, wire, label }
@@ -211,11 +250,16 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
       fg.zoomToFit(ms, 50)
     }
   }, [view, data])
+  const selectedRef = useRef(selected); selectedRef.current = selected
   const onEngineStop = useCallback(() => {
     if (fitted.current) return
     fitted.current = true
-    frameAll()
-  }, [frameAll])
+    // a deep link (#session:…) arrived before the layout settled: frame that node, not the whole graph
+    const sel = selectedRef.current && data.nodes.find(n => n.id === selectedRef.current)
+    if (sel && sel.x != null) { framedFor.current.delete(sel.id); setRefit(n => n + 1) }
+    else frameAll()
+  }, [frameAll, data])
+  const [refit, setRefit] = useState(0)
   useEffect(() => { if (recenterSignal) frameAll(700) }, [recenterSignal])  // eslint-disable-line react-hooks/exhaustive-deps
   // note: spacing changes deliberately do NOT reframe the camera, so the spread is visible on screen; use ⌖ recenter to refit
 
@@ -226,7 +270,17 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
     for (const n of fanned.current) { n.fanned = false; delete n.fx; delete n.fy; delete n.fz }
     fanned.current = []
     const owner = selected && data.nodes.find(n => n.id === selected)
-    if (!fg || !owner || (owner.type !== 'session' && owner.type !== 'subagent')) { fg?.d3ReheatSimulation?.(); return }
+    if (!fg || !owner || (owner.type !== 'session' && owner.type !== 'subagent')) {
+      fg?.d3ReheatSimulation?.()
+      if (fg && owner && owner.x != null && !framedFor.current.has(owner.id)) {   // plain node: fly in close
+        framedFor.current.add(owner.id)
+        if (view === '3d') {
+          const d = 70, r = Math.hypot(owner.x, owner.y, owner.z) || 1
+          fg.cameraPosition({ x: owner.x * (1 + d / r), y: owner.y * (1 + d / r) + 20, z: owner.z * (1 + d / r) }, owner, 800)
+        } else { fg.centerAt(owner.x, owner.y, 600); fg.zoom(3, 600) }
+      }
+      return
+    }
     const sid = owner.id.replace('session:', '')
     const tools = data.nodes.filter(n => n.type === 'tool' && n.session === sid)
     if (!tools.length) return
@@ -235,7 +289,7 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
     const place = (list, radius, phase) => list.forEach((n, i) => {
       const a = phase + (2 * Math.PI * i) / list.length
       if (view === '3d') {
-        const cam = fg.camera().position
+        const cam = camTarget.current || fg.camera().position   // face the pose we are flying to, if any
         const d = new THREE.Vector3(cam.x - cx, cam.y - cy, cam.z - cz).normalize()
         const u = new THREE.Vector3().crossVectors(d, new THREE.Vector3(0, 1, 0)).normalize()
         if (!u.length()) u.set(1, 0, 0)
@@ -270,8 +324,7 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
         fg.centerAt(cx, cy, 600); fg.zoom(Math.max(1.5, Math.min(5, 260 / (ring + 40))), 600)
       }
     }
-  }, [selected, data, view])
-  const framedFor = useRef(new Set())
+  }, [selected, data, view, refit])
   useEffect(() => { if (!selected) framedFor.current.clear() }, [selected])
 
   // ---- neighbourhood for hover highlight ---------------------------------
@@ -324,15 +377,8 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
 
   const handleClick = useCallback(n => {
     if (n.type === 'source') { toggleCollapse(n.id); return }
-    onSelect(n.id)
-    if (n.type === 'session' || n.type === 'subagent') return   // the fan-out effect frames these
-    if (view === '3d' && fgRef.current && n.x != null) {
-      const d = 70, r = Math.hypot(n.x, n.y, n.z) || 1
-      fgRef.current.cameraPosition({ x: n.x * (1 + d / r), y: n.y * (1 + d / r) + 20, z: n.z * (1 + d / r) }, n, 800)
-    } else if (view === '2d' && fgRef.current && n.x != null) {
-      fgRef.current.centerAt(n.x, n.y, 600); fgRef.current.zoom(3, 600)
-    }
-  }, [onSelect, toggleCollapse, view])
+    onSelect(n.id)                     // the fan-out effect frames the selection
+  }, [onSelect, toggleCollapse])
 
   const tooltip = n => {
     const st = STATUS[n.status]?.label
