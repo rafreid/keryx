@@ -172,3 +172,4 @@ kbd { background: var(--panel2); border: 1px solid var(--line); border-radius: 4
 /* collapsible overview sections */
 .section h3.acc .sum { text-transform: none; letter-spacing: 0; }
 .section.closed h3 { opacity: .8; }
+.gh.acc { cursor: pointer; user-select: none; } .gh.acc.ok { color: var(--green); } .gh.acc.err { color: var(--red); }

@@ -1,5 +1,6 @@
 import React from 'react'
 import { ago, dur, fmtIn, fmtT } from './util.js'
+import Section from './Section.jsx'
 
 /**
  * Task board (after AionUi's Team Mode task board + scheduled-tasks page):
@@ -17,20 +18,21 @@ export default function Tasks({ tasks, onSelect }) {
   return (
     <div>
       <h2>Tasks</h2>
-      <h3>Delegations <span className="small" style={{ textTransform: 'none', letterSpacing: 0 }}>· work handed to subagents</span></h3>
-      {!del.length && <div className="small">no delegations recorded yet. They appear when Hermes calls delegate_task.</div>}
-      {groups.map(([name, list]) => list.length ? <div key={name}>
-        <div className={`gh ${name === 'failed' ? 'err' : name === 'in progress' ? 'ok' : ''}`}>{name} · {list.length}</div>
-        {list.map(d => <Delegation key={d.id} d={d} onSelect={onSelect} />)}
-      </div> : null)}
+      <Section id="delegations" title="Delegations" summary={del.length ? groups.filter(([, l]) => l.length).map(([n, l]) => `${l.length} ${n}`).join(' · ') : 'none yet'}>
+        {!del.length && <div className="small">no delegations recorded yet. They appear when Hermes calls delegate_task.</div>}
+        {groups.map(([name, list]) => list.length ? <Section key={name} id={`deleg-${name.replace(' ', '')}`} title={name} summary={`${list.length}`} level={name === 'failed' ? 'err' : name === 'in progress' ? 'ok' : ''} sub>
+          {list.map(d => <Delegation key={d.id} d={d} onSelect={onSelect} />)}
+        </Section> : null)}
+      </Section>
 
-      <h3>Scheduled jobs</h3>
-      <div className="small" style={{ marginBottom: 6 }}>
-        <span className={`dot ${sched?.alive ? 'green' : 'red'}`} />
-        scheduler {sched?.alive ? `alive · tick ${ago(sched.heartbeat)}` : sched?.heartbeat ? `silent since ${ago(sched.heartbeat)}` : 'never seen'}
-      </div>
-      {!jobs.length && <div className="small">no cron jobs defined.</div>}
-      {jobs.map(j => <Job key={j.id} j={j} onSelect={onSelect} />)}
+      <Section id="jobs" title="Scheduled jobs" summary={<><span className={`dot ${sched?.alive ? 'green' : 'red'}`} />{jobs.length} job{jobs.length === 1 ? '' : 's'}{jobs.some(j => j.state === 'error' || j.state === 'missed') ? <span className="err"> · needs attention</span> : ''}</>}>
+        <div className="small" style={{ marginBottom: 6 }}>
+          <span className={`dot ${sched?.alive ? 'green' : 'red'}`} />
+          scheduler {sched?.alive ? `alive · tick ${ago(sched.heartbeat)}` : sched?.heartbeat ? `silent since ${ago(sched.heartbeat)}` : 'never seen'}
+        </div>
+        {!jobs.length && <div className="small">no cron jobs defined.</div>}
+        {jobs.map(j => <Job key={j.id} j={j} onSelect={onSelect} />)}
+      </Section>
     </div>
   )
 }
