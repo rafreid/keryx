@@ -1,9 +1,9 @@
 import React from 'react'
-import { STATUS, dur } from './util.js'
+import { STATUS, contextLevel, dur } from './util.js'
 import Shape from './Shapes.jsx'
 
 export default function NowStrip({ now, selected, onSelect }) {
-  const rows = (now?.running || []).filter(r => r.status === 'running' || r.status === 'stale')
+  const rows = (now?.running || []).filter(r => r.status === 'running' || r.status === 'stale' || r.status === 'waiting')
   return (
     <div className="now">
       {rows.map(r => (
@@ -14,12 +14,13 @@ export default function NowStrip({ now, selected, onSelect }) {
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.title}</span>
           </div>
           <div className="req" title={r.request || ''}>{r.request || '(no user request recorded)'}</div>
-          <div className="step" title={r.last_step || ''}>{r.last_step ? '→ ' + r.last_step : '→ waiting'}</div>
+          <div className="step" title={r.last_step || ''}>{r.status === 'waiting' ? '✓ replied — your turn' : r.last_step ? '→ ' + r.last_step : '→ starting'}</div>
           <div className="meta">
             <span>{r.source}</span><span>{dur(r.elapsed)} running</span><span>idle {dur(r.idle)}</span>
             <span>{r.tool_calls} calls{r.tool_errors ? <span className="err"> · {r.tool_errors} errors</span> : ''}</span>
             {r.calls_per_min > 0 && <span>{r.calls_per_min}/min</span>}
             {r.children > 0 && <span>{r.children} subagents</span>}
+            {r.context && <span className={contextLevel(r.context.pct)} title={`context window ${r.context.pct}% full`}>ctx {r.context.pct.toFixed(0)}%</span>}
           </div>
         </div>
       ))}

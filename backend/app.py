@@ -6,7 +6,10 @@ cron store and gateway logs, and exposes:
   GET /api/now                            running sessions with request + latest step
   GET /api/status                         health header (gateway, telegram, cron, errors, orphans)
   GET /api/cost?hours=24                  token/cost totals per model for the window
-  GET /api/stream?hours=24                SSE: pushes {graph, now, status, cost} when data changes
+  GET /api/stream?hours=24                SSE: pushes {graph, now, status, cost, tasks} when data changes
+  GET /api/tasks                          delegations board + scheduled jobs with run history
+  GET /api/diagnostics                    redacted snapshot for bug reports (no prompts, no keys)
+  GET /api/qr?text=                       QR code (SVG) for opening Keryx on a phone
   GET /api/health                         liveness
   /                                       the React app (static/)
 """
@@ -25,7 +28,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from fastapi import FastAPI, Query
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 DATA = Path(os.environ.get("HERMES_DATA", "/opt/data"))
@@ -33,9 +36,13 @@ STATIC = Path(__file__).parent / "static"
 ACTIVE_WINDOW = int(os.environ.get("ACTIVE_WINDOW", "300"))      # s: "touched recently"
 STALE_AFTER = int(os.environ.get("STALE_AFTER", "1800"))         # s: running-but-idle → stale
 MAX_SESSIONS = 600
+# Context window assumed when Hermes does not say; used for the per-session context gauge.
+CONTEXT_LENGTH = int(os.environ.get("CONTEXT_LENGTH", "400000"))
+CONTEXT_LIMITS = {"gpt-5.4-mini": 400000, "gpt-5": 400000, "claude": 200000, "gemini": 1000000}
+FILE_TOOLS = {"write_file": "write", "patch": "patch", "read_file": "read", "search_files": "search"}
 TELEGRAM_USER = os.environ.get("TELEGRAM_USER", "")
 
-app = FastAPI(title="Keryx", version="2.0")
+app = FastAPI(title="Keryx", version="2.1")
 
 
 # ----------------------------------------------------------------- helpers
@@ -124,7 +131,47 @@ def load_sessions(db) -> list[dict]:
             s[k] = ts(s.get(k))
         s.setdefault("parent_session_id", None)
         s["title"] = s.get("title") or s.get("display_name") or s["id"]
+        s["prompt_tokens"] = None
+        try:
+            anchor = json.loads(s.get("model_config") or "{}").get("_usage_anchor") or {}
+            s["prompt_tokens"] = anchor.get("prompt_tokens")
+        except Exception:
+            pass
+        s["context_limit"] = context_limit(s.get("model"))
         out.append(s)
+    return out
+
+
+def context_limit(model: Optional[str]) -> int:
+    m = (model or "").lower()
+    for key, lim in CONTEXT_LIMITS.items():
+        if key in m:
+            return lim
+    return CONTEXT_LENGTH
+
+
+def tool_call_files(tool_calls_json: Any) -> list[dict]:
+    """Files named in assistant tool calls (write_file / patch / read_file / search_files)."""
+    try:
+        calls = json.loads(tool_calls_json) if isinstance(tool_calls_json, str) else (tool_calls_json or [])
+    except Exception:
+        return []
+    out = []
+    for c in calls:
+        fn = c.get("function", {}) if isinstance(c, dict) else {}
+        name = fn.get("name") or c.get("name")
+        op = FILE_TOOLS.get(name)
+        if not op:
+            continue
+        args = fn.get("arguments") or c.get("arguments") or {}
+        if isinstance(args, str):
+            try:
+                args = json.loads(args)
+            except Exception:
+                args = {}
+        path = args.get("path") or args.get("file_path") or args.get("filename") or args.get("directory")
+        if path:
+            out.append({"path": str(path), "op": op})
     return out
 
 
@@ -175,11 +222,14 @@ def load_messages(db, session_ids: list[str], upto: Optional[float]) -> dict[str
         sid = r["session_id"]
         d = out.setdefault(sid, {"request": None, "last_step": None, "last_ts": None, "last_assistant_ts": None,
                                  "tools": {}, "user_messages": 0, "tool_calls": 0, "tool_errors": 0,
-                                 "recent_calls": [], "finish": None})
+                                 "recent_calls": [], "finish": None,
+                                 "last_role": None, "final_reply": False, "files": []})
         t = ts(r["timestamp"]) or 0
         d["last_ts"] = max(d["last_ts"] or 0, t)
         role = r["role"]
+        d["last_role"] = role
         if role == "user":
+            d["final_reply"] = False
             d["user_messages"] += 1
             if d["request"] is None and r["content"]:
                 d["request"] = short(r["content"], 160)
@@ -187,11 +237,16 @@ def load_messages(db, session_ids: list[str], upto: Optional[float]) -> dict[str
             names = tool_call_names(r["tool_calls"])
             d["finish"] = r["finish_reason"]
             d["last_assistant_ts"] = t
+            d["final_reply"] = not names            # a reply with no tool calls ends the turn
+            for f in tool_call_files(r["tool_calls"]):
+                f["ts"] = t
+                d["files"].append(f)
             if names:
                 d["last_step"] = "calling " + ", ".join(names[:3])
             elif r["content"]:
                 d["last_step"] = short(r["content"], 140)
         elif role == "tool":
+            d["final_reply"] = False
             name = r["tool_name"] or "tool"
             tool = d["tools"].setdefault(name, {"calls": 0, "errors": 0, "last": 0})
             tool["calls"] += 1
@@ -300,6 +355,8 @@ def log_line_ts(line: str) -> Optional[float]:
 # ----------------------------------------------------------------- session status
 def session_status(s: dict, now: float, digest: dict) -> str:
     if s["ended_at"] is None:
+        if digest.get("final_reply"):
+            return "waiting"                    # turn finished, the session is open and waits for the human
         idle = now - (s["last_activity_at"] or s["started_at"] or 0)
         return "running" if idle <= STALE_AFTER else "stale"
     reason = s.get("end_reason") or ""
@@ -310,6 +367,15 @@ def session_status(s: dict, now: float, digest: dict) -> str:
     if reason in ("cli_close", "tui_shutdown"):
         return "ended_by_user"
     return "ended"
+
+
+def context_gauge(s: dict) -> Optional[dict]:
+    """How full the model's context window was at the last API call (AionUi-style usage indicator)."""
+    pt = s.get("prompt_tokens")
+    if not pt:
+        return None
+    lim = s.get("context_limit") or CONTEXT_LENGTH
+    return {"prompt_tokens": pt, "limit": lim, "pct": round(100 * pt / lim, 1), "assumed": lim == CONTEXT_LENGTH}
 
 
 # ----------------------------------------------------------------- builders
@@ -382,8 +448,8 @@ def build_graph(hours: float, at: Optional[float]) -> dict:
                  tokens_in=u["input"], tokens_out=u["output"], cache_read=u["cache_read"], cache_hit=u["cache_hit"],
                  calls=u["calls"], cost_usd=round(u["cost_usd"], 4), providers=u["providers"])
 
-    counts = {"running": 0, "stale": 0, "active": 0, "orphaned": 0, "failed": 0, "errors": 0, "tool_calls": 0,
-              "subagents": 0}
+    counts = {"running": 0, "waiting": 0, "stale": 0, "active": 0, "orphaned": 0, "failed": 0, "errors": 0,
+              "tool_calls": 0, "subagents": 0}
     children: dict[str, int] = {}
     for s in sel:
         p = s.get("parent_session_id")
@@ -419,6 +485,7 @@ def build_graph(hours: float, at: Optional[float]) -> dict:
             calls_per_min=len(recent), children=children.get(sid, 0), end_reason=s.get("end_reason"),
             parent=s.get("parent_session_id") if s.get("parent_session_id") in id_set else None,
             usage=per_session_usage.get(sid),
+            context=context_gauge(s), files=d.get("files", [])[-40:],
             val=3 + math.log1p(s.get("message_count") or 0),
         )
         parent = s.get("parent_session_id")
@@ -493,6 +560,8 @@ def build_now() -> dict:
         status = session_status(s, now, d)
         if status == "stale" and now - last > 6 * 3600:
             continue   # ancient orphans are noise
+        if status == "waiting" and now - last > 48 * 3600:
+            continue   # a chat nobody has touched for two days is not "your turn" any more
         recent = [t for t in d.get("recent_calls", []) if now - t <= 60]
         running.append({
             "id": s["id"], "title": short(s["title"], 80), "source": s.get("source"), "model": s.get("model"),
@@ -501,9 +570,10 @@ def build_now() -> dict:
             "tool_calls": d.get("tool_calls", 0), "tool_errors": d.get("tool_errors", 0),
             "calls_per_min": len(recent), "children": len(children.get(s["id"], [])),
             "is_subagent": bool(s.get("parent_session_id")) or str(s["title"]).lower().startswith("subagent"),
-            "parent": s.get("parent_session_id"),
+            "parent": s.get("parent_session_id"), "context": context_gauge(s),
         })
-    running.sort(key=lambda r: (r["status"] != "running", -(r["last"] or 0)))
+    order = {"running": 0, "waiting": 1, "stale": 2}
+    running.sort(key=lambda r: (order.get(r["status"], 3), -(r["last"] or 0)))
     return {"generated_at": now, "running": running}
 
 
@@ -546,10 +616,16 @@ def build_status() -> dict:
               ("connected" if ok else "transport trouble") + (f" ({int((now - when) // 60)}m ago)" if when else ""),
               last=short(last_l.split("[Telegram]")[-1], 120))
 
-    # cron
+    # cron: scheduler heartbeat, missed triggers, last run
     jobs, execs = load_cron()
+    sched = scheduler_state(now)
+    missed = [j["name"] for j in cron_jobs_detail(jobs, execs, now) if j["missed"]]
     if not jobs:
         check("cron", "amber", "no jobs defined")
+    elif sched["age"] is not None and sched["age"] > 900:
+        check("cron", "red", f"scheduler silent for {int(sched['age'] // 60)}m ({len(jobs)} job(s))")
+    elif missed:
+        check("cron", "red", f"missed trigger: {', '.join(missed[:3])}")
     else:
         last = execs[0] if execs else None
         failed = [e for e in execs[:20] if e["status"] in ("failed", "error")]
@@ -572,10 +648,10 @@ def build_status() -> dict:
     n_warn = len(err_lines) - n_err
     level = "red" if n_err >= 5 else "amber" if (n_err or n_warn >= 10) else "green"
     check("errors", level, f"{n_err} errors, {n_warn} warnings in the last hour",
-          recent=[short(l, 160) for l in err_lines[-3:]])
+          recent=[short(l, 160) for l in err_lines[-3:]], errors=n_err, warnings=n_warn)
 
     # orphaned / failed sessions in last 24h
-    orphans = stale = running = 0
+    orphans = stale = running = waiting = 0
     if db is not None:
         for s in load_sessions(db):
             last = s["last_activity_at"] or s["started_at"] or 0
@@ -584,15 +660,172 @@ def build_status() -> dict:
             if s.get("end_reason") == "startup_orphan_reap":
                 orphans += 1
             if s["ended_at"] is None:
-                if now - last <= STALE_AFTER:
+                d = load_messages(db, [s["id"]], upto=None).get(s["id"], {})
+                st = session_status(s, now, d)
+                if st == "waiting":
+                    waiting += 1
+                elif st == "running":
                     running += 1
                 else:
                     stale += 1
     check("sessions", "amber" if orphans else "green",
-          f"{running} running, {stale} stale, {orphans} orphaned by restarts (24h)")
+          f"{running} running, {waiting} waiting for you, {stale} stale, {orphans} orphaned (24h)")
 
     worst = "red" if any(c["level"] == "red" for c in checks) else "amber" if any(c["level"] == "amber" for c in checks) else "green"
     return {"generated_at": now, "level": worst, "checks": checks}
+
+
+def scheduler_state(now: float) -> dict:
+    """Hermes' cron ticker writes '<epoch> <pid>' to cron/ticker_heartbeat every tick."""
+    hb = None
+    try:
+        hb = float((DATA / "cron" / "ticker_heartbeat").read_text().split()[0])
+    except Exception:
+        pass
+    return {"heartbeat": hb, "age": (now - hb) if hb else None, "alive": bool(hb) and (now - hb) < 900}
+
+
+def cron_jobs_detail(jobs: list[dict], execs: list[dict], now: float) -> list[dict]:
+    by_job: dict[str, list[dict]] = {}
+    for e in execs:
+        by_job.setdefault(e["job_id"], []).append(e)
+    out = []
+    for j in jobs:
+        jid = j.get("id")
+        hist = by_job.get(jid, [])[:20]
+        next_run = ts(j.get("next_run_at"))
+        last_run = ts(j.get("last_run_at")) or ((hist[0].get("finished_at") or hist[0].get("started_at")) if hist else None)
+        # missed trigger: the scheduled instant is well past and nothing ran for it (AionUi's missed-trigger detection)
+        missed = bool(j.get("enabled", True)) and not j.get("paused_at") and next_run is not None \
+            and now - next_run > 600 and not any((e.get("started_at") or 0) >= next_run - 60 for e in hist)
+        ld = j.get("last_dispatch") or {}
+        state = "paused" if j.get("paused_at") or not j.get("enabled", True) else \
+            "error" if (j.get("failure_streak") or 0) > 0 or j.get("last_status") in ("failed", "error") else \
+            "missed" if missed else "scheduled"
+        out.append({
+            "id": jid, "name": j.get("name") or jid, "schedule": j.get("schedule_display") or (j.get("schedule") or {}).get("display"),
+            "kind": (j.get("schedule") or {}).get("kind"), "state": state, "enabled": bool(j.get("enabled", True)),
+            "paused_reason": j.get("paused_reason"), "mode": f"script: {j['script']}" if j.get("script") else "agent prompt",
+            "prompt": short(j.get("prompt"), 160), "deliver": j.get("deliver"), "model": j.get("model"),
+            "next_run": next_run, "last_run": last_run, "last_status": j.get("last_status"),
+            "last_error": short(j.get("last_error"), 200), "failure_streak": j.get("failure_streak") or 0,
+            "completed": (j.get("repeat") or {}).get("completed"), "lateness": ld.get("lateness_seconds"),
+            "missed": missed, "created_at": ts(j.get("created_at")),
+            "history": [{"status": e.get("status"), "started": e.get("started_at"), "finished": e.get("finished_at"),
+                         "duration": ((e.get("finished_at") or 0) - (e.get("started_at") or 0)) if e.get("finished_at") and e.get("started_at") else None,
+                         "delivery": e.get("delivery_outcome"), "error": short(e.get("error"), 160)} for e in hist],
+        })
+    return out
+
+
+def build_tasks() -> dict:
+    """AionUi-style task board: async delegations (what subagents were asked to do) + scheduled jobs."""
+    now = time.time()
+    db = STATE.get()
+    delegations: list[dict] = []
+    if db is not None:
+        sessions = load_sessions(db)
+        titles = {s["id"]: s for s in sessions}
+        try:
+            rows = db.execute("select delegation_id, origin_session, parent_session_id, state, delivery_state, "
+                              "delivery_attempts, dispatched_at, completed_at, updated_at, task_json, result_json "
+                              "from async_delegations order by dispatched_at desc limit 200").fetchall()
+        except sqlite3.OperationalError:
+            rows = []
+        for r in rows:
+            d = dict(r)
+            try:
+                task = json.loads(d.pop("task_json") or "{}")
+            except Exception:
+                task = {}
+            try:
+                res = json.loads(d.pop("result_json") or "{}")
+            except Exception:
+                res = {}
+            disp, done = ts(d.get("dispatched_at")), ts(d.get("completed_at"))
+            parent = d.get("parent_session_id") or d.get("origin_session")
+            kids = [s for s in sessions if s.get("parent_session_id") == parent and disp
+                    and abs((s["started_at"] or 0) - disp) < 120]
+            goals = task.get("goals") or ([task.get("goal")] if task.get("goal") else [])
+            results = res if isinstance(res, list) else res.get("results") if isinstance(res, dict) else None
+            summary = None
+            if isinstance(results, list):
+                summary = f"{len(results)} result(s)"
+            elif isinstance(res, dict):
+                summary = short(res.get("summary") or res.get("result") or res.get("error"), 200)
+            delegations.append({
+                "id": d["delegation_id"], "parent": parent, "parent_title": short(titles.get(parent, {}).get("title"), 60),
+                "state": d.get("state"), "delivery": d.get("delivery_state"), "attempts": d.get("delivery_attempts"),
+                "dispatched": disp, "completed": done, "updated": ts(d.get("updated_at")),
+                "duration": (done - disp) if done and disp else (now - disp) if disp else None,
+                "goal": short(task.get("goal"), 200), "goals": [short(g, 220) for g in goals][:8],
+                "children": [{"id": s["id"], "title": short(s["title"], 60), "ended": s["ended_at"]} for s in kids],
+                "summary": summary,
+            })
+    jobs, execs = load_cron()
+    return {"generated_at": now, "delegations": delegations, "jobs": cron_jobs_detail(jobs, execs, now),
+            "scheduler": scheduler_state(now)}
+
+
+SECRET_RE = re.compile(r"(sk-[A-Za-z0-9_\-]{8,}|plf_[A-Za-z0-9]{6,}|\d{6,}:[A-Za-z0-9_\-]{20,}|bearer\s+\S+|token=\S+)", re.I)
+
+
+def redact(text: str) -> str:
+    return SECRET_RE.sub("[redacted]", text or "")
+
+
+def build_diagnostics() -> dict:
+    """Privacy-safe snapshot for bug reports (modelled on AionUi's feedback DB diagnostics):
+    counts, states and identifiers only — no prompts, message content, keys or chat ids."""
+    now = time.time()
+    db = STATE.get()
+    out: dict[str, Any] = {"generated_at": datetime.fromtimestamp(now, timezone.utc).isoformat(), "keryx": app.version,
+                           "privacy": {"raw_content_included": False, "api_keys_included": False}}
+    if db is not None:
+        sessions = load_sessions(db)
+        digests = load_messages(db, [s["id"] for s in sessions if s["ended_at"] is None], upto=None)
+        by_status: dict[str, int] = {}
+        for s in sessions:
+            st = session_status(s, now, digests.get(s["id"], {}))
+            by_status[st] = by_status.get(st, 0) + 1
+        out["sessions"] = {"count": len(sessions), "by_status": by_status,
+                           "by_source": _count(s.get("source") for s in sessions),
+                           "by_model": _count(s.get("model") for s in sessions),
+                           "end_reasons": _count(s.get("end_reason") for s in sessions if s.get("end_reason")),
+                           "open": [{"id": s["id"], "source": s.get("source"), "model": s.get("model"),
+                                     "status": session_status(s, now, digests.get(s["id"], {})),
+                                     "messages": s.get("message_count"), "tool_calls": s.get("tool_call_count"),
+                                     "prompt_tokens": s.get("prompt_tokens"), "idle_s": int(now - (s["last_activity_at"] or 0))}
+                                    for s in sessions if s["ended_at"] is None][:20]}
+        try:
+            out["messages"] = {"by_role": dict(db.execute("select role, count(*) from messages group by 1").fetchall()),
+                               "tool_calls_by_name": dict(db.execute("select tool_name, count(*) from messages where tool_name is not null group by 1 order by 2 desc").fetchall())}
+            out["delegations"] = {"by_state": dict(db.execute("select state || '/' || coalesce(delivery_state,'-'), count(*) from async_delegations group by 1").fetchall())}
+            out["delivery_obligations"] = {"by_state": dict(db.execute("select state, count(*) from delivery_obligations group by 1").fetchall())}
+            out["schema"] = {t: len(list(db.execute(f"pragma table_info({t})"))) for (t,) in db.execute("select name from sqlite_master where type='table'")}
+        except sqlite3.OperationalError as e:
+            out["schema_error"] = str(e)
+    status = build_status()
+    out["health"] = [{"name": c["name"], "level": c["level"], "detail": redact(c["detail"])} for c in status["checks"]]
+    tasks = build_tasks()
+    out["cron"] = {"scheduler": tasks["scheduler"],
+                   "jobs": [{k: j[k] for k in ("id", "name", "schedule", "kind", "state", "enabled", "mode", "next_run", "last_run",
+                                              "last_status", "failure_streak", "missed", "lateness")} | {"last_error": redact(j["last_error"] or "")}
+                            for j in tasks["jobs"]]}
+    errs = [redact(short(l, 200)) for l in tail_lines(DATA / "logs" / "errors.log") if re.search(r" (ERROR|CRITICAL) ", l)][-30:]
+    out["recent_errors"] = errs
+    out["data_files"] = {p.name: {"bytes": p.stat().st_size, "mtime": int(p.stat().st_mtime)}
+                         for p in [DATA / "state.db", DATA / "state.db-wal", DATA / "cron" / "jobs.json", DATA / "cron" / "executions.db",
+                                   DATA / "logs" / "errors.log", DATA / "logs" / "gateway.log"] if p.exists()}
+    return out
+
+
+def _count(it) -> dict:
+    out: dict[str, int] = {}
+    for v in it:
+        k = str(v)
+        out[k] = out.get(k, 0) + 1
+    return out
 
 
 def build_cost(hours: float) -> dict:
@@ -844,6 +1077,28 @@ def api_trace(sid: str, tool: Optional[str] = Query(None), limit: int = Query(30
     return cached("trace", build_trace, sid, tool, limit)
 
 
+@app.get("/api/tasks")
+def api_tasks():
+    return cached("tasks", build_tasks)
+
+
+@app.get("/api/diagnostics")
+def api_diagnostics():
+    body = json.dumps(build_diagnostics(), indent=1, default=str)
+    return Response(body, media_type="application/json",
+                    headers={"Content-Disposition": f"attachment; filename=keryx-diagnostics-{int(time.time())}.json"})
+
+
+@app.get("/api/qr")
+def api_qr(text: str = Query(..., max_length=500)):
+    """SVG QR code so the page can be opened on a phone (the WebUI login idea from AionUi)."""
+    import io
+    import segno
+    buf = io.BytesIO()
+    segno.make(text, error="m").save(buf, kind="svg", scale=6, dark="#14202e", light=None, xmldecl=False, svgclass=None, lineclass=None)
+    return Response(buf.getvalue(), media_type="image/svg+xml", headers={"Cache-Control": "max-age=3600"})
+
+
 @app.get("/api/logs")
 def api_logs(file: str = Query("errors"), level: str = Query(""), q: str = Query(""), lines: int = Query(200, ge=1, le=2000)):
     return build_logs(file, level, q, lines)
@@ -851,7 +1106,8 @@ def api_logs(file: str = Query("errors"), level: str = Query(""), q: str = Query
 
 def bundle(hours: float) -> dict:
     return {"graph": cached("graph", build_graph, hours, None), "now": cached("now", build_now),
-            "status": cached("status", build_status), "cost": cached("cost", build_cost, hours)}
+            "status": cached("status", build_status), "cost": cached("cost", build_cost, hours),
+            "tasks": cached("tasks", build_tasks)}
 
 
 @app.get("/api/stream")

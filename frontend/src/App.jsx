@@ -6,6 +6,7 @@ import SidePanel from './SidePanel.jsx'
 import TimeAxis from './TimeAxis.jsx'
 import { fetchGraphAt, useDebounced, useLive } from './api.js'
 import { fmtTime } from './util.js'
+import { useNotifications } from './notify.js'
 
 const params = new URLSearchParams(location.search)
 
@@ -45,6 +46,9 @@ export default function App() {
   const showAll = useCallback(() => { setHidden(new Set()); try { localStorage.removeItem('keryx.hidden') } catch {} }, [])
   const [replayGraph, setReplayGraph] = useState(null)
   const { data, conn } = useLive(hours, live)
+  const [notify, setNotify] = useState(() => { try { return localStorage.getItem('keryx.notify') === '1' && typeof Notification !== 'undefined' && Notification.permission === 'granted' } catch { return false } })
+  useEffect(() => { try { localStorage.setItem('keryx.notify', notify ? '1' : '0') } catch {} }, [notify])
+  const { toasts, dismiss } = useNotifications(data, notify)
 
   // 3D is the default; the URL remembers only the window, so reopening the page always starts in 3D
   // (an explicit ?view=2d link still opens 2D).
@@ -73,7 +77,7 @@ export default function App() {
   return (
     <div className="app">
       <Header status={data?.status} hours={hours} setHours={setHours} view={view} setView={setView}
-              live={live} setLive={setLive} conn={conn} cost={data?.cost} theme={theme} setTheme={setTheme} />
+              live={live} setLive={setLive} conn={conn} cost={data?.cost} theme={theme} setTheme={setTheme} notify={notify} setNotify={setNotify} />
       <div className="body">
         <div className="main">
           <NowStrip now={data?.now} selected={selected} onSelect={setSelected} />
@@ -114,8 +118,13 @@ export default function App() {
             </div>
           </div>
         </div>
-        <SidePanel node={selectedNode} cost={data?.cost} status={data?.status} graph={graph} onClose={() => setSelected(null)}
+        <SidePanel node={selectedNode} cost={data?.cost} status={data?.status} graph={graph} tasks={data?.tasks} onClose={() => setSelected(null)}
                    hidden={hidden} toggleHidden={toggleHidden} showAll={showAll} search={search} onSelect={setSelected} tab={tab} setTab={setTab} />
+      </div>
+      <div className="toasts">
+        {toasts.map(t => <div key={t.id} className={`toast ${t.level}`} onClick={() => { if (t.node) { setSelected(t.node) } dismiss(t.id) }}>
+          <b>{t.title}</b>{t.body && <div className="small">{t.body}</div>}
+        </div>)}
       </div>
     </div>
   )

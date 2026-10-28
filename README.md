@@ -35,10 +35,11 @@ ssh root@100.99.160.22 'cd /opt/hermes && docker compose up -d --build keryx'
 | Health header | `gateway_heartbeats`, `logs/gateway.log`, cron executions, `logs/errors.log`, session end reasons | green / amber / red per check; worst drives the title dot |
 | Right now | sessions with no `ended_at` | user request, latest assistant step or tool call, elapsed, idle, calls/min, subagents |
 | Graph | `sessions`, `messages`, `session_model_usage`, `async_delegations`, `cron/*` | per-session tool rings, spawn links carry delegation state and goal |
-| Side panel | tabs: overview (health, tokens, legend with show/hide checkboxes), sessions (grouped by platform, running pinned), analytics (daily trend, model share, totals), logs (gateway/agent/error tails with level + keyword filters) | selecting a session shows its turn-by-turn trace with expandable tool arguments/results; selecting a tool cube lists its calls |
+| Side panel | tabs: overview (health, recent file changes, tokens, legend with show/hide checkboxes), sessions (grouped by platform, running pinned), tasks (delegations board + scheduled jobs), analytics (daily trend, model share, totals), logs (gateway/agent/error tails with level + keyword filters) | tabs carry badges for things that want attention; selecting a session shows its context gauge, the files it touched and its turn-by-turn trace with expandable tool arguments/results; selecting a tool cube lists its calls |
 
-Session status: running, stale (idle > 30 min), ended, closed by user, orphaned (killed by a gateway
-restart), failed (ended with tool errors). Tool failures come from the JSON result Hermes stores
+Session status: running, waiting for you (the session is open and the last message is Hermes' reply, so
+the next move is yours — typical for a Telegram chat between messages), stale (mid-turn and idle > 30 min),
+ended, closed by user, orphaned (killed by a gateway restart), failed (ended with tool errors). Tool failures come from the JSON result Hermes stores
 (`exit_code` / `error`), not keyword matching. Nodes fade with age inside the window; particles flow on
 links touched in the last 5 minutes and speed up with calls per minute. Hover highlights a neighbourhood,
 search dims non-matches, clicking a platform collapses it, the replay bar re-queries the graph as of any
@@ -50,6 +51,24 @@ The ⇔ spacing button (toolbar) scales how far apart everything sits: compact /
 
 Keyboard: `⌘K` / `Ctrl+K` focuses search and opens the sessions tab; `Esc` clears the selection. The ☾/☀ button toggles light and dark themes.
 
+Ideas borrowed from [AionUi](https://github.com/iOfficeAI/AionUi):
+
+- **Waiting vs. running.** AionUi marks a conversation that is waiting for the user differently from one
+  that is still working, and notifies when a turn completes. Keryx now does both: the `waiting` status and
+  the 🔔 button (in-app toasts always; desktop notifications when you allow them) for replies, failures,
+  orphaned sessions, finished or failed delegations, cron failures and missed triggers.
+- **Context usage.** Each session shows how full the model's context window was at the last API call
+  (amber from 70 %, red from 90 %). Hermes does not record the window size, so Keryx assumes
+  `CONTEXT_LENGTH` (default 400k, marked with ~) unless the model name matches a known family.
+- **Task board.** The tasks tab lists every delegation Hermes handed to subagents (goals, who ran them,
+  duration, delivery) and every scheduled job with a next-run countdown, last status, lateness, failure
+  streak, a 20-run history strip and missed-trigger detection, plus the scheduler heartbeat.
+- **Files touched.** The preview panel in AionUi tracks file changes; Keryx lists the files each session
+  wrote, patched, read or searched, and the overview shows the most recent changes across sessions.
+- **Diagnostics export.** ⤓ diagnostics in the overview downloads a privacy-safe JSON snapshot (counts,
+  states, ids, redacted error lines; no prompts, message content, chat ids or keys) to attach to a bug report.
+- **Open on a phone.** 📱 in the header shows a QR code of the current URL.
+
 Ideas borrowed from [Ekko Studio](https://github.com/EKKOLearnAI/ekko-studio): usage analytics with a daily trend and model distribution, tool-call traces with argument/result expansion, sessions grouped by source with live ones pinned, a filterable log viewer, per-turn usage and cache-hit reporting, session search, and themes.
 
 ## API
@@ -58,7 +77,10 @@ Ideas borrowed from [Ekko Studio](https://github.com/EKKOLearnAI/ekko-studio): u
 - `GET /api/analytics?days=30`  daily trend (sessions, messages, tool calls, failures, tokens), model share, totals
 - `GET /api/session/{id}/trace?limit=300[&tool=name]`  ordered steps (user / assistant / tool call with args + result)
 - `GET /api/logs?file=errors|gateway|agent|boot|restart|dashboard-auth&level=WARNING&q=text&lines=200`
-- `GET /api/now`      running sessions digest
+- `GET /api/tasks`    delegations (goals, children, duration, delivery) + cron jobs (next run, history, missed, streak) + scheduler heartbeat
+- `GET /api/diagnostics`  redacted JSON snapshot for bug reports (download)
+- `GET /api/qr?text=`  SVG QR code
+- `GET /api/now`      running + waiting sessions digest
 - `GET /api/status`   health checks
 - `GET /api/cost?hours=24`  tokens/cost per model
 - `GET /api/stream?hours=24`  server-sent events, one `update` per data change (keyed on file mtimes incl. the WAL)
@@ -66,4 +88,4 @@ Ideas borrowed from [Ekko Studio](https://github.com/EKKOLearnAI/ekko-studio): u
 
 ## Tuning
 
-`ACTIVE_WINDOW` and `STALE_AFTER` (env or top of `app.py`); colours and labels in `frontend/src/util.js`.
+`ACTIVE_WINDOW`, `STALE_AFTER` and `CONTEXT_LENGTH` (env or top of `app.py`); colours and labels in `frontend/src/util.js`.

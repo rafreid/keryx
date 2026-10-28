@@ -27,9 +27,9 @@ export function useLive(hours, enabled) {
 }
 
 export async function fetchBundle(hours) {
-  const [graph, now, status, cost] = await Promise.all(
-    [`/api/graph?hours=${hours}`, '/api/now', '/api/status', `/api/cost?hours=${hours}`].map(u => fetch(u).then(r => r.json())))
-  return { graph, now, status, cost }
+  const [graph, now, status, cost, tasks] = await Promise.all(
+    [`/api/graph?hours=${hours}`, '/api/now', '/api/status', `/api/cost?hours=${hours}`, '/api/tasks'].map(u => fetch(u).then(r => r.json())))
+  return { graph, now, status, cost, tasks }
 }
 
 export const fetchGraphAt = (hours, at) => fetch(`/api/graph?hours=${hours}&at=${at}`).then(r => r.json())

@@ -22,6 +22,7 @@ export const TYPE = {
 }
 export const STATUS = {
   running:       { color: '#3fb950', label: 'running' },
+  waiting:       { color: '#58a6ff', label: 'waiting for you (turn finished, chat open)' },
   stale:         { color: '#d29922', label: 'stale (idle > 30 min)' },
   ended:         { color: '#4f8f6a', label: 'ended cleanly' },
   ended_by_user: { color: '#6b7a8c', label: 'closed by user' },
@@ -52,3 +53,10 @@ export function withAlpha(hex, a) {
   const n = parseInt(h.length === 3 ? h.split('').map(c => c + c).join('') : h, 16)
   return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a.toFixed(3)})`
 }
+
+export const fmtIn = t => {            // "in 2h 5m" / "overdue 12m"
+  if (!t) return '–'
+  const d = t - Date.now() / 1000
+  return d >= 0 ? `in ${dur(d)}` : `overdue ${dur(-d)}`
+}
+export const contextLevel = pct => (pct >= 90 ? 'err' : pct >= 70 ? 'warn' : 'ok')
