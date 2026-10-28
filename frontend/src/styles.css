@@ -169,3 +169,6 @@ kbd { background: var(--panel2); border: 1px solid var(--line); border-radius: 4
 .qrwrap { position: relative; }
 .popover.qr { left: auto; right: 0; width: 200px; text-align: center; }
 .popover.qr img { background: #fff; border-radius: 6px; padding: 6px; display: block; margin: 0 auto 6px; }
+/* collapsible overview sections */
+.section h3.acc .sum { text-transform: none; letter-spacing: 0; }
+.section.closed h3 { opacity: .8; }

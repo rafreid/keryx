@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useCallback, useState } from 'react'
 import { ACTIVE, STATUS, TYPE, ago, contextLevel, dur, fmtT, num } from './util.js'
 import Shape from './Shapes.jsx'
 import { nodeBaseColor } from './util.js'
@@ -129,22 +129,24 @@ function Overview({ cost, status, graph, hidden, toggleHidden, showAll, onSelect
         <tr><td>orphaned / failed</td><td>{s.orphaned ?? 0} / {s.failed ?? 0}</td></tr>
         <tr><td>cron</td><td>{s.cron_jobs ?? 0} jobs · {s.cron_runs ?? 0} runs</td></tr>
       </tbody></table>
-      <h3>Health</h3>
+      <Section id="health" title="Health" summary={<span className={`dot ${status?.level || 'amber'}`} />}>
       <table><tbody>{(status?.checks || []).map(c => (
         <tr key={c.name}><td><span className={`dot ${c.level}`} />{c.name}</td><td>{c.detail}{c.recent?.length ? <div className="small">{c.recent.map((l, i) => <div key={i}>{l}</div>)}</div> : null}</td></tr>
       ))}</tbody></table>
-      {changes.length > 0 && <><h3>Recent file changes</h3>
+      </Section>
+      {changes.length > 0 && <Section id="files" title="Recent file changes" summary={`${changes.length}`}>
         <div className="files">{changes.map(f => <div key={f.path} className="file changed" title={`${f.label} · ${fmtT(f.ts)}`}>
           <span className="op">{OP[f.op]}</span><a className="path" href="#" onClick={e => { e.preventDefault(); onSelect(f.node) }}>{f.path}</a><span className="small">{ago(f.ts)}</span>
-        </div>)}</div></>}
-      <h3>Tokens by model</h3>
+        </div>)}</div></Section>}
+      <Section id="tokens" title="Tokens by model" summary={cost?.totals ? `${num(cost.totals.input)} in · ${num(cost.totals.output)} out` : ''}>
       <table className="cost"><thead><tr><td>model</td><td>in</td><td>out</td><td>cache</td><td>calls</td></tr></thead><tbody>
         {(cost?.models || []).map(m => <tr key={m.model}><td title={(m.providers || []).join(', ')}>{m.model}</td><td>{num(m.input)}</td><td>{num(m.output)}</td><td>{((m.cache_hit || 0) * 100) | 0}%</td><td>{m.calls}</td></tr>)}
         {cost?.totals && <tr><td><b>total</b></td><td>{num(cost.totals.input)}</td><td>{num(cost.totals.output)}</td><td>{((cost.totals.cache_hit || 0) * 100) | 0}%</td><td>{cost.totals.calls}</td></tr>}
       </tbody></table>
       {cost?.totals?.cost_usd ? <div className="small">estimated spend in window: ${cost.totals.cost_usd}</div>
         : <div className="small">subscription providers report no per-token cost; cache hit shows how much prompt reuse you get.</div>}
-      <h3>Legend <span className="small" style={{ textTransform: 'none', letterSpacing: 0 }}>· untick to hide{hidden?.size ? <> · <a href="#" onClick={e => { e.preventDefault(); showAll() }}>show all</a></> : null}</span></h3>
+      </Section>
+      <Section id="legend" title="Legend" summary={<>untick to hide{hidden?.size ? <> · {hidden.size} hidden · <a href="#" onClick={e => { e.preventDefault(); e.stopPropagation(); showAll() }}>show all</a></> : null}</>}>
       <table className="legend"><tbody>
         <tr><td colSpan="2" className="small">shape = what it is</td></tr>
         {Object.entries(TYPE).map(([k, v]) => <LegendRow key={k} id={`type:${k}`} hidden={hidden} toggle={toggleHidden}
@@ -154,7 +156,8 @@ function Overview({ cost, status, graph, hidden, toggleHidden, showAll, onSelect
           glyph={<><Shape type="session" color={v.color} /><Shape type="subagent" color={v.color} /></>} name={k.replace(/_/g, ' ')} desc={v.label} />)}
         <LegendRow id="flag:active" hidden={hidden} toggle={toggleHidden} glyph={<><Shape type="session" color={ACTIVE} /><Shape type="tool" color={ACTIVE} /></>} name="active" desc="any node or link touched in the last 5 min, with particles" />
       </tbody></table>
-      <h3>Reading the layout</h3>
+      </Section>
+      <Section id="layout" title="Reading the layout">
       <div className="small">
         Shape says <b>what</b> a node is; colour says <b>how</b> it is doing; opacity says <b>how long ago</b>.<br />
         Hermes sits at the centre with platforms on a ring around it; each platform owns a wedge, and its sessions sit in that wedge.
@@ -162,6 +165,19 @@ function Overview({ cost, status, graph, hidden, toggleHidden, showAll, onSelect
         Subagents orbit the session that spawned them, tools cluster tightly around the session that called them, models sit on a shelf above, cron jobs fan out below their platform.
         Running sessions breathe. Hover to highlight a neighbourhood, click a platform to collapse it, drag the replay bar to scrub the window.
       </div>
+      </Section>
+    </div>
+  )
+}
+
+/** Collapsible overview section; open state is remembered per browser (keryx.ov.<id>). */
+function Section({ id, title, summary, children }) {
+  const [open, setOpen] = useState(() => { try { return localStorage.getItem(`keryx.ov.${id}`) !== '0' } catch { return true } })
+  const toggle = useCallback(() => setOpen(o => { try { localStorage.setItem(`keryx.ov.${id}`, o ? '0' : '1') } catch {} return !o }), [id])
+  return (
+    <div className={`section ${open ? 'open' : 'closed'}`}>
+      <h3 className="acc" onClick={toggle}>{open ? '▾' : '▸'} {title}{summary ? <span className="small sum"> · {summary}</span> : null}</h3>
+      {open && children}
     </div>
   )
 }
