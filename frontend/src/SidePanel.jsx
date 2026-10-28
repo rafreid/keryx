@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
-import { STATUS, TYPE, ago, dur, fmtT, num } from './util.js'
+import { ACTIVE, STATUS, TYPE, ago, dur, fmtT, num } from './util.js'
 import Shape from './Shapes.jsx'
+import { nodeBaseColor } from './util.js'
 import Analytics from './Analytics.jsx'
 import Sessions from './Sessions.jsx'
 import Logs from './Logs.jsx'
@@ -24,7 +25,7 @@ export default function SidePanel({ node, cost, status, onClose, graph, hidden, 
 }
 
 function NodeDetail({ node, graph, onClose }) {
-  const rows = [['type', <span><Shape type={node.type} color={TYPE[node.type]?.color} />{TYPE[node.type]?.label || node.type}</span>]]
+  const rows = [['type', <span><Shape type={node.type} color={nodeBaseColor(node)} />{(TYPE[node.type]?.label || node.type).split(' — ')[0]}</span>]]
   const isSession = node.type === 'session' || node.type === 'subagent'
   if (isSession) rows.push(
     ['status', <span className={cls(node.status)}>{STATUS[node.status]?.label || node.status}</span>],
@@ -88,9 +89,13 @@ function Overview({ cost, status, graph, hidden, toggleHidden, showAll }) {
         : <div className="small">subscription providers report no per-token cost; cache hit shows how much prompt reuse you get.</div>}
       <h3>Legend <span className="small" style={{ textTransform: 'none', letterSpacing: 0 }}>· untick to hide{hidden?.size ? <> · <a href="#" onClick={e => { e.preventDefault(); showAll() }}>show all</a></> : null}</span></h3>
       <table className="legend"><tbody>
-        {Object.entries(TYPE).map(([k, v]) => <LegendRow key={k} id={`type:${k}`} hidden={hidden} toggle={toggleHidden} glyph={<Shape type={k} color={v.color} />} name={k} desc={v.label} />)}
-        {Object.entries(STATUS).map(([k, v]) => <LegendRow key={k} id={`status:${k}`} hidden={hidden} toggle={toggleHidden} glyph={<i className="dot" style={{ background: v.color }} />} name={k.replace(/_/g, ' ')} desc={v.label} />)}
-        <LegendRow id="flag:active" hidden={hidden} toggle={toggleHidden} glyph={<i className="dot" style={{ background: '#ff4d4d' }} />} name="active" desc="red highlight + particles for the last 5 min" />
+        <tr><td colSpan="2" className="small">shape = what it is</td></tr>
+        {Object.entries(TYPE).map(([k, v]) => <LegendRow key={k} id={`type:${k}`} hidden={hidden} toggle={toggleHidden}
+          glyph={<><Shape type={k} color={v.color} />{v.alt && <Shape type={k} color={v.alt} />}</>} name={k} desc={v.label} />)}
+        <tr><td colSpan="2" className="small">colour = how a session is doing</td></tr>
+        {Object.entries(STATUS).map(([k, v]) => <LegendRow key={k} id={`status:${k}`} hidden={hidden} toggle={toggleHidden}
+          glyph={<><Shape type="session" color={v.color} /><Shape type="subagent" color={v.color} /></>} name={k.replace(/_/g, ' ')} desc={v.label} />)}
+        <LegendRow id="flag:active" hidden={hidden} toggle={toggleHidden} glyph={<><Shape type="session" color={ACTIVE} /><Shape type="tool" color={ACTIVE} /></>} name="active" desc="any node or link touched in the last 5 min, with particles" />
       </tbody></table>
       <h3>Reading the layout</h3>
       <div className="small">

@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react'
 import Shape from './Shapes.jsx'
-import { STATUS, ago, dur } from './util.js'
+import { STATUS, ago, dur, nodeBaseColor } from './util.js'
 
 /** Session list grouped by platform; running pinned to the top; filtered by the search box. */
 export default function Sessions({ graph, selected, onSelect, search }) {
@@ -19,7 +19,7 @@ export default function Sessions({ graph, selected, onSelect, search }) {
   const toggle = k => setOpen(s => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n })
   const Row = ({ n }) => (
     <div className={`srow ${selected === n.id ? 'sel' : ''}`} onClick={() => onSelect(n.id)}>
-      <Shape type={n.type} color={STATUS[n.status]?.color || '#999'} />
+      <Shape type={n.type} color={nodeBaseColor(n)} />
       <div className="t">
         <div className="title">{n.label}</div>
         <div className="small">{STATUS[n.status]?.label || n.status} · {ago(n.last)} · {n.tool_calls} calls{n.tool_errors ? <span className="err"> · {n.tool_errors} failed</span> : null}{n.children ? ` · ${n.children} subagents` : ''}</div>

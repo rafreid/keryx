@@ -14,11 +14,11 @@ export const num = n => (n == null ? '–' : n >= 1e6 ? (n / 1e6).toFixed(2) + '
 export const TYPE = {
   hub:      { color: '#ffffff', label: 'Hermes agent' },
   source:   { color: '#6ad1ff', label: 'platform (telegram, tui, cron…)' },
-  session:  { color: '#7ee787', label: 'session' },
-  subagent: { color: '#c3a6ff', label: 'subagent' },
-  tool:     { color: '#ffb86b', label: 'tool call (red = errors)' },
-  model:    { color: '#f778ba', label: 'model (size = tokens)' },
-  cron:     { color: '#ffd866', label: 'cron job' },
+  session:  { color: '#9aa7b8', label: 'session — sphere; colour = status below' },
+  subagent: { color: '#9aa7b8', label: 'subagent — octahedron; colour = status below' },
+  tool:     { color: '#ffb86b', label: 'tool call — cube; red when a call failed', alt: '#f85149' },
+  model:    { color: '#f778ba', label: 'model — cylinder, size = tokens' },
+  cron:     { color: '#ffd866', label: 'cron job — cone; red when the last run failed', alt: '#f85149' },
 }
 export const STATUS = {
   running:       { color: '#3fb950', label: 'running' },
@@ -31,14 +31,12 @@ export const STATUS = {
 export const ACTIVE = '#ff4d4d'
 
 // Base colour for a node before hover/search dimming.
+// Rule: shape = type, colour = status. Sessions and subagents take exactly the STATUS colour,
+// tools and cron jobs take their TYPE colour or its 'alt' (red) on failure. The legend uses the same tables.
 export function nodeBaseColor(n) {
-  if (n.type === 'session' || n.type === 'subagent') {
-    const st = STATUS[n.status]
-    if (n.status === 'running' || n.status === 'stale' || n.status === 'orphaned' || n.status === 'failed') return st.color
-    return n.type === 'subagent' ? '#8b74c9' : st.color
-  }
-  if (n.type === 'tool') return n.errors > 0 ? '#f85149' : TYPE.tool.color
-  if (n.type === 'cron') return n.status === 'failed' ? '#f85149' : TYPE.cron.color
+  if (n.type === 'session' || n.type === 'subagent') return STATUS[n.status]?.color || TYPE.session.color
+  if (n.type === 'tool') return n.errors > 0 ? TYPE.tool.alt : TYPE.tool.color
+  if (n.type === 'cron') return n.status === 'failed' ? TYPE.cron.alt : TYPE.cron.color
   return TYPE[n.type]?.color || '#999'
 }
 

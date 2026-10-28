@@ -1,5 +1,5 @@
 import React from 'react'
-import { dur } from './util.js'
+import { STATUS, dur } from './util.js'
 import Shape from './Shapes.jsx'
 
 export default function NowStrip({ now, selected, onSelect }) {
@@ -10,7 +10,7 @@ export default function NowStrip({ now, selected, onSelect }) {
         <div key={r.id} className={`card ${selected === 'session:' + r.id ? 'sel' : ''}`} onClick={() => onSelect('session:' + r.id)}>
           <div className="t">
             <span className={`tag ${r.status}`}>{r.status}</span>
-            <Shape type={r.is_subagent ? 'subagent' : 'session'} color={r.status === 'running' ? '#3fb950' : '#d29922'} />
+            <Shape type={r.is_subagent ? 'subagent' : 'session'} color={STATUS[r.status]?.color || '#9aa7b8'} />
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.title}</span>
           </div>
           <div className="req" title={r.request || ''}>{r.request || '(no user request recorded)'}</div>
