@@ -5,5 +5,6 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   build: { outDir: '../backend/static', emptyOutDir: true },
-  server: { proxy: { '/api': 'http://100.99.160.22:9120' } },
+  // `npm run dev` proxies /api to a running Keryx backend; point KERYX_API at yours
+  server: { proxy: { '/api': process.env.KERYX_API || 'http://localhost:9120' } },
 })

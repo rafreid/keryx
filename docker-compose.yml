@@ -1,22 +1,30 @@
-# Standalone Keryx service. On the Proxmox host this block lives inside
-# /opt/hermes/docker-compose.yml next to the hermes service; the build context is
-# a copy of ./backend with the front end already built into backend/static.
+# Keryx next to a Hermes agent.
+#
+#   HERMES_HOME=~/.hermes HERMES_UID=$(id -u) HERMES_GID=$(id -g) docker compose up -d --build
+#
+# HERMES_HOME is the Hermes data directory on the host (~/.hermes for a native install; the
+# directory you mount at /opt/data if Hermes itself runs in Docker). Keryx runs as the same
+# uid/gid that owns that directory, because Hermes keeps it mode 0700.
+# You can also paste the service block into the compose file that runs Hermes.
 services:
   keryx:
-    build: ./backend
+    build: ./backend                 # run `npm run build` in frontend/ first (backend/static is not committed)
     image: keryx:local
     container_name: keryx
     restart: unless-stopped
-    user: "10000:10000"            # same uid as the Hermes container, owns the data volume
+    user: "${HERMES_UID:-10000}:${HERMES_GID:-10000}"
     environment:
       - HERMES_DATA=/opt/data
       - GRAPH_PORT=9120
-      - ACTIVE_WINDOW=300          # seconds: "touched recently"
-      - STALE_AFTER=1800           # seconds: running-but-idle becomes stale
+      - ACTIVE_WINDOW=300            # seconds: a session touched this recently counts as active
+      - STALE_AFTER=1800             # seconds: running but idle this long becomes "stale"
+      - CONTEXT_LENGTH=400000        # assumed context window when the model is not recognised
     ports:
-      - "9120:9120"
+      - "9120:9120"                  # bind to 127.0.0.1:9120:9120 if only a tunnel/VPN should reach it
     volumes:
-      - /opt/hermes-data:/opt/data # Hermes home; read in ro mode by the app
+      # Keryx never writes, but SQLite in WAL mode must be able to create its -shm file,
+      # so the mount is read-write.
+      - ${HERMES_HOME:-~/.hermes}:/opt/data
     deploy:
       resources:
         limits:

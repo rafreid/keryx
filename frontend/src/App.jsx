@@ -39,6 +39,8 @@ export default function App() {
     const onKey = e => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); navigate(null, { tab: 'sessions' }); document.getElementById('search')?.focus() }
       if (e.key === 'Escape') { navigate(null); document.activeElement?.blur?.() }
+      // Backspace = back, Shift+Backspace = forward — but never while typing in a field
+      if (e.key === 'Backspace' && !isTyping(e.target)) { e.preventDefault(); e.shiftKey ? forward() : back() }
     }
     window.addEventListener('keydown', onKey); return () => window.removeEventListener('keydown', onKey)
   }, [])
@@ -150,7 +152,7 @@ function Trail({ trail, idx, back, forward, go }) {
   const prev = trail[idx - 1], next = trail[idx + 1]
   return (
     <div className="trail">
-      <button disabled={!prev} onClick={back} title={prev ? `back to ${prev.label}  (Alt+← / ⌘[)` : 'nothing to go back to'}>‹</button>
+      <button disabled={!prev} onClick={back} title={prev ? `back to ${prev.label}  (Backspace, Alt+← or ⌘[)` : 'nothing to go back to'}>‹</button>
       {from > 0 && <span className="small">…</span>}
       {slice.map((en, j) => {
         const i = from + j
@@ -160,10 +162,11 @@ function Trail({ trail, idx, back, forward, go }) {
         </React.Fragment>
       })}
       {from + 5 < trail.length && <span className="small">…</span>}
-      <button disabled={!next} onClick={forward} title={next ? `forward to ${next.label}  (Alt+→ / ⌘])` : 'nothing ahead'}>›</button>
+      <button disabled={!next} onClick={forward} title={next ? `forward to ${next.label}  (Shift+Backspace, Alt+→ or ⌘])` : 'nothing ahead'}>›</button>
     </div>
   )
 }
 
+const isTyping = el => !!el && (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.isContentEditable)
 const fmtFrac = (f, w) => { const sec = f * w; return sec < 3600 ? `${sec / 60 | 0}m` : sec < 86400 ? `${sec / 3600 | 0}h` : `${sec / 86400 | 0}d` }
 const minStart = g => g ? Math.min(...g.nodes.filter(n => n.started).map(n => n.started)) : null

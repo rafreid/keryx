@@ -81,9 +81,13 @@ export function useNavHistory({ tab, setTab, camRef, labelOf }) {
     publish()
   }, [])  // eslint-disable-line react-hooks/exhaustive-deps
 
-  const go = useCallback(delta => { if (delta) history.go(delta) }, [])
-  const back = useCallback(() => history.back(), [])
-  const forward = useCallback(() => history.forward(), [])
+  // guarded so a keyboard shortcut can never walk off the end of our stack (and out of the page)
+  const go = useCallback(delta => {
+    const to = idxRef.current + delta
+    if (delta && to >= 0 && to < entries.current.length) history.go(delta)
+  }, [])
+  const back = useCallback(() => go(-1), [go])
+  const forward = useCallback(() => go(1), [go])
   return { selected, navigate, back, forward, go, trail, idx, restore }
 }
 
