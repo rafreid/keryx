@@ -1418,6 +1418,12 @@ def build_logs(file: str, level: str, q: str, lines: int) -> dict:
 # ----------------------------------------------------------------- cache + routes
 _cache: dict[tuple, tuple] = {}
 _cache_lock = threading.Lock()
+# Builders run one at a time. The snapshot connections are shared across threads
+# (check_same_thread=False), and Python's sqlite3 keeps a per-connection statement cache: two
+# threads running the same SQL at once share one prepared statement, and one thread's reset
+# scrambles the other's rows (seen as a session listed twice in a lineage). Reads take
+# milliseconds, so serialising them costs nothing noticeable; cache hits never wait.
+_build_lock = threading.RLock()
 
 
 def cached(kind: str, builder, *args):
@@ -1426,7 +1432,8 @@ def cached(kind: str, builder, *args):
         hit = _cache.get(key)
         if hit:
             return hit
-    val = builder(*args)
+    with _build_lock:
+        val = builder(*args)
     with _cache_lock:
         if len(_cache) > 64:
             _cache.clear()
@@ -1479,7 +1486,8 @@ def api_tasks():
 
 @app.get("/api/diagnostics")
 def api_diagnostics():
-    body = json.dumps(build_diagnostics(), indent=1, default=str)
+    with _build_lock:
+        body = json.dumps(build_diagnostics(), indent=1, default=str)
     return Response(body, media_type="application/json",
                     headers={"Content-Disposition": f"attachment; filename=keryx-diagnostics-{int(time.time())}.json"})
 

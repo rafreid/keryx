@@ -85,3 +85,35 @@ def test_stream_endpoint_emits_update(hermes_data):
         await it.aclose()                                   # client went away → unsubscribed
         assert not keryx.BROADCAST.subs
     asyncio.run(run())
+
+
+def test_builders_are_serialised(hermes_data):
+    """Two cache misses in two threads must not run their builders at the same time."""
+    import threading, time
+    running, overlaps = [], []
+    def builder(tag):
+        if running:
+            overlaps.append(tag)
+        running.append(tag); time.sleep(0.05); running.remove(tag)
+        return {"tag": tag}
+    ths = [threading.Thread(target=lambda t=t: keryx.cached("probe", builder, t)) for t in ("a", "b", "c")]
+    [t.start() for t in ths]; [t.join() for t in ths]
+    assert overlaps == []
+    assert keryx.cached("probe", builder, "a") == {"tag": "a"}      # and the result is cached
+
+
+def test_concurrent_reads_keep_lineages_intact(hermes_data):
+    import threading
+    bad = []
+    def trace():
+        for _ in range(30):
+            keryx.configure(keryx.DATA)          # defeat the cache so every call really reads
+            segs = keryx.cached("trace", keryx.build_trace, "s-comp-root", None, 300)["session"]["segments"]
+            if segs != ["s-comp-root", "s-comp-tip"]:
+                bad.append(segs)
+    def graph():
+        for _ in range(30):
+            keryx.cached("graph", keryx.build_graph, 24, None)
+    ths = [threading.Thread(target=trace), threading.Thread(target=graph), threading.Thread(target=graph)]
+    [t.start() for t in ths]; [t.join() for t in ths]
+    assert bad == []
