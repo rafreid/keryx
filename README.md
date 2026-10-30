@@ -17,7 +17,7 @@ Named after κῆρυξ, the Greek herald who carried messages for Hermes.
 | Health header | gateway heartbeat, Telegram connection, cron scheduler, error log, session states. Green / amber / red per check; the worst one drives the title dot. |
 | Right now | every open session: the user's request, the latest step, elapsed and idle time, calls per minute, context usage, subagents. |
 | Graph | Hermes at the centre, the platforms it talks on around it, each session in its platform's wedge with its tools clustered around it, subagents in orbit, models on a shelf, cron jobs below. 3D or 2D. |
-| Side panel | **overview** (health, recent file changes, tokens by model, legend), **sessions** (grouped by platform, live ones pinned), **tasks** (delegations board, scheduled jobs with run history and missed slots, Hermes' cron incidents and delivery queue), **analytics** (daily trend, model share), **logs** (filterable tails of every log file Hermes writes; lines logged inside a session link to it). Selecting a node shows its details, context gauge, files touched and the turn-by-turn trace with tool arguments and results. |
+| Side panel | **overview** (health, recent file changes, tokens by model, legend), **sessions** (grouped by platform, live ones pinned), **tasks** (delegations board, scheduled jobs with run history and missed slots, Hermes' cron incidents and delivery queue), **analytics** (daily trend, model share), **logs** (filterable tails of every log file Hermes writes; lines logged inside a session link to it). Selecting a node shows its details, context gauge, the agent's plan (its `todo_list`), files touched and the turn-by-turn trace with tool arguments and results. |
 | Notifications | in-app toasts, and desktop notifications if you allow them, when Hermes replies and waits for you, a session fails or is orphaned, a delegation finishes, a cron job fails or misses its trigger. |
 
 **Compacted conversations.** When Hermes compacts a long chat it ends the session and continues in a child session. Keryx folds that lineage into one node: it starts when the first segment started, takes its colour from the latest segment, and its trace shows every segment with a ⟲ marker where the context was compacted. The node keeps the first segment's id, so a `#session:…` link to any segment opens the same node. Branches the user made (`/branch`) stay separate sessions, joined to their origin by a teal link; delegated subagents keep their purple link.
@@ -80,6 +80,7 @@ All settings are environment variables.
 | `STALE_AFTER` | `1800` | seconds; a session that is mid-turn but idle for this long is shown as stale |
 | `CONTEXT_LENGTH` | `400000` | assumed context window for the context gauge when the model name is not a recognised family (Hermes does not record the window size; such gauges are marked `~`) |
 | `KERYX_TOKEN` | unset | optional shared secret; when set, every `/api` route except `/api/health` requires it (see Security) |
+| `HERMES_DASHBOARD_URL` | unset | where the Hermes dashboard (`hermes dashboard`, port 9119) is reachable from your browser, e.g. `http://192.168.1.100:9119`; adds "open in the Hermes dashboard" links on sessions, cron jobs and logs. Keryx never calls it |
 
 Colours and labels live in `frontend/src/util.js`; rebuild after changing them.
 
@@ -155,7 +156,8 @@ frontend/  Vite + React + react-force-graph source; src/hooks/ holds the camera 
 - `GET /api/cost?hours=24`  tokens/cost per model; `cost_basis` says whether the money is provider-reported (`actual`), priced from a table (`estimated`), `included` in a subscription or `unknown`
 - `GET /api/tasks`  delegations (goals, children, duration, delivery), cron jobs (next run, history, missed slots, open incidents), scheduler heartbeat, incidents, delivery queue
 - `GET /api/analytics?days=30`  daily trend, model share, totals
-- `GET /api/session/{id}/trace?limit=300[&tool=name]`  ordered steps (user / assistant / tool call with args + result)
+- `GET /api/session/{id}/trace?limit=300[&tool=name]`  ordered steps (user / assistant / tool call with args + result / event / compaction), across every segment of a compacted conversation
+- `GET /api/session/{id}/todo`  the agent's current plan: the newest `todo_list` result in the conversation
 - `GET /api/logs?file=<stem of any logs/*.log>&level=WARNING&q=text&lines=200`  entries carry the session id when Hermes logged the line inside a session
 - `GET /api/diagnostics`  redacted JSON snapshot for bug reports
 - `GET /api/qr?text=`  SVG QR code

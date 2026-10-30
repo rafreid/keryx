@@ -8,11 +8,11 @@ def nodes_by_id(g):
 def test_graph_counts_only_live_message_rows(hermes_data):
     g = keryx.build_graph(24, None)
     n = nodes_by_id(g)["session:s-running"]
-    assert n["tool_calls"] == 2            # the two archived copies are not counted
+    assert n["tool_calls"] == 4            # 2 real + 2 todo_list; the two archived copies are not counted
     assert n["tool_errors"] == 1
     assert n["status"] == "running"
     tools = {t["label"]: t for t in g["nodes"] if t["type"] == "tool" and t["session"] == "s-running"}
-    assert tools["terminal"]["calls"] == 1 and tools["write_file"]["errors"] == 1
+    assert tools["terminal"]["calls"] == 1 and tools["write_file"]["errors"] == 1 and tools["todo_list"]["calls"] == 2
     assert [f["path"] for f in n["files"]] == ["src/x.py"]
 
 
@@ -42,7 +42,7 @@ def test_now_lists_open_sessions(hermes_data):
 
 def test_trace_hides_archived_rows(hermes_data):
     tr = keryx.build_trace("s-running", None, 100)
-    calls = [s for s in tr["steps"] if s["kind"] == "tool_call"]
+    calls = [s for s in tr["steps"] if s["kind"] == "tool_call" and s["name"] != "todo_list"]
     assert len(calls) == 2
     assert calls[1]["failed"] is True and calls[1]["result"].startswith("error:")
 
@@ -120,7 +120,26 @@ def test_status_cron_reports_open_incident(hermes_data):
     assert checks["cron"]["incidents"][0]["error"] == "boom: exit 1"
 
 
+def test_plan_badge_from_latest_todo(hermes_data):
+    n = nodes_by_id(keryx.build_graph(24, None))
+    plan = n["session:s-running"]["plan"]
+    assert plan == {"done": 1, "total": 3, "open": 2, "current": "fix src/x.py", "ts": plan["ts"]}
+    assert n["session:s-waiting"]["plan"] is None
+    assert n["session:s-running"]["tool_calls"] == 4          # the two todo_list calls count as tool calls
+    by = {r["id"]: r for r in keryx.build_now()["running"]}
+    assert by["s-running"]["plan"]["current"] == "fix src/x.py"
+
+
+def test_todo_endpoint_and_parser(hermes_data):
+    t = keryx.build_todo("s-running")["todo"]
+    assert [i["status"] for i in t["items"]] == ["completed", "in_progress", "pending"] and t["revision"] == 2
+    assert t["summary"]["completed"] == 1 and t["current"] == "fix src/x.py"
+    assert keryx.build_todo("s-waiting")["todo"] is None
+    assert keryx.parse_todo("not json") is None and keryx.parse_todo('{"error": "x"}') is None
+    assert keryx.parse_todo('{"todos": [{"id": 1, "content": "a", "status": "bogus"}]}')["items"][0]["status"] == "pending"
+
+
 def test_analytics_counts_live_rows(hermes_data):
     a = keryx.build_analytics(2)
-    assert a["totals"]["tool_calls"] == 3                # s-running 2 + s-comp-root 1
+    assert a["totals"]["tool_calls"] == 5                # s-running 4 + s-comp-root 1
     assert a["totals"]["tool_errors"] == 1

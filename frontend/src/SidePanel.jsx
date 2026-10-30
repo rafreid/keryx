@@ -29,11 +29,11 @@ export default function SidePanel({ node, cost, status, onClose, graph, tasks, h
           {t}{badges[t] ? <span className={`badge ${badgeLevel[t]}`}>{badges[t]}</span> : null}
         </button>)}
       </div>
-      {node ? <NodeDetail node={node} graph={graph} onClose={onClose} onSelect={onSelect} />
+      {node ? <NodeDetail node={node} graph={graph} onClose={onClose} onSelect={onSelect} links={status?.links} />
         : tab === 'sessions' ? <Sessions graph={graph} selected={null} onSelect={onSelect} search={search} />
-        : tab === 'tasks' ? <Tasks tasks={tasks} onSelect={onSelect} />
+        : tab === 'tasks' ? <Tasks tasks={tasks} onSelect={onSelect} links={status?.links} />
         : tab === 'analytics' ? <Analytics />
-        : tab === 'logs' ? <Logs onSelect={onSelect} />
+        : tab === 'logs' ? <Logs onSelect={onSelect} links={status?.links} />
         : <Overview cost={cost} status={status} graph={graph} hidden={hidden} toggleHidden={toggleHidden} showAll={showAll} onSelect={onSelect} />}
     </div>
   )
@@ -72,7 +72,30 @@ function Files({ files, limit = 14 }) {
   )
 }
 
-function NodeDetail({ node, graph, onClose, onSelect }) {
+/** The agent's own task list (Hermes' todo_list tool), newest revision across the lineage. */
+function Plan({ sessionId }) {
+  const [data, setData] = useState(null)
+  React.useEffect(() => {
+    let dead = false
+    const load = () => fetch(`/api/session/${encodeURIComponent(sessionId)}/todo`).then(r => r.json()).then(d => { if (!dead) setData(d) }).catch(() => {})
+    load(); const t = setInterval(load, 10000)
+    return () => { dead = true; clearInterval(t) }
+  }, [sessionId])
+  const todo = data?.todo
+  if (!todo) return null
+  const s = todo.summary
+  return (
+    <>
+      <h3>Plan <span className="small" style={{ textTransform: 'none', letterSpacing: 0 }}>· {s.completed}/{s.total} done{s.in_progress ? ` · ${s.in_progress} in progress` : ''}{s.cancelled ? ` · ${s.cancelled} cancelled` : ''} · {ago(todo.ts)}</span></h3>
+      <ol className="plan">
+        {todo.items.map(i => <li key={i.id} className={i.status}><span className="mark">{PLAN_MARK[i.status]}</span>{i.content}</li>)}
+      </ol>
+    </>
+  )
+}
+const PLAN_MARK = { completed: '✓', in_progress: '▶', pending: '○', cancelled: '✕' }
+
+function NodeDetail({ node, graph, onClose, onSelect, links }) {
   const rows = [['type', <span><Shape type={node.type} color={nodeBaseColor(node)} />{(TYPE[node.type]?.label || node.type).split(' — ')[0]}</span>]]
   const isSession = node.type === 'session' || node.type === 'subagent'
   if (isSession) rows.push(
@@ -84,6 +107,7 @@ function NodeDetail({ node, graph, onClose, onSelect }) {
     ['messages', `${node.messages} total · ${node.user_messages} from user`],
     ['tool calls', <span>{node.tool_calls}{node.tool_errors ? <span className="err"> · {node.tool_errors} failed</span> : null}</span>],
     ['rate', `${node.calls_per_min || 0} calls/min`], ['subagents', node.children || 0],
+    ['plan', node.plan ? <span>{node.plan.done}/{node.plan.total} done{node.plan.current ? <span className="small"> · ▶ {node.plan.current}</span> : null}</span> : '–'],
     ['context', <ContextGauge c={node.context} />],
     ['compactions', node.compactions ? <span title={`segments: ${(node.segments || []).join(' → ')}`}>⟲ {node.compactions}× · {(node.segments || []).length} segments · latest {String(node.tip || '').slice(0, 8)}</span> : 'none'],
     ['end reason', node.end_reason || '–'])
@@ -115,6 +139,9 @@ function NodeDetail({ node, graph, onClose, onSelect }) {
       <span className="close" onClick={onClose}>✕</span>
       <h2>{node.label}</h2>
       <table><tbody>{rows.map(([k, v]) => <tr key={k}><td>{k}</td><td>{v}</td></tr>)}</tbody></table>
+      {isSession && links?.chat_resume && <div className="small" style={{ marginTop: 6 }}><a href={links.chat_resume + encodeURIComponent(node.tip || node.id.replace('session:', ''))} target="_blank" rel="noreferrer">open in the Hermes dashboard ↗</a></div>}
+      {node.type === 'cron' && links?.cron && <div className="small" style={{ marginTop: 6 }}><a href={links.cron} target="_blank" rel="noreferrer">manage in the Hermes dashboard ↗</a></div>}
+      {isSession && <Plan sessionId={node.id.replace('session:', '')} />}
       {isSession && node.files?.length > 0 && <><h3>Files touched <span className="small" style={{ textTransform: 'none', letterSpacing: 0 }}>· ✎ write ✚ patch 👁 read ⌕ search</span></h3><Files files={node.files} /></>}
       {isSession && <><h3>Trace</h3><Trace sessionId={node.id.replace('session:', '')} /></>}
       {node.type === 'tool' && <><h3>Calls</h3><Trace sessionId={node.session} tool={node.label} /></>}

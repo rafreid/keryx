@@ -15,6 +15,7 @@ export default function NowStrip({ now, selected, onSelect }) {
           </div>
           <div className="req" title={r.request || ''}>{r.request || '(no user request recorded)'}</div>
           <div className="step" title={r.last_step || ''}>{r.status === 'waiting' ? '✓ replied — your turn' : r.last_step ? '→ ' + r.last_step : '→ starting'}</div>
+          {r.plan && <div className="plan small" title={r.plan.current ? `current step: ${r.plan.current}` : ''}>▶ plan {r.plan.done}/{r.plan.total}{r.plan.current ? ` · ${r.plan.current}` : ''}</div>}
           <div className="meta">
             <span>{r.source}</span><span>{dur(r.elapsed)} running</span><span>idle {dur(r.idle)}</span>
             <span>{r.tool_calls} calls{r.tool_errors ? <span className="err"> · {r.tool_errors} errors</span> : ''}</span>
