@@ -366,7 +366,7 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
     const s = typeof l.source === 'object' ? l.source : nodesRef.current.get(l.source)
     const t = typeof l.target === 'object' ? l.target : nodesRef.current.get(l.target)
     const emph = (s && emphasised(s)) && (t && emphasised(t))
-    const base = l.active && showActive ? ACTIVE : l.errors > 0 ? '#f85149' : l.kind === 'spawn' ? '#c3a6ff' : l.kind === 'model' ? '#f778ba' : '#8ea0bf'
+    const base = l.active && showActive ? ACTIVE : l.errors > 0 ? '#f85149' : l.kind === 'spawn' ? '#c3a6ff' : l.kind === 'branch' ? '#8fd3c5' : l.kind === 'model' ? '#f778ba' : '#8ea0bf'
     // model links stay whisper-faint unless their session is in focus
     const modelFaint = l.kind === 'model' && !(focusId && (s?.id === focusId || t?.id === focusId))
     const a = (l.kind === 'platform' ? 0.7 : ageAlpha(l.age, windowSec, 0.15) * 0.75) * (emph ? 1 : 0.1) * (modelFaint ? 0.25 : 1)
@@ -479,7 +479,7 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
     linkColor, linkWidth: l => (l.kind === 'tool' ? Math.min(4, 0.4 + Math.log1p(l.value || 1)) : l.kind === 'spawn' ? 1.2 : l.kind === 'model' ? 0.3 : 0.6),
     linkDirectionalParticles: particles, linkDirectionalParticleSpeed: particleSpeed,
     linkDirectionalParticleWidth: l => (l.active ? 2.2 : 1),
-    linkLabel: l => (l.kind === 'spawn' && l.goal ? `${l.state || ''} ${l.delivery || ''} — ${esc(l.goal)}` : ''),
+    linkLabel: l => (l.kind === 'spawn' && l.goal ? `${l.state || ''} ${l.delivery || ''} — ${esc(l.goal)}` : l.kind === 'branch' ? 'branched conversation' : ''),
     cooldownTicks: 500, warmupTicks: 60, d3AlphaDecay: 0.012, d3VelocityDecay: 0.35, onEngineStop,
   }
 

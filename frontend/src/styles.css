@@ -113,6 +113,8 @@ kbd { background: var(--panel2); border: 1px solid var(--line); border-radius: 4
 .step.user { background: color-mix(in srgb, var(--accent) 8%, transparent); }
 .step.tool { cursor: pointer; } .step.tool:hover { background: var(--panel2); }
 .step.tool.failed b { color: var(--red); }
+.step.compaction { background: color-mix(in srgb, var(--amber) 10%, transparent); } .step.compaction b { color: var(--amber); }
+.step.event b { color: var(--muted); font-weight: 500; font-style: italic; }
 .step .detail { margin-top: 4px; }
 .step .k { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .5px; margin-top: 4px; }
 .step pre { margin: 2px 0; white-space: pre-wrap; word-break: break-word; font-size: 11px; background: var(--panel2); padding: 6px; border-radius: 4px; max-height: 240px; overflow: auto; }

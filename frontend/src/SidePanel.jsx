@@ -85,12 +85,13 @@ function NodeDetail({ node, graph, onClose, onSelect }) {
     ['tool calls', <span>{node.tool_calls}{node.tool_errors ? <span className="err"> · {node.tool_errors} failed</span> : null}</span>],
     ['rate', `${node.calls_per_min || 0} calls/min`], ['subagents', node.children || 0],
     ['context', <ContextGauge c={node.context} />],
+    ['compactions', node.compactions ? <span title={`segments: ${(node.segments || []).join(' → ')}`}>⟲ {node.compactions}× · {(node.segments || []).length} segments · latest {String(node.tip || '').slice(0, 8)}</span> : 'none'],
     ['end reason', node.end_reason || '–'])
   if (isSession && node.usage) rows.push(
     ['tokens', `${num(node.usage.tokens_in)} in · ${num(node.usage.tokens_out)} out`],
     ['cache reads', `${num(node.usage.cache_read)} (${node.usage.tokens_in + node.usage.cache_read ? ((node.usage.cache_read / (node.usage.tokens_in + node.usage.cache_read)) * 100).toFixed(0) : 0}% hit)`],
     ['API calls', node.usage.api_calls], ['est. cost', node.usage.cost_usd ? `$${node.usage.cost_usd}` : '–'])
-  if (isSession && node.parent) rows.push(['parent', <a href="#" onClick={e => { e.preventDefault(); onSelect(`session:${node.parent}`) }}>{graph?.nodes.find(n => n.id === `session:${node.parent}`)?.label || node.parent}</a>])
+  if (isSession && node.parent) rows.push([node.fork === 'branch' ? 'branched from' : 'parent', <a href="#" onClick={e => { e.preventDefault(); onSelect(`session:${node.parent}`) }}>{graph?.nodes.find(n => n.id === `session:${node.parent}`)?.label || node.parent}</a>])
   if (isSession) rows.push(['id', node.id.replace('session:', '')])
   if (node.type === 'tool') rows.push(['session', node.session], ['calls', node.calls],
     ['failed', <span className={node.errors ? 'err' : 'ok'}>{node.errors}</span>], ['last call', `${fmtT(node.last)} (${ago(node.last)})`])

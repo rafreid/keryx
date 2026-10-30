@@ -80,7 +80,10 @@ export default function App() {
   const graph = replayGraph || data?.graph
   graphRef.current = graph
   const toggleCollapse = useCallback(id => setCollapsed(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n }), [])
-  const selectedNode = useMemo(() => graph?.nodes.find(n => n.id === selected) || null, [graph, selected])
+  // a compacted conversation is one node keyed by its first segment; a link to any later segment
+  // (#session:<tip id>, a log line, a delegation) resolves to that node
+  const resolved = (selected && graph?.aliases?.[selected]) || selected
+  const selectedNode = useMemo(() => graph?.nodes.find(n => n.id === resolved) || null, [graph, resolved])
   const stats = graph?.stats || {}
 
   return (
@@ -89,9 +92,9 @@ export default function App() {
               live={live} setLive={setLive} conn={conn} cost={data?.cost} theme={theme} setTheme={setTheme} notify={notify} setNotify={setNotify} />
       <div className="body">
         <div className="main">
-          <NowStrip now={data?.now} selected={selected} onSelect={navigate} />
+          <NowStrip now={data?.now} selected={resolved} onSelect={navigate} />
           <div className="graphwrap">
-            <GraphView graph={graph} view={view} windowSec={windowSec} selected={selected} onSelect={navigate}
+            <GraphView graph={graph} view={view} windowSec={windowSec} selected={resolved} onSelect={navigate}
                        search={search} collapsed={collapsed} toggleCollapse={toggleCollapse} hidden={hidden} recenterSignal={recenterSignal} band={band} onVisible={setVisible} spread={spread}
                        camRef={camRef} restore={restore} />
             <TimeAxis windowSec={windowSec} band={band} setBand={setBand} />

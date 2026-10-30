@@ -57,6 +57,54 @@ def test_status_checks(hermes_data):
     assert checks["errors"]["errors"] == 2
 
 
+def test_compression_lineage_is_one_node(hermes_data):
+    g = keryx.build_graph(24, None)
+    n = nodes_by_id(g)
+    assert "session:s-comp-tip" not in n                       # the continuation is folded into its root
+    ls = n["session:s-comp-root"]
+    assert ls["type"] == "session" and ls["status"] == "waiting"   # status comes from the tip
+    assert ls["segments"] == ["s-comp-root", "s-comp-tip"] and ls["compactions"] == 1 and ls["tip"] == "s-comp-tip"
+    assert ls["request"] == "start of a long chat"              # request from the root
+    assert ls["last_step"] == "Still here."                     # last step from the tip
+    assert ls["tool_calls"] == 1 and ls["user_messages"] == 3    # hidden row skipped; steer counts as a user turn
+    assert g["aliases"] == {"session:s-comp-tip": "session:s-comp-root"}
+    assert g["stats"]["compactions"] == 1
+
+
+def test_branch_is_a_session_linked_to_its_parent(hermes_data):
+    g = keryx.build_graph(24, None)
+    n = nodes_by_id(g)
+    assert n["session:s-branch"]["type"] == "session" and n["session:s-branch"]["fork"] == "branch"
+    link = next(l for l in g["links"] if l["target"] == "session:s-branch")
+    assert link["source"] == "session:s-comp-root" and link["kind"] == "branch"   # parent resolved to the lineage
+
+
+def test_lineage_helpers():
+    root = {"id": "r", "end_reason": "compression", "parent_session_id": None, "fork": None, "started_at": 1, "last_activity_at": 2, "ended_at": 2}
+    tip = {"id": "t", "end_reason": None, "parent_session_id": "r", "fork": None, "started_at": 2, "last_activity_at": 3, "ended_at": None}
+    fork = {"id": "f", "end_reason": None, "parent_session_id": "r", "fork": "delegate", "started_at": 2, "last_activity_at": 3, "ended_at": None}
+    logical, alias = keryx.logical_sessions([tip, root, fork])
+    by = {l["id"]: l for l in logical}
+    assert set(by) == {"r", "f"} and by["r"]["segments"] == ["r", "t"] and alias == {"r": "r", "t": "r", "f": "f"}
+    assert keryx.is_subagent(by["f"], {"r"}) is True and keryx.is_subagent(by["r"], {"r"}) is False
+
+
+def test_now_folds_lineages(hermes_data):
+    by = {r["id"]: r for r in keryx.build_now()["running"]}
+    assert "s-comp-tip" not in by and by["s-comp-root"]["compactions"] == 1 and by["s-comp-root"]["status"] == "waiting"
+
+
+def test_trace_spans_lineage_with_markers(hermes_data):
+    for sid in ("s-comp-root", "s-comp-tip"):          # any segment id resolves to the whole lineage
+        tr = keryx.build_trace(sid, None, 100)
+        assert tr["session"]["id"] == "s-comp-root" and tr["session"]["segments"] == ["s-comp-root", "s-comp-tip"]
+        kinds = [s["kind"] for s in tr["steps"]]
+        assert kinds == ["user", "tool_call", "compaction", "user", "event", "event", "assistant"]
+        events = [s for s in tr["steps"] if s["kind"] == "event"]
+        assert [e["name"] for e in events] == ["model_switch", "steer"]
+        assert "hidden" not in " ".join(s.get("text", "") for s in tr["steps"])
+
+
 def test_analytics_counts_live_rows(hermes_data):
     a = keryx.build_analytics(2)
     assert a["totals"]["tool_calls"] == 3                # s-running 2 + s-comp-root 1
