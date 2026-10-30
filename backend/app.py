@@ -69,7 +69,7 @@ USER_CLOSE_REASONS = {"cli_close", "tui_shutdown", "tui_close", "user_exit", "se
 # The session was compacted: Hermes ends it and continues the same conversation in a child session.
 COMPRESSION_REASON = "compression"
 
-app = FastAPI(title="Keryx", version="2.3")
+app = FastAPI(title="Keryx", version="2.4")
 
 
 def authorised(request: Request) -> bool:
@@ -1125,8 +1125,51 @@ def build_status() -> dict:
     check("sessions", "amber" if orphans else "green",
           f"{running} running, {waiting} waiting for you, {stale} stale, {orphans} orphaned (24h)")
 
+    # storage: how big Hermes' data has grown and whether the disk under it has room (hermes-webui's
+    # system panel shows disk use; the WAL size matters on its own: a WAL that keeps growing means
+    # no checkpoint is landing, which is how a state.db ends up unreadable after a crash)
+    st = storage_state()
+    if st["free"] is not None and (st["free"] < 1 << 30 or st["free_pct"] < 5):
+        check("storage", "red", f"{fmt_bytes(st['free'])} free on the data disk ({st['free_pct']}%)", **st)
+    elif st["wal"] > 256 << 20:
+        check("storage", "amber", f"WAL {fmt_bytes(st['wal'])} and growing: checkpoints are not landing", **st)
+    elif st["free"] is not None and st["free"] < 5 << 30:
+        check("storage", "amber", f"{fmt_bytes(st['free'])} free on the data disk", **st)
+    else:
+        check("storage", "green", f"state.db {fmt_bytes(st['db'])} · WAL {fmt_bytes(st['wal'])} · logs {fmt_bytes(st['logs'])}"
+              + (f" · {fmt_bytes(st['free'])} free" if st["free"] is not None else ""), **st)
+
     worst = "red" if any(c["level"] == "red" for c in checks) else "amber" if any(c["level"] == "amber" for c in checks) else "green"
     return {"generated_at": now, "level": worst, "checks": checks, "links": dashboard_links()}
+
+
+def storage_state() -> dict:
+    """Sizes of the Hermes data files Keryx reads and the free space on the disk that holds them."""
+    size = lambda p: p.stat().st_size if p.exists() else 0
+    logs = 0
+    try:
+        logs = sum(size(p) for p in (DATA / "logs").glob("*.log*"))
+    except OSError:
+        pass
+    free = total = None
+    try:
+        import shutil
+        du = shutil.disk_usage(DATA)
+        free, total = du.free, du.total
+    except OSError:
+        pass
+    return {"db": size(DATA / "state.db"), "wal": size(DATA / "state.db-wal"), "logs": logs,
+            "free": free, "total": total, "free_pct": round(100 * free / total, 1) if free is not None and total else None}
+
+
+def fmt_bytes(n: Optional[int]) -> str:
+    if n is None:
+        return "?"
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if n < 1024 or unit == "TB":
+            return f"{n:.0f} {unit}" if unit in ("B", "KB") else f"{n:.1f} {unit}"
+        n /= 1024
+    return str(n)
 
 
 def dashboard_links() -> Optional[dict]:

@@ -292,8 +292,10 @@ footer .wrap > div { display: flex; flex-wrap: wrap; gap: 16px; align-items: cen
           <li>Tokens in / out, cache reads and hit rate, reasoning tokens, API calls, and the cost with its basis (provider-reported or estimated).</li>
           <li>Working directory and git branch, profile, handoff state.</li>
           <li>The agent's <strong>plan</strong> as a checklist (done, in progress, pending, cancelled).</li>
-          <li><strong>Files touched</strong>: writes, patches, reads and searches, most recent first.</li>
-          <li>The <strong>trace</strong>: every user turn, reply, tool call with arguments, result and duration, failures marked, plus Hermes' own events (model switch, steer, auto-continue, delegation results).</li>
+          <li><strong>Files touched</strong>: writes, patches, reads and searches, most recent first, with lines added and removed.</li>
+          <li>The <strong>reading view</strong>: the conversation as turns (your question → a collapsible "steps · N" block → Hermes' reply), an <strong>outline</strong> of every question to jump to, an <strong>all / chat / changes</strong> filter, <strong>find in session</strong>, and <strong>copy or download as Markdown</strong>.</li>
+          <li>Every tool call with a kind glyph, a one-line title (the command, path, query or goal), duration, exit code, output size and <code>+added −removed</code> for file edits; Hermes' own events (model switch, steer, auto-continue, delegation results) in place.</li>
+          <li>The command that resumes the conversation in a terminal (<code>hermes -r …</code>), one click to copy.</li>
         </ul>
       </div>
       <div class="card">
@@ -308,9 +310,17 @@ footer .wrap > div { display: flex; flex-wrap: wrap; gap: 16px; align-items: cen
       <div class="card">
         <h3>Sessions, analytics, logs</h3>
         <ul>
-          <li><strong>Sessions</strong> grouped by platform, live ones pinned, filtered by the search box (<kbd>⌘K</kbd>).</li>
-          <li><strong>Analytics</strong>: daily trend of sessions, tool calls, failures and tokens over 7 to 90 days; model share; busiest day.</li>
+          <li><strong>Sessions</strong> grouped by platform, by time (today / yesterday / this week / earlier) or by project; <code>#tags</code> in titles become filter chips; ☆ pins a session to the top; live ones always first.</li>
+          <li>The search box (<kbd>⌘K</kbd>) matches titles and digests, and from three characters also searches <strong>inside the conversations</strong> through Hermes' own full-text index, with snippets.</li>
+          <li><strong>Analytics</strong>: daily trend of sessions, tool calls, failures, tokens and cost over 7 to 365 days; a <strong>year heatmap</strong> with streak; model share; Hermes' <strong>skill ledger</strong> (uses, views, last use).</li>
           <li><strong>Logs</strong>: filterable tails of every log file Hermes writes, by level and keyword. A line logged inside a session links to that session.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Memory, opt-in</h3>
+        <ul>
+          <li>Hermes keeps two small files of notes between sessions: <code>MEMORY.md</code> (your environment and conventions) and <code>USER.md</code> (your preferences). A read-only tab shows them as entries with their character budgets, Hermes' on/off switches and anything Hermes blocked as prompt injection.</li>
+          <li>Personal data, so it stays off until you set <code>KERYX_SHOW_MEMORY=1</code>; the diagnostics download never includes it.</li>
         </ul>
       </div>
       <div class="card">
@@ -325,7 +335,7 @@ footer .wrap > div { display: flex; flex-wrap: wrap; gap: 16px; align-items: cen
         <h3>Navigation</h3>
         <ul>
           <li>Every selection is a browser history entry that remembers the selection, the tab and the camera pose. <kbd>Backspace</kbd> goes back, <kbd>Shift</kbd>+<kbd>Backspace</kbd> forward; <kbd>Alt</kbd>+<kbd>←</kbd> and trackpad swipes work too.</li>
-          <li>The URL hash (<code>#session:…</code>, <code>#cron:…</code>) is a deep link you can share, or scan from the QR popover to open on your phone.</li>
+          <li>The URL hash (<code>#session:…</code>, <code>#cron:…</code>) is a deep link you can share, or scan from the QR popover to open on your phone, where "add to home screen" keeps Keryx as an app.</li>
           <li>Dark and light themes.</li>
         </ul>
       </div>
@@ -404,13 +414,14 @@ cd keryx
         <tr><td><code>GRAPH_PORT</code></td><td><code>9120</code></td><td>port to listen on</td></tr>
         <tr><td><code>HERMES_DASHBOARD_URL</code></td><td>unset</td><td>where the Hermes dashboard (port 9119) is reachable from your browser; adds links on sessions, cron jobs and logs</td></tr>
         <tr><td><code>KERYX_TOKEN</code></td><td>unset</td><td>optional shared secret; every <code>/api</code> route except <code>/api/health</code> then needs it as a bearer header, cookie or <code>?token=</code></td></tr>
+        <tr><td><code>KERYX_SHOW_MEMORY</code></td><td>unset</td><td><code>1</code> adds the read-only memory tab (Hermes' <code>MEMORY.md</code> and <code>USER.md</code>); off by default because these are personal notes</td></tr>
         <tr><td><code>ACTIVE_WINDOW</code></td><td><code>300</code></td><td>seconds; a session touched this recently is "active" and its links carry particles</td></tr>
         <tr><td><code>STALE_AFTER</code></td><td><code>1800</code></td><td>seconds; a session mid-turn but idle for this long is shown as stale</td></tr>
         <tr><td><code>CONTEXT_LENGTH</code></td><td><code>400000</code></td><td>assumed context window for the gauge when the model family is not recognised (Hermes does not record it; such gauges are marked <code>~</code>)</td></tr>
       </tbody>
     </table></div>
     <h3>What Keryx reads</h3>
-    <p class="prose muted">From the Hermes data directory, read-only: <code>state.db</code> and its WAL, <code>cron/jobs.json</code>, <code>cron/executions.db</code>, <code>cron/incidents.db</code>, <code>cron/deliveries.db</code>, <code>cron/ticker_heartbeat</code> and <code>logs/*.log</code>. Files an older Hermes does not write are skipped and columns are feature-detected, so Keryx keeps working across Hermes versions. The volume is mounted read-write only because SQLite in WAL mode needs to create its <code>-shm</code> file; Keryx itself never writes.</p>
+    <p class="prose muted">From the Hermes data directory, read-only: <code>state.db</code> and its WAL (including Hermes' full-text index), <code>cron/jobs.json</code>, <code>cron/executions.db</code>, <code>cron/incidents.db</code>, <code>cron/deliveries.db</code>, <code>cron/ticker_heartbeat</code>, <code>logs/*.log</code>, the skill ledger <code>skills/.usage.json</code> and, only when asked, <code>memories/</code> and the memory section of <code>config.yaml</code>. Files an older Hermes does not write are skipped and columns are feature-detected, so Keryx keeps working across Hermes versions. The volume is mounted read-write only because SQLite in WAL mode needs to create its <code>-shm</code> file; Keryx itself never writes.</p>
   </div>
 </section>
 
@@ -429,8 +440,10 @@ cd keryx
         <tr><td><code>GET /api/status</code></td><td>health checks and dashboard links</td></tr>
         <tr><td><code>GET /api/cost?hours=24</code></td><td>tokens and cost per model with a <code>cost_basis</code> (actual, estimated, included, unknown)</td></tr>
         <tr><td><code>GET /api/tasks</code></td><td>delegations, cron jobs with history and incidents, scheduler heartbeat, incidents, delivery queue</td></tr>
-        <tr><td><code>GET /api/analytics?days=30</code></td><td>daily trend, model share, totals</td></tr>
-        <tr><td><code>GET /api/session/{id}/trace</code></td><td>ordered steps across every segment of a compacted conversation</td></tr>
+        <tr><td><code>GET /api/analytics?days=30</code></td><td>daily trend with cost, a year heatmap, model share, skill ledger, totals</td></tr>
+        <tr><td><code>GET /api/search?q=…</code></td><td>sessions whose conversation mentions the text, with snippets (Hermes' FTS5 index)</td></tr>
+        <tr><td><code>GET /api/memory</code></td><td>memory entries and budgets, only with <code>KERYX_SHOW_MEMORY=1</code></td></tr>
+        <tr><td><code>GET /api/session/{id}/trace</code></td><td>ordered steps across every segment of a compacted conversation; tool calls carry kind, title, diff summary, exit code</td></tr>
         <tr><td><code>GET /api/session/{id}/todo</code></td><td>the agent's current plan</td></tr>
         <tr><td><code>GET /api/logs?file=…&amp;level=…&amp;q=…</code></td><td>log entries with level, logger and session id</td></tr>
         <tr><td><code>GET /api/diagnostics</code></td><td>redacted snapshot for bug reports</td></tr>

@@ -55,6 +55,7 @@ wait_healthy() {
     if curl -fs "http://127.0.0.1:$PORT/api/health" 2>/dev/null | grep -q '"state_db":true'; then
       say "Keryx is up: http://localhost:$PORT/"
       [ -n "${HERMES_DASHBOARD_URL:-}" ] || echo "    tip: HERMES_DASHBOARD_URL=http://<host>:9119 adds links into the Hermes dashboard"
+      [ -n "${KERYX_SHOW_MEMORY:-}" ] || echo "    tip: KERYX_SHOW_MEMORY=1 adds a read-only tab with Hermes' MEMORY.md and USER.md"
       return 0
     fi
     sleep 1

@@ -75,13 +75,15 @@ docker compose pull keryx && docker compose up -d keryx      # Docker
 
 | Area | What it shows |
 |---|---|
-| Health header | gateway heartbeat, Telegram connection, cron scheduler (incidents, missed slots, undelivered results), error log, session states. Green / amber / red per check; the worst one drives the title dot. Token totals with the spend, marked `~` when estimated. |
+| Health header | gateway heartbeat, Telegram connection, cron scheduler (incidents, missed slots, undelivered results), error log, session states, storage (size of `state.db`, its WAL and the logs, free space on the data disk). Green / amber / red per check; the worst one drives the title dot. Token totals with the spend, marked `~` when estimated. |
 | Right now | every open session: the user's request, the latest step, the agent's plan progress, elapsed and idle time, calls per minute, context usage, git branch, subagents. |
 | Graph | Hermes at the centre, the platforms it talks on around it, each session in its platform's wedge with its tools clustered around it, subagents in orbit, models on a shelf, cron jobs below. 3D or 2D. |
-| Side panel | **overview** (health, recent file changes, tokens by model, legend), **sessions** (grouped by platform, live ones pinned), **tasks** (delegations board, scheduled jobs with run history and missed slots, Hermes' cron incidents and delivery queue), **analytics** (daily trend, model share), **logs** (filterable tails of every log file Hermes writes; lines logged inside a session link to it). Selecting a node shows its details, context gauge, the agent's plan (its `todo_list`), files touched and the turn-by-turn trace with tool arguments and results. |
+| Side panel | **overview** (health, recent file changes with lines added and removed, tokens by model, legend), **sessions** (grouped by platform, time or project; `#tags` from titles as filter chips; ☆ pins; the search box also looks inside conversations through Hermes' full-text index), **tasks** (delegations board, scheduled jobs with run history and missed slots, Hermes' cron incidents and delivery queue), **analytics** (daily trend, a year heatmap, per-day cost, model share, Hermes' skill ledger), **logs** (filterable tails of every log file Hermes writes; lines logged inside a session link to it), **memory** (Hermes' `MEMORY.md` and `USER.md`, read-only, opt-in). Selecting a node shows its details, context gauge, the agent's plan (its `todo_list`), files touched, the command to resume the conversation in a terminal, and the session as a reading view (below). |
 | Notifications | in-app toasts, and desktop notifications if you allow them, when Hermes replies and waits for you, a session fails or is orphaned, a delegation finishes, a cron job fails or misses its trigger. |
 
 **Compacted conversations.** When Hermes compacts a long chat it ends the session and continues in a child session. Keryx folds that lineage into one node: it starts when the first segment started, takes its colour from the latest segment, and its trace shows every segment with a ⟲ marker where the context was compacted. The node keeps the first segment's id, so a `#session:…` link to any segment opens the same node. Branches the user made (`/branch`) stay separate sessions joined to their origin by a teal link; delegated subagents keep their purple link.
+
+**Reading a session.** The trace is shown as turns: your question, a collapsible **steps · N** block (every tool call with a kind glyph, a one-line title such as the command or path, duration, exit code, and `+added −removed` for file edits; Hermes' own events; intermediate notes), then Hermes' reply. An **outline** lists every question with its step count, failures and edits and jumps to it. **all / chat / changes** shows the whole thing, the conversation alone, or only the file edits. **find in session** dims everything that does not match. **⎘ md** copies the session as Markdown and **⤓** downloads it. Busy turns start collapsed; failed or running ones start open.
 
 **Session colours:** **running**, **waiting for you** (open, last message is Hermes' reply: the next move is yours), **stale** (mid-turn and idle for 30 min), **ended**, **closed by user**, **orphaned** (killed by a gateway restart), **failed** (ended with tool errors). Tool failures come from the JSON result Hermes stores, not keyword matching.
 
@@ -105,7 +107,7 @@ docker compose pull keryx && docker compose up -d keryx      # Docker
 | `⌘K` / `Ctrl+K` | focus search and open the sessions tab |
 | `Esc` | clear the selection |
 
-**Other buttons.** 🔔 enables desktop notifications. 📱 shows a QR code of the current page for your phone. ☾/☀ toggles the theme. ⤓ diagnostics (overview tab) downloads a redacted snapshot to attach to a bug report.
+**Other buttons.** 🔔 enables desktop notifications. 📱 shows a QR code of the current page for your phone; Keryx ships a web-app manifest, so "add to home screen" keeps it as an app there. ☾/☀ toggles the theme. ⤓ diagnostics (overview tab) downloads a redacted snapshot to attach to a bug report.
 
 ## Configuration
 
@@ -126,7 +128,7 @@ Colours and labels live in `frontend/src/util.js`; rebuild after changing them.
 
 ## What Keryx reads
 
-Everything comes from the Hermes data directory, read-only: `state.db` (and its WAL), `cron/jobs.json`, `cron/executions.db`, `cron/incidents.db`, `cron/deliveries.db`, `cron/ticker_heartbeat` and `logs/*.log`. Files that an older Hermes does not write are skipped, and columns are feature-detected, so Keryx works across Hermes versions. The volume is mounted read-write only because SQLite in WAL mode must be able to create its `-shm` file; Keryx itself never writes.
+Everything comes from the Hermes data directory, read-only: `state.db` (and its WAL, including Hermes' full-text index `messages_fts` when present), `cron/jobs.json`, `cron/executions.db`, `cron/incidents.db`, `cron/deliveries.db`, `cron/ticker_heartbeat`, `logs/*.log`, `skills/.usage.json` (the skill ledger) and, only with `KERYX_SHOW_MEMORY=1`, `memories/MEMORY.md`, `memories/USER.md` and the `memory:` section of `config.yaml`. Files that an older Hermes does not write are skipped, and columns are feature-detected, so Keryx works across Hermes versions. The volume is mounted read-write only because SQLite in WAL mode must be able to create its `-shm` file; Keryx itself never writes.
 
 ## Security
 
@@ -147,6 +149,9 @@ The only endpoint designed to be shared is `/api/diagnostics`, which is redacted
 | Health says `no heartbeat` | Hermes' gateway is not running, or it is an old Hermes without the `gateway_heartbeats` table. |
 | Context gauge shows `~` | Hermes does not record the model's context size; set `CONTEXT_LENGTH` to your model's window. |
 | The page asks for a token | `KERYX_TOKEN` is set on the server; paste it once. |
+| Sessions tab says `slow search (no FTS index)` | your Hermes predates the `messages_fts` index; Keryx falls back to a `LIKE` scan, which works but is slower on a big `state.db`. |
+| Memory tab says the panel is off | expected: set `KERYX_SHOW_MEMORY=1` to show Hermes' memory files. |
+| Health shows `storage` amber with a large WAL | Hermes' SQLite checkpoints are not landing (usually a reader holding the database open for a long time); restart Hermes' gateway and the WAL folds back into `state.db`. |
 
 Attach `/api/diagnostics` (the ⤓ link in the overview tab) to a bug report; it contains no message content.
 
@@ -187,8 +192,10 @@ After a change, rebuild the front end and rebuild the container (`docker compose
 - `GET /api/status`  health checks and dashboard links
 - `GET /api/cost?hours=24`  tokens/cost per model; `cost_basis` says whether the money is provider-reported (`actual`), priced from a table (`estimated`), `included` in a subscription or `unknown`
 - `GET /api/tasks`  delegations (goals, children, duration, delivery), cron jobs (next run, history, missed slots, open incidents), scheduler heartbeat, incidents, delivery queue
-- `GET /api/analytics?days=30`  daily trend, model share, totals
-- `GET /api/session/{id}/trace?limit=300[&tool=name]`  ordered steps (user / assistant / tool call with args + result / event / compaction), across every segment of a compacted conversation
+- `GET /api/analytics?days=30`  daily trend with per-day cost, a 53-week `heatmap`, model share, Hermes' skill ledger (`skills`), totals
+- `GET /api/search?q=text&limit=30`  sessions whose conversation mentions the text (Hermes' FTS5 index, `LIKE` fallback), with snippets; segments of a compacted conversation fold into one hit
+- `GET /api/memory`  `MEMORY.md` / `USER.md` entries with character budgets; `enabled: false` unless `KERYX_SHOW_MEMORY=1`
+- `GET /api/session/{id}/trace?limit=300[&tool=name]`  ordered steps (user / assistant / tool call with args + result / event / compaction), across every segment of a compacted conversation; tool calls carry `tool_kind`, `title`, `diff` (`added`/`removed` lines for `write_file` and `patch`), `exit_code`, `lines`
 - `GET /api/session/{id}/todo`  the agent's current plan: the newest `todo_list` result in the conversation
 - `GET /api/logs?file=<stem of any logs/*.log>&level=WARNING&q=text&lines=200`  entries carry the session id when Hermes logged the line inside a session
 - `GET /api/diagnostics`  redacted JSON snapshot for bug reports
