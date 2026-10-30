@@ -66,7 +66,7 @@ def test_compression_lineage_is_one_node(hermes_data):
     assert ls["segments"] == ["s-comp-root", "s-comp-tip"] and ls["compactions"] == 1 and ls["tip"] == "s-comp-tip"
     assert ls["request"] == "start of a long chat"              # request from the root
     assert ls["last_step"] == "Still here."                     # last step from the tip
-    assert ls["tool_calls"] == 1 and ls["user_messages"] == 3    # hidden row skipped; steer counts as a user turn
+    assert ls["tool_calls"] == 2 and ls["user_messages"] == 3    # web_search + patch; hidden row skipped; steer counts as a user turn
     assert g["aliases"] == {"session:s-comp-tip": "session:s-comp-root"}
     assert g["stats"]["compactions"] == 1
 
@@ -99,7 +99,7 @@ def test_trace_spans_lineage_with_markers(hermes_data):
         tr = keryx.build_trace(sid, None, 100)
         assert tr["session"]["id"] == "s-comp-root" and tr["session"]["segments"] == ["s-comp-root", "s-comp-tip"]
         kinds = [s["kind"] for s in tr["steps"]]
-        assert kinds == ["user", "tool_call", "compaction", "user", "event", "event", "assistant"]
+        assert kinds == ["user", "tool_call", "compaction", "user", "event", "event", "tool_call", "assistant"]
         events = [s for s in tr["steps"] if s["kind"] == "event"]
         assert [e["name"] for e in events] == ["model_switch", "steer"]
         assert "hidden" not in " ".join(s.get("text", "") for s in tr["steps"])
@@ -141,7 +141,7 @@ def test_todo_endpoint_and_parser(hermes_data):
 
 def test_analytics_counts_live_rows(hermes_data):
     a = keryx.build_analytics(2)
-    assert a["totals"]["tool_calls"] == 5                # s-running 4 + s-comp-root 1
+    assert a["totals"]["tool_calls"] == 6                # s-running 4 + s-comp-root 1 + s-comp-tip 1
     assert a["totals"]["tool_errors"] == 1
 
 
@@ -168,3 +168,35 @@ def test_hidden_rows_sql_degrades_on_old_schemas(tmp_path):
     assert keryx.hidden_rows_sql(db) == " and coalesce(display_kind, '') <> 'hidden'"
     db.execute("alter table messages add column display_metadata text")
     assert "model_only" in keryx.hidden_rows_sql(db)
+
+
+def test_trace_steps_carry_kind_title_and_diff(hermes_data):
+    tr = keryx.build_trace("s-running", None, 100)
+    calls = {s["name"]: s for s in tr["steps"] if s["kind"] == "tool_call"}
+    assert calls["terminal"]["tool_kind"] == "shell" and calls["terminal"]["title"] == "make"
+    assert calls["terminal"]["exit_code"] == 0 and calls["terminal"]["lines"] == 1
+    assert calls["write_file"]["diff"] == {"op": "write", "path": "src/x.py", "added": 2, "removed": 0}
+    assert calls["write_file"]["exit_code"] == 1 and calls["write_file"]["failed"] is True
+    assert calls["todo_list"]["tool_kind"] == "todo"
+    tip = keryx.build_trace("s-comp-tip", None, 100)
+    patch = next(s for s in tip["steps"] if s.get("name") == "patch")
+    assert patch["tool_kind"] == "edit" and patch["title"] == "src/y.py"
+    assert patch["diff"] == {"op": "update", "path": "src/y.py", "added": 2, "removed": 1}
+    assert tr["session"]["cwd"] == "/work/repo" and tr["session"]["git_branch"] == "main"
+
+
+def test_step_titles_and_kinds():
+    assert keryx.tool_kind("mcp_github_list_issues") == "mcp" and keryx.tool_kind("nonsense") == "other"
+    assert keryx.step_title("terminal", {"command": "  \ncd x && make\nmake test"}) == "cd x && make"
+    assert keryx.step_title("search_files", {"pattern": "TODO", "path": "src"}) == "TODO in src"
+    assert keryx.step_title("web_extract", {"urls": ["https://a.example/x"]}) == "https://a.example/x"
+    assert keryx.step_title("delegate_task", {"tasks": [{"goal": "check tests"}, {"goal": "lint"}]}) == "check tests (+1 more)"
+    assert keryx.step_title("clarify", {"questions": [{"question": "which branch?"}]}) == "which branch?"
+    assert keryx.step_title("memory", {"action": "add", "target": "user"}) == "add user"
+    assert keryx.diff_summary("patch", {"path": "f", "old_string": "", "new_string": "a\nb"}) == {"op": "update", "path": "f", "added": 2, "removed": 0}
+    assert keryx.diff_summary("read_file", {"path": "f"}) is None
+
+
+def test_files_carry_line_counts(hermes_data):
+    n = nodes_by_id(keryx.build_graph(24, None))["session:s-running"]
+    assert n["files"] == [{"path": "src/x.py", "op": "write", "added": 2, "removed": 0, "ts": n["files"][0]["ts"]}]

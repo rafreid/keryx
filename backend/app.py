@@ -16,6 +16,7 @@ cron store and gateway logs, and exposes:
 from __future__ import annotations
 
 import asyncio
+import difflib
 import hmac
 import json
 import math
@@ -327,7 +328,11 @@ def tool_call_files(tool_calls_json: Any) -> list[dict]:
                 args = {}
         path = args.get("path") or args.get("file_path") or args.get("filename") or args.get("directory")
         if path:
-            out.append({"path": str(path), "op": op})
+            f = {"path": str(path), "op": op}
+            d = diff_summary(name, args) if op in ("write", "patch") else None
+            if d:
+                f["added"], f["removed"] = d["added"], d["removed"]
+            out.append(f)
     return out
 
 
@@ -337,6 +342,108 @@ def tool_call_names(tool_calls_json: Any) -> list[str]:
         return [c.get("function", {}).get("name") or c.get("name") or "?" for c in calls]
     except Exception:
         return []
+
+
+# What a Hermes tool does, by name, for glyphs and the Changes filter of the reading view. Unknown
+# names fall back to "other"; MCP tools (Hermes registers them with the server name prefixed) to "mcp".
+TOOL_KINDS = {
+    "terminal": "shell", "execute_code": "shell", "process_manage": "shell", "read_terminal": "shell", "close_terminal": "shell",
+    "read_file": "read", "skill_view": "read", "read_window_below": "read",
+    "search_files": "search", "session_search": "search", "skills_list": "search",
+    "write_file": "write", "patch": "edit",
+    "web_search": "web", "web_extract": "web", "x_search": "web",
+    "browser_exec": "browser", "browser_cdp": "browser", "browser_dialog": "browser", "browser_vault": "browser",
+    "delegate_task": "agent", "clarify": "ask", "todo_list": "todo", "todo": "todo", "memory": "memory",
+    "vision_analyze": "media", "video_analyze": "media", "image_generate": "media", "video_generate": "media", "text_to_speech": "media",
+    "cronjob_manage": "cron", "skill_manage": "skill", "send_message": "message", "react_to_message": "message",
+}
+
+
+def tool_kind(name: Optional[str]) -> str:
+    n = name or ""
+    if n in TOOL_KINDS:
+        return TOOL_KINDS[n]
+    return "mcp" if n.startswith("mcp_") or "__" in n else "other"
+
+
+def parse_args(raw: Any) -> dict:
+    if isinstance(raw, dict):
+        return raw
+    try:
+        d = json.loads(raw) if raw else {}
+        return d if isinstance(d, dict) else {}
+    except Exception:
+        return {}
+
+
+def _first_line(text: Any, n: int = 120) -> str:
+    for line in str(text or "").splitlines():
+        if line.strip():
+            return short(line, n)
+    return ""
+
+
+def step_title(name: str, args: dict) -> str:
+    """One line that says what a tool call did: the command, the path, the query, the goal…
+    (cc-switch's reading view distils every step the same way)."""
+    kind = tool_kind(name)
+    if kind == "shell":
+        return _first_line(args.get("command") or args.get("code") or args.get("action") or "")
+    if kind in ("read", "write", "edit", "search"):
+        path = args.get("path") or args.get("file_path") or args.get("directory") or ""
+        pat = args.get("pattern") or args.get("query")
+        if pat and path:
+            return short(f"{pat} in {path}", 120)
+        return short(pat or path or args.get("name") or "", 120)
+    if kind in ("web", "browser"):
+        urls = args.get("urls")
+        return short(args.get("query") or args.get("url") or (urls[0] if isinstance(urls, list) and urls else "")
+                     or args.get("action") or "", 120)
+    if kind == "agent":
+        tasks = args.get("tasks")
+        goals = [t.get("goal") for t in tasks if isinstance(t, dict) and t.get("goal")] if isinstance(tasks, list) else []
+        goal = goals[0] if goals else args.get("goal") or ""
+        more = f" (+{len(goals) - 1} more)" if len(goals) > 1 else ""
+        return short(goal, 110) + more
+    if kind == "ask":
+        qs = args.get("questions")
+        q = qs[0] if isinstance(qs, list) and qs else args.get("question") or ""
+        return short(q.get("question") if isinstance(q, dict) else q, 120)
+    if kind == "todo":
+        todos = args.get("todos")
+        return f"{len(todos)} items" if isinstance(todos, list) else ""
+    if kind == "memory":
+        return short(" ".join(str(args.get(k)) for k in ("action", "target") if args.get(k)), 120)
+    for v in args.values():                       # anything else: the first string argument
+        if isinstance(v, str) and v.strip():
+            return _first_line(v)
+    return ""
+
+
+def diff_summary(name: str, args: dict) -> Optional[dict]:
+    """Lines added/removed by a write_file or patch call, from its arguments: write_file carries the
+    whole file, patch an old_string → new_string pair (counted with difflib, so a one-word edit in a
+    ten-line block is 1/1, not 10/10)."""
+    kind = tool_kind(name)
+    path = args.get("path") or args.get("file_path")
+    if kind == "write":
+        content = args.get("content")
+        if not isinstance(content, str) or not path:
+            return None
+        return {"op": "write", "path": str(path), "added": len(content.splitlines()), "removed": 0}
+    if kind == "edit":
+        old, new = args.get("old_string"), args.get("new_string")
+        if not isinstance(new, str) or not path:
+            return None
+        a, b = str(old or "").splitlines(), new.splitlines()
+        added = removed = 0
+        for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, a, b, autojunk=False).get_opcodes():
+            if tag in ("replace", "delete"):
+                removed += i2 - i1
+            if tag in ("replace", "insert"):
+                added += j2 - j1
+        return {"op": "update", "path": str(path), "added": added, "removed": removed}
+    return None
 
 
 def tool_result_failed(content: Any) -> bool:
@@ -1379,6 +1486,15 @@ def _result_text(content: Any) -> str:
     return str(d)
 
 
+def _exit_code(content: Any) -> Optional[int]:
+    try:
+        d = json.loads(content) if isinstance(content, str) else content
+        ec = d.get("exit_code") if isinstance(d, dict) else None
+        return ec if isinstance(ec, int) else None
+    except Exception:
+        return None
+
+
 def build_trace(sid: str, tool: Optional[str], limit: int) -> dict:
     db = STATE.get()
     if db is None:
@@ -1428,9 +1544,13 @@ def build_trace(sid: str, tool: Optional[str], limit: int) -> dict:
                 calls = []
             for c in calls:
                 fn = c.get("function", {}) if isinstance(c, dict) else {}
-                step = {"kind": "tool_call", "ts": t, "name": fn.get("name") or c.get("name") or "?",
-                        "args": short(fn.get("arguments") or "", 600), "id": c.get("call_id") or c.get("id"),
-                        "result": None, "failed": None, "duration": None}
+                name = fn.get("name") or c.get("name") or "?"
+                raw_args = fn.get("arguments") or c.get("arguments") or ""
+                args = parse_args(raw_args)
+                step = {"kind": "tool_call", "ts": t, "name": name, "tool_kind": tool_kind(name),
+                        "title": step_title(name, args), "diff": diff_summary(name, args),
+                        "args": short(raw_args if isinstance(raw_args, str) else json.dumps(raw_args), 600),
+                        "id": c.get("call_id") or c.get("id"), "result": None, "failed": None, "duration": None}
                 steps.append(step)
                 if step["id"]:
                     pending[step["id"]] = step
@@ -1439,13 +1559,16 @@ def build_trace(sid: str, tool: Optional[str], limit: int) -> dict:
         elif role == "tool":
             step = pending.pop(r["tool_call_id"], None) if r["tool_call_id"] else None
             failed = tool_result_failed(r["content"])
-            res = short(_result_text(r["content"]), 700)
+            full = _result_text(r["content"])
+            res = short(full, 700)
+            meta = {"exit_code": _exit_code(r["content"]), "lines": len(full.splitlines()), "truncated": len(full) > 700}
             if step:
                 step.update(result=res, failed=failed, duration=max(0.0, t - step["ts"]), result_ts=t,
-                            name=step["name"] or r["tool_name"])
+                            name=step["name"] or r["tool_name"], **meta)
             else:
-                steps.append({"kind": "tool_call", "ts": t, "name": r["tool_name"] or "tool", "args": "", "result": res,
-                              "failed": failed, "duration": None})
+                name = r["tool_name"] or "tool"
+                steps.append({"kind": "tool_call", "ts": t, "name": name, "tool_kind": tool_kind(name), "title": "",
+                              "diff": None, "args": "", "result": res, "failed": failed, "duration": None, **meta})
     if tool:
         steps = [st for st in steps if st["kind"] == "tool_call" and st["name"] == tool]
     total = len(steps)
@@ -1453,7 +1576,8 @@ def build_trace(sid: str, tool: Optional[str], limit: int) -> dict:
     return {"session": {"id": s["id"], "title": s.get("title"), "source": s.get("source"),
                         "model": s.get("model"), "started": s["started_at"], "ended": s["ended_at"],
                         "end_reason": s.get("end_reason"), "messages": s.get("message_count"),
-                        "segments": segs, "compactions": s["compactions"], "tip": s["tip_id"]},
+                        "segments": segs, "compactions": s["compactions"], "tip": s["tip_id"],
+                        "cwd": s.get("cwd"), "git_branch": s.get("git_branch")},
             "usage": list(usage.values()), "steps": steps[-limit:], "total": total, "truncated": total > limit}
 
 

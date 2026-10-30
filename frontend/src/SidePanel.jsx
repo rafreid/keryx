@@ -58,14 +58,15 @@ function Files({ files, limit = 14 }) {
   const seen = new Map()
   for (const f of [...files].reverse()) {
     const cur = seen.get(f.path)
-    if (!cur) seen.set(f.path, { ...f, n: 1, ops: new Set([f.op]) })
-    else { cur.n++; cur.ops.add(f.op) }
+    if (!cur) seen.set(f.path, { ...f, n: 1, ops: new Set([f.op]), added: f.added || 0, removed: f.removed || 0 })
+    else { cur.n++; cur.ops.add(f.op); cur.added += f.added || 0; cur.removed += f.removed || 0 }
   }
   const rows = [...seen.values()].slice(0, limit)
   return (
     <div className="files">
       {rows.map(f => <div key={f.path} className={`file ${f.ops.has('write') || f.ops.has('patch') ? 'changed' : ''}`} title={`${[...f.ops].join(', ')} · ${f.n}× · ${fmtT(f.ts)}`}>
-        <span className="op">{[...f.ops].map(o => OP[o]).join('')}</span><span className="path">{f.path}</span><span className="small">{ago(f.ts)}</span>
+        <span className="op">{[...f.ops].map(o => OP[o]).join('')}</span><span className="path">{f.path}</span>
+        <span className="small">{f.added || f.removed ? <span className="pm"><span className="add">+{f.added}</span> <span className="del">−{f.removed}</span> </span> : null}{ago(f.ts)}</span>
       </div>)}
       {seen.size > limit && <div className="small">… {seen.size - limit} more</div>}
     </div>
@@ -171,7 +172,8 @@ function Overview({ cost, status, graph, hidden, toggleHidden, showAll, onSelect
       </Section>
       {changes.length > 0 && <Section id="files" title="Recent file changes" summary={`${changes.length}`}>
         <div className="files">{changes.map(f => <div key={f.path} className="file changed" title={`${f.label} · ${fmtT(f.ts)}`}>
-          <span className="op">{OP[f.op]}</span><a className="path" href="#" onClick={e => { e.preventDefault(); onSelect(f.node) }}>{f.path}</a><span className="small">{ago(f.ts)}</span>
+          <span className="op">{OP[f.op]}</span><a className="path" href="#" onClick={e => { e.preventDefault(); onSelect(f.node) }}>{f.path}</a>
+          <span className="small">{f.added || f.removed ? <span className="pm"><span className="add">+{f.added}</span> <span className="del">−{f.removed}</span> </span> : null}{ago(f.ts)}</span>
         </div>)}</div></Section>}
       <Section id="tokens" title="Tokens by model" summary={cost?.totals ? `${num(cost.totals.input)} in · ${num(cost.totals.output)} out` : ''}>
       <table className="cost"><thead><tr><td>model</td><td>in</td><td>out</td><td>cache</td><td>calls</td></tr></thead><tbody>
