@@ -245,6 +245,11 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
     if (view === '3d') {
       // frame the whole structure: platform ring + session ring + recency depth + model shelf
       const span = Math.max(...data.nodes.map(n => Math.hypot(n.x || 0, n.y || 0, n.z || 0)), LAYOUT.sessionRadius + 60)
+      // trackball controls let a drag roll the camera; put "up" back to +y so the picture comes back
+      // exactly as on first load: floor flat, hub centred, time axis on the left
+      const cam = fg.camera(), ctl = fg.controls()
+      if (cam) cam.up.set(0, 1, 0)
+      if (ctl?.target) ctl.target.set(0, -15, 0)
       fg.cameraPosition({ x: 0, y: span * 1.05, z: span * 1.75 }, { x: 0, y: -15, z: 0 }, ms)
     } else {
       fg.zoomToFit(ms, 50)
