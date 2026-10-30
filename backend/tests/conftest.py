@@ -122,8 +122,15 @@ def write_state_db(path: Path) -> None:
     msg("s-comp-root", "assistant", None, NOW - 10 * H + 5, tool_calls=call("web_search", {"q": "x"}, "c9"), finish_reason="tool_calls")
     msg("s-comp-root", "tool", tool_result("results"), NOW - 10 * H + 9, tool_name="web_search", tool_call_id="c9")
     session("s-comp-tip", "telegram", NOW - 8 * H, parent="s-comp-root", last=NOW - 20 * 60, title="long chat")
-    msg("s-comp-tip", "user", "and it continues", NOW - 8 * H)
+    msg("s-comp-tip", "user", "[compressed summary for the model]", NOW - 8 * H, display_kind="hidden")
+    msg("s-comp-tip", "user", "and it continues", NOW - 8 * H + 1)
+    msg("s-comp-tip", "user", "[model switched to gpt-5]", NOW - 8 * H + 2, display_kind="model_switch")
+    msg("s-comp-tip", "user", "focus on the tests", NOW - 8 * H + 3, display_kind="steer")
     msg("s-comp-tip", "assistant", "Still here.", NOW - 20 * 60, finish_reason="stop")
+    # a human-made branch of the tip: its own conversation, not a subagent and not a continuation
+    session("s-branch", "telegram", NOW - 30 * 60, parent="s-comp-tip", cfg={"_branched_from": "s-comp-tip"}, title="long chat (branch)")
+    msg("s-branch", "user", "try another approach", NOW - 30 * 60)
+    msg("s-branch", "assistant", "Sure.", NOW - 29 * 60, finish_reason="stop")
 
     # a real subagent: delegate marker points at its parent
     session("s-sub", "telegram", NOW - 90 * 60, NOW - 80 * 60, "done", parent="s-running",

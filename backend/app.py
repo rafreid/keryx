@@ -167,14 +167,99 @@ def load_sessions(db) -> list[dict]:
         s.setdefault("parent_session_id", None)
         s["title"] = s.get("title") or s.get("display_name") or s["id"]
         s["prompt_tokens"] = None
+        s["fork"] = None                        # 'delegate' | 'branch' when model_config says the child was forked
         try:
-            anchor = json.loads(s.get("model_config") or "{}").get("_usage_anchor") or {}
-            s["prompt_tokens"] = anchor.get("prompt_tokens")
+            cfg = json.loads(s.get("model_config") or "{}") or {}
+            s["prompt_tokens"] = (cfg.get("_usage_anchor") or {}).get("prompt_tokens")
+            # Hermes copies model_config onto a compression continuation, so a marker only counts
+            # when it points at this row's own parent (same rule as hermes_state_messages).
+            parent = s.get("parent_session_id")
+            if parent and cfg.get("_delegate_from") == parent:
+                s["fork"] = "delegate"
+            elif parent and cfg.get("_branched_from") == parent:
+                s["fork"] = "branch"
         except Exception:
             pass
+        if s.get("source") == "tool":
+            s["fork"] = "delegate"
         s["context_limit"] = context_limit(s.get("model"))
         out.append(s)
     return out
+
+
+# ----------------------------------------------------------------- compression lineages
+def is_continuation(child: dict, parent: Optional[dict]) -> bool:
+    """A child continues its parent's conversation after compaction: the parent ended with
+    `compression` and the child is not an explicit branch, delegate or tool fork."""
+    return bool(parent) and parent.get("end_reason") == COMPRESSION_REASON and not child.get("fork")
+
+
+def logical_sessions(sessions: list[dict]) -> tuple[list[dict], dict[str, str]]:
+    """Fold compression lineages into one logical session each.
+
+    Hermes compacts a long conversation by ending the session (end_reason `compression`) and
+    continuing in a child row with the same source and title. Drawing every segment makes one
+    chat look like a chain of subagents. Here each lineage becomes a single dict: the tip's row
+    (status, model, last activity, context) with the root's identity and start time, the
+    segment ids in order, summed counts and `compactions` = number of folds.
+
+    Returns (logical sessions, alias) where alias maps every segment id to its logical id (the
+    root's id, which never changes, so node ids, toasts and deep links survive a compaction)."""
+    by_id = {s["id"]: s for s in sessions}
+    root_of: dict[str, str] = {}
+
+    def root(sid: str) -> str:
+        if sid in root_of:
+            return root_of[sid]
+        s = by_id[sid]
+        chain = []
+        while True:
+            chain.append(s["id"])
+            parent = by_id.get(s.get("parent_session_id") or "")
+            if parent is None or not is_continuation(s, parent) or parent["id"] in chain or len(chain) > 100:
+                break
+            if parent["id"] in root_of:
+                s = by_id[root_of[parent["id"]]]
+                chain.append(s["id"])
+                break
+            s = parent
+        r = chain[-1]
+        for c in chain:
+            root_of[c] = r
+        return r
+
+    groups: dict[str, list[dict]] = {}
+    for s in sessions:
+        groups.setdefault(root(s["id"]), []).append(s)
+    out = []
+    for rid, segs in groups.items():
+        segs.sort(key=lambda s: (s["started_at"] or 0, s["id"]))
+        head, tip = segs[0], segs[-1]
+        ls = dict(tip)
+        ls.update(
+            id=rid, started_at=head["started_at"], title=tip.get("title") or head.get("title"),
+            parent_session_id=head.get("parent_session_id"), fork=head.get("fork"),
+            last_activity_at=max((s["last_activity_at"] or s["started_at"] or 0) for s in segs),
+            message_count=sum(s.get("message_count") or 0 for s in segs),
+            tool_call_count=sum(s.get("tool_call_count") or 0 for s in segs),
+            segments=[s["id"] for s in segs], compactions=len(segs) - 1, tip_id=tip["id"],
+            compacted_at=[s["ended_at"] for s in segs[:-1]],
+        )
+        out.append(ls)
+    return out, root_of
+
+
+def is_subagent(ls: dict, known: set[str]) -> bool:
+    """A logical session is a subagent when it was delegated (marker or tool source), when its
+    title says so, or when it has an unmarked parent we know about (older Hermes wrote no markers).
+    A `branch` is a conversation fork the human made, not a subagent."""
+    if ls.get("fork") == "delegate":
+        return True
+    if ls.get("fork") == "branch":
+        return False
+    if str(ls.get("title") or "").lower().startswith("subagent"):
+        return True
+    return bool(ls.get("parent_session_id")) and ls["parent_session_id"] in known
 
 
 def context_limit(model: Optional[str]) -> int:
@@ -238,23 +323,35 @@ def tool_result_failed(content: Any) -> bool:
     return out.lstrip().startswith("Traceback")
 
 
-def load_messages(db, session_ids: list[str], upto: Optional[float]) -> dict[str, dict]:
-    """Per-session digest: first user message, last assistant step, tool stats (+errors), timestamps."""
+def hidden_rows_sql(db) -> str:
+    """Skip display_kind='hidden' rows: model-facing scaffolding Hermes itself never paints."""
+    if "display_kind" not in table_columns(db, "messages"):
+        return ""
+    return " and coalesce(display_kind, '') <> 'hidden'"
+
+
+def load_messages(db, session_ids: list[str], upto: Optional[float],
+                  group: Optional[dict[str, str]] = None) -> dict[str, dict]:
+    """Per-session digest: first user message, last assistant step, tool stats (+errors), timestamps.
+    With `group` (segment id → logical id) the rows of a compression lineage flow, in time order,
+    into one digest, so "request" is the root's first message and "last step" the tip's."""
     if not session_ids:
         return {}
+    group = group or {}
     q = ",".join("?" * len(session_ids))
     params: list[Any] = list(session_ids)
     where_t = ""
     if upto is not None:
         where_t = " and timestamp <= ?"
         params.append(upto)
+    kind_col = ", display_kind" if "display_kind" in table_columns(db, "messages") else ", null as display_kind"
     rows = db.execute(
-        f"select session_id, role, content, tool_name, tool_calls, timestamp, finish_reason from messages "
-        f"where session_id in ({q}){where_t}{live_rows_sql(db)} order by timestamp asc, id asc", params
+        f"select session_id, role, content, tool_name, tool_calls, timestamp, finish_reason{kind_col} from messages "
+        f"where session_id in ({q}){where_t}{live_rows_sql(db)}{hidden_rows_sql(db)} order by timestamp asc, id asc", params
     ).fetchall()
     out: dict[str, dict] = {}
     for r in rows:
-        sid = r["session_id"]
+        sid = group.get(r["session_id"], r["session_id"])
         d = out.setdefault(sid, {"request": None, "last_step": None, "last_ts": None, "last_assistant_ts": None,
                                  "tools": {}, "user_messages": 0, "tool_calls": 0, "tool_errors": 0,
                                  "recent_calls": [], "finish": None,
@@ -265,6 +362,10 @@ def load_messages(db, session_ids: list[str], upto: Optional[float]) -> dict[str
         d["last_role"] = role
         if role == "user":
             d["final_reply"] = False
+            # Hermes' injected event rows (model switch, auto-continue, delegation results…) wake the
+            # agent but are not the human speaking; a `steer` is the human, mid-turn.
+            if r["display_kind"] in EVENT_KINDS and r["display_kind"] != "steer":
+                continue
             d["user_messages"] += 1
             if d["request"] is None and r["content"]:
                 d["request"] = short(r["content"], 160)
@@ -422,12 +523,12 @@ def build_graph(hours: float, at: Optional[float]) -> dict:
     end = at if at else now
     start = 0 if hours <= 0 else end - hours * 3600
 
-    sessions = load_sessions(db)
+    # replay: only segments that existed by `at` take part, so a lineage's tip is the segment live then
+    rows = [s for s in load_sessions(db) if (s["started_at"] or 0) <= end]
+    logical, alias = logical_sessions(rows)
     sel = []
-    for s in sessions:
+    for s in logical:
         st = s["started_at"] or 0
-        if st > end:
-            continue
         last = s["last_activity_at"] or st
         if at is not None:                      # replay: only what existed by then
             if last < start and (s["ended_at"] or 0) < start:
@@ -435,23 +536,27 @@ def build_graph(hours: float, at: Optional[float]) -> dict:
         elif last < start:
             continue
         sel.append(s)
-    ids = [s["id"] for s in sel]
+    ids = [s["id"] for s in sel]                # logical ids (= root segment ids)
     id_set = set(ids)
-    digests = load_messages(db, ids, upto=at)
-    usage = load_usage(db, ids)
+    seg_ids = [seg for s in sel for seg in s["segments"]]
+    digests = load_messages(db, seg_ids, upto=at, group=alias)
+    usage = load_usage(db, seg_ids)
     per_session_usage: dict[str, dict] = {}
-    if ids:
+    if seg_ids:
         try:
-            q = ",".join("?" * len(ids))
+            q = ",".join("?" * len(seg_ids))
             for r in db.execute(f"select session_id, sum(input_tokens) i, sum(output_tokens) o, sum(cache_read_tokens) c, "
                                 f"sum(api_call_count) n, sum(coalesce(estimated_cost_usd,0)) cost from session_model_usage "
-                                f"where session_id in ({q}) group by 1", ids):
-                per_session_usage[r["session_id"]] = {"tokens_in": r["i"] or 0, "tokens_out": r["o"] or 0,
-                                                      "cache_read": r["c"] or 0, "api_calls": r["n"] or 0,
-                                                      "cost_usd": round(r["cost"] or 0, 4)}
+                                f"where session_id in ({q}) group by 1", seg_ids):
+                u = per_session_usage.setdefault(alias.get(r["session_id"], r["session_id"]),
+                                                 {"tokens_in": 0, "tokens_out": 0, "cache_read": 0, "api_calls": 0, "cost_usd": 0.0})
+                u["tokens_in"] += r["i"] or 0; u["tokens_out"] += r["o"] or 0; u["cache_read"] += r["c"] or 0
+                u["api_calls"] += r["n"] or 0; u["cost_usd"] = round(u["cost_usd"] + (r["cost"] or 0), 4)
         except sqlite3.OperationalError:
             pass
-    delegations = [d for d in load_delegations(db) if d["origin_session"] in id_set]
+    delegations = [d for d in load_delegations(db) if alias.get(d["origin_session"], d["origin_session"]) in id_set]
+    for d in delegations:
+        d["origin_session"] = alias.get(d["origin_session"], d["origin_session"])
     jobs, execs = load_cron()
 
     nodes: list[dict] = []
@@ -485,6 +590,10 @@ def build_graph(hours: float, at: Optional[float]) -> dict:
 
     counts = {"running": 0, "waiting": 0, "stale": 0, "active": 0, "orphaned": 0, "failed": 0, "errors": 0,
               "tool_calls": 0, "subagents": 0}
+    # a subagent's parent may be any segment of a lineage: resolve it to the logical id
+    for s in sel:
+        p = s.get("parent_session_id")
+        s["parent_session_id"] = alias.get(p, p) if p else None
     children: dict[str, int] = {}
     for s in sel:
         p = s.get("parent_session_id")
@@ -502,7 +611,7 @@ def build_graph(hours: float, at: Optional[float]) -> dict:
             s["last_activity_at"] = last
         status = session_status(s, end, d)
         active = (end - last) <= ACTIVE_WINDOW and status in ("running", "stale")
-        is_sub = bool(s.get("parent_session_id")) or str(s["title"]).lower().startswith("subagent")
+        is_sub = is_subagent(s, id_set)
         counts["active"] += active
         counts[status] = counts.get(status, 0) + 1 if status in counts else counts.get(status, 0)
         counts["errors"] += d.get("tool_errors", 0)
@@ -519,16 +628,18 @@ def build_graph(hours: float, at: Optional[float]) -> dict:
             tool_calls=d.get("tool_calls", 0), tool_errors=d.get("tool_errors", 0),
             calls_per_min=len(recent), children=children.get(sid, 0), end_reason=s.get("end_reason"),
             parent=s.get("parent_session_id") if s.get("parent_session_id") in id_set else None,
-            usage=per_session_usage.get(sid),
+            fork=s.get("fork"), usage=per_session_usage.get(sid),
             context=context_gauge(s), files=d.get("files", [])[-40:],
+            segments=s["segments"], compactions=s["compactions"], tip=s["tip_id"],
+            compacted_at=[t for t in s["compacted_at"] if t],
             val=3 + math.log1p(s.get("message_count") or 0),
         )
         parent = s.get("parent_session_id")
         if parent and parent in id_set:
             deleg = next((x for x in delegations if x["origin_session"] == parent and x["dispatched_at"]
                           and abs(x["dispatched_at"] - (s["started_at"] or 0)) < 120), None)
-            add_link(f"session:{parent}", f"session:{sid}", kind="spawn", active=active, age=age,
-                     state=(deleg or {}).get("state"), delivery=(deleg or {}).get("delivery_state"),
+            add_link(f"session:{parent}", f"session:{sid}", kind="branch" if s.get("fork") == "branch" else "spawn",
+                     active=active, age=age, state=(deleg or {}).get("state"), delivery=(deleg or {}).get("delivery_state"),
                      goal=(deleg or {}).get("goal"))
         else:
             add_link(f"src:{s.get('source') or 'unknown'}", f"session:{sid}", kind="session", active=active, age=age)
@@ -566,11 +677,14 @@ def build_graph(hours: float, at: Optional[float]) -> dict:
         add_link("src:cron", f"cron:{jid}", kind="cron", age=end - (last_run or 0),
                  active=bool(last_run) and (end - last_run) <= ACTIVE_WINDOW)
 
+    # every segment id of every drawn lineage → its node id, so #session:<any segment> deep links resolve
+    aliases = {f"session:{seg}": f"session:{s['id']}" for s in sel for seg in s["segments"] if seg != s["id"]}
     return {
         "generated_at": now, "as_of": end, "window_hours": hours, "replay": at is not None,
         "stats": {"sessions": len(sel), **counts, "cron_jobs": len(jobs),
+                  "compactions": sum(s["compactions"] for s in sel),
                   "cron_runs": sum(1 for e in execs if (e["finished_at"] or e["started_at"] or 0) >= start)},
-        "nodes": nodes, "links": links,
+        "nodes": nodes, "links": links, "aliases": aliases,
     }
 
 
@@ -579,9 +693,13 @@ def build_now() -> dict:
     if db is None:
         return {"running": [], "generated_at": time.time()}
     now = time.time()
-    sessions = [s for s in load_sessions(db) if s["ended_at"] is None]
+    logical, alias = logical_sessions(load_sessions(db))
+    sessions = [s for s in logical if s["ended_at"] is None]      # a lineage is open when its tip is
+    for s in sessions:
+        p = s.get("parent_session_id")
+        s["parent_session_id"] = alias.get(p, p) if p else None
     ids = [s["id"] for s in sessions]
-    digests = load_messages(db, ids, upto=None)
+    digests = load_messages(db, [seg for s in sessions for seg in s["segments"]], upto=None, group=alias)
     id_set = set(ids)
     children: dict[str, list] = {}
     for s in sessions:
@@ -604,8 +722,9 @@ def build_now() -> dict:
             "idle": now - last, "request": d.get("request"), "last_step": d.get("last_step"),
             "tool_calls": d.get("tool_calls", 0), "tool_errors": d.get("tool_errors", 0),
             "calls_per_min": len(recent), "children": len(children.get(s["id"], [])),
-            "is_subagent": bool(s.get("parent_session_id")) or str(s["title"]).lower().startswith("subagent"),
+            "is_subagent": is_subagent(s, id_set),
             "parent": s.get("parent_session_id"), "context": context_gauge(s),
+            "compactions": s["compactions"], "tip": s["tip_id"],
         })
     order = {"running": 0, "waiting": 1, "stale": 2}
     running.sort(key=lambda r: (order.get(r["status"], 3), -(r["last"] or 0)))
@@ -969,19 +1088,41 @@ def build_trace(sid: str, tool: Optional[str], limit: int) -> dict:
     db = STATE.get()
     if db is None:
         return {"error": "no state db"}
-    srow = db.execute("select * from sessions where id = ?", (sid,)).fetchone()
-    if not srow:
-        return {"error": "session not found", "steps": []}
-    s = dict(srow)
-    for k in ("started_at", "ended_at", "last_activity_at"):
-        s[k] = ts(s.get(k))
-    rows = db.execute("select role, content, tool_name, tool_call_id, tool_calls, timestamp, finish_reason, token_count "
-                      f"from messages where session_id = ?{live_rows_sql(db)} order by timestamp asc, id asc", (sid,)).fetchall()
+    # any segment id of a compression lineage resolves to the whole lineage, root → tip
+    logical, alias = logical_sessions(load_sessions(db))
+    ls = next((x for x in logical if x["id"] == alias.get(sid, sid)), None)
+    if ls is None:
+        srow = db.execute("select * from sessions where id = ?", (sid,)).fetchone()
+        if not srow:
+            return {"error": "session not found", "steps": []}
+        ls = dict(srow)
+        for k in ("started_at", "ended_at", "last_activity_at"):
+            ls[k] = ts(ls.get(k))
+        ls.update(segments=[sid], compactions=0, tip_id=sid, title=ls.get("title") or ls.get("display_name") or sid)
+    s = ls
+    segs = s["segments"]
+    has_kind = "display_kind" in table_columns(db, "messages")
+    kind_col = ", display_kind" if has_kind else ", null as display_kind"
+    q = ",".join("?" * len(segs))
+    rows = db.execute(f"select session_id, role, content, tool_name, tool_call_id, tool_calls, timestamp, finish_reason, token_count{kind_col} "
+                      f"from messages where session_id in ({q}){live_rows_sql(db)}{hidden_rows_sql(db)} "
+                      f"order by timestamp asc, id asc", segs).fetchall()
     steps: list[dict] = []
     pending: dict[str, dict] = {}
+    seg_order = {x: i for i, x in enumerate(segs)}
+    cur_seg = None
     for r in rows:
         t = ts(r["timestamp"]) or 0
         role = r["role"]
+        if r["session_id"] != cur_seg:          # crossing into the next segment: the context was compacted here
+            if cur_seg is not None and seg_order.get(r["session_id"], 0) > seg_order.get(cur_seg, 0):
+                steps.append({"kind": "compaction", "ts": t, "text": f"context compacted · continued as session {r['session_id']}",
+                              "segment": r["session_id"]})
+            cur_seg = r["session_id"]
+        dk = r["display_kind"] if has_kind else None
+        if dk in EVENT_KINDS:                   # Hermes' own event rows: model switch, steer, auto-continue…
+            steps.append({"kind": "event", "ts": t, "name": dk, "text": short(r["content"], 300)})
+            continue
         if role == "user":
             steps.append({"kind": "user", "ts": t, "text": short(r["content"], 800)})
         elif role == "assistant":
@@ -1013,11 +1154,17 @@ def build_trace(sid: str, tool: Optional[str], limit: int) -> dict:
     if tool:
         steps = [st for st in steps if st["kind"] == "tool_call" and st["name"] == tool]
     total = len(steps)
-    usage = load_usage(db, [sid])
-    return {"session": {"id": sid, "title": s.get("title") or s.get("display_name") or sid, "source": s.get("source"),
+    usage = load_usage(db, segs)
+    return {"session": {"id": s["id"], "title": s.get("title"), "source": s.get("source"),
                         "model": s.get("model"), "started": s["started_at"], "ended": s["ended_at"],
-                        "end_reason": s.get("end_reason"), "messages": s.get("message_count")},
+                        "end_reason": s.get("end_reason"), "messages": s.get("message_count"),
+                        "segments": segs, "compactions": s["compactions"], "tip": s["tip_id"]},
             "usage": list(usage.values()), "steps": steps[-limit:], "total": total, "truncated": total > limit}
+
+
+# display_kind values Hermes stamps on rows it paints as events rather than as chat turns
+EVENT_KINDS = {"model_switch", "auto_continue", "steer", "async_delegation_complete", "process_complete",
+               "skill_invocation", "personality_switch", "internal_notification"}
 
 
 LOG_FILES = {"errors": "errors.log", "gateway": "gateway.log", "agent": "agent.log", "boot": "container-boot.log",

@@ -15,8 +15,8 @@ const BASE = {
   sessionRadius2d: [110, 260], // 2D: recent → far
   depth: 120,               // 3D: vertical span of the recency axis
   modelShelf: 110,
-  linkDistance: { platform: 75, session: 60, spawn: 30, tool: 14, model: 120, cron: 45 },
-  linkStrength: { platform: 0.05, session: 0.04, spawn: 0.5, tool: 0.9, model: 0.01, cron: 0.1 },
+  linkDistance: { platform: 75, session: 60, spawn: 30, branch: 45, tool: 14, model: 120, cron: 45 },
+  linkStrength: { platform: 0.05, session: 0.04, spawn: 0.5, branch: 0.25, tool: 0.9, model: 0.01, cron: 0.1 },
 }
 const scaled = k => ({
   spread: k,

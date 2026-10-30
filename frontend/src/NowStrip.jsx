@@ -20,6 +20,7 @@ export default function NowStrip({ now, selected, onSelect }) {
             <span>{r.tool_calls} calls{r.tool_errors ? <span className="err"> · {r.tool_errors} errors</span> : ''}</span>
             {r.calls_per_min > 0 && <span>{r.calls_per_min}/min</span>}
             {r.children > 0 && <span>{r.children} subagents</span>}
+            {r.compactions > 0 && <span title="the context window was compacted; Keryx shows the whole conversation as one session">⟲ {r.compactions}</span>}
             {r.context && <span className={contextLevel(r.context.pct)} title={`context window ${r.context.pct}% full`}>ctx {r.context.pct.toFixed(0)}%</span>}
           </div>
         </div>
