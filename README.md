@@ -117,6 +117,16 @@ npm run build                                  # production build into backend/s
 
 After a change, rebuild the front end and rebuild the container (`docker compose up -d --build`), or restart uvicorn if you run it directly.
 
+Backend tests build a miniature Hermes data directory (state.db, cron store, logs) in a temp folder and run the real builders and routes against it:
+
+```bash
+cd backend
+python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
+.venv/bin/pytest
+```
+
+CI (GitHub Actions) runs the tests, builds the front end and smoke-tests the Docker image on every push and pull request.
+
 Layout:
 
 ```

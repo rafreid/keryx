@@ -42,7 +42,15 @@ CONTEXT_LIMITS = {"gpt-5.4-mini": 400000, "gpt-5": 400000, "claude": 200000, "ge
 FILE_TOOLS = {"write_file": "write", "patch": "patch", "read_file": "read", "search_files": "search"}
 TELEGRAM_USER = os.environ.get("TELEGRAM_USER", "")
 
-app = FastAPI(title="Keryx", version="2.1")
+# Hermes `sessions.end_reason` values, grouped by what they mean for the picture.
+# Orphans: the gateway (or a websocket backend) came back and reaped a session it no longer owned.
+ORPHAN_REASONS = {"startup_orphan_reap", "ws_orphan_reap"}
+# Closed by the human rather than by the agent finishing: CLI/TUI exit, explicit reset, websocket gone.
+USER_CLOSE_REASONS = {"cli_close", "tui_shutdown", "tui_close", "user_exit", "session_reset", "ws_disconnect"}
+# The session was compacted: Hermes ends it and continues the same conversation in a child session.
+COMPRESSION_REASON = "compression"
+
+app = FastAPI(title="Keryx", version="2.2")
 
 
 # ----------------------------------------------------------------- helpers
@@ -113,14 +121,41 @@ STATE = Snapshot(DATA / "state.db")
 CRON_EXEC = Snapshot(DATA / "cron" / "executions.db")
 
 
+def configure(data_dir: Path) -> None:
+    """Point Keryx at another Hermes data directory (tests; a future reload endpoint).
+    Rebuilds the snapshots and drops the response cache so nothing from the old directory leaks."""
+    global DATA, STATE, CRON_EXEC
+    DATA = Path(data_dir)
+    STATE = Snapshot(DATA / "state.db")
+    CRON_EXEC = Snapshot(DATA / "cron" / "executions.db")
+    with _cache_lock:
+        _cache.clear()
+
+
 def data_signature() -> tuple:
     return file_sig(DATA / "state.db", DATA / "state.db-wal", DATA / "cron" / "jobs.json",
                     DATA / "cron" / "executions.db", DATA / "logs" / "errors.log")
 
 
 # ----------------------------------------------------------------- loaders
+def table_columns(db, table: str) -> set[str]:
+    return {r[1] for r in db.execute(f"pragma table_info({table})")}
+
+
+def live_rows_sql(db, alias: str = "") -> str:
+    """SQL fragment keeping only the rows Hermes itself still shows.
+
+    Since compaction landed, `messages` carries `active` (1 = part of the live transcript) and
+    `compacted` (1 = archived original kept for search). Compaction writes a stub and archives the
+    original, so counting every row double counts tool calls and the trace shows both copies.
+    Older databases lack the column: then every row is live and the fragment is empty."""
+    if "active" not in table_columns(db, "messages"):
+        return ""
+    return f" and {alias + '.' if alias else ''}active = 1"
+
+
 def load_sessions(db) -> list[dict]:
-    cols = {r[1] for r in db.execute("pragma table_info(sessions)")}
+    cols = table_columns(db, "sessions")
     rows = db.execute(
         "select * from sessions order by coalesce(last_activity_at, started_at) desc limit ?", (MAX_SESSIONS,)
     ).fetchall()
@@ -215,7 +250,7 @@ def load_messages(db, session_ids: list[str], upto: Optional[float]) -> dict[str
         params.append(upto)
     rows = db.execute(
         f"select session_id, role, content, tool_name, tool_calls, timestamp, finish_reason from messages "
-        f"where session_id in ({q}){where_t} order by timestamp asc, id asc", params
+        f"where session_id in ({q}){where_t}{live_rows_sql(db)} order by timestamp asc, id asc", params
     ).fetchall()
     out: dict[str, dict] = {}
     for r in rows:
@@ -360,11 +395,11 @@ def session_status(s: dict, now: float, digest: dict) -> str:
         idle = now - (s["last_activity_at"] or s["started_at"] or 0)
         return "running" if idle <= STALE_AFTER else "stale"
     reason = s.get("end_reason") or ""
-    if reason == "startup_orphan_reap":
+    if reason in ORPHAN_REASONS:
         return "orphaned"
     if digest.get("tool_errors", 0) and digest.get("finish") == "tool_calls":
         return "failed"
-    if reason in ("cli_close", "tui_shutdown"):
+    if reason in USER_CLOSE_REASONS:
         return "ended_by_user"
     return "ended"
 
@@ -657,7 +692,7 @@ def build_status() -> dict:
             last = s["last_activity_at"] or s["started_at"] or 0
             if now - last > 86400:
                 continue
-            if s.get("end_reason") == "startup_orphan_reap":
+            if s.get("end_reason") in ORPHAN_REASONS:
                 orphans += 1
             if s["ended_at"] is None:
                 d = load_messages(db, [s["id"]], upto=None).get(s["id"], {})
@@ -798,8 +833,9 @@ def build_diagnostics() -> dict:
                                      "prompt_tokens": s.get("prompt_tokens"), "idle_s": int(now - (s["last_activity_at"] or 0))}
                                     for s in sessions if s["ended_at"] is None][:20]}
         try:
-            out["messages"] = {"by_role": dict(db.execute("select role, count(*) from messages group by 1").fetchall()),
-                               "tool_calls_by_name": dict(db.execute("select tool_name, count(*) from messages where tool_name is not null group by 1 order by 2 desc").fetchall())}
+            live = live_rows_sql(db)
+            out["messages"] = {"by_role": dict(db.execute(f"select role, count(*) from messages where 1=1{live} group by 1").fetchall()),
+                               "tool_calls_by_name": dict(db.execute(f"select tool_name, count(*) from messages where tool_name is not null{live} group by 1 order by 2 desc").fetchall())}
             out["delegations"] = {"by_state": dict(db.execute("select state || '/' || coalesce(delivery_state,'-'), count(*) from async_delegations group by 1").fetchall())}
             out["delivery_obligations"] = {"by_state": dict(db.execute("select state, count(*) from delivery_obligations group by 1").fetchall())}
             out["schema"] = {t: len(list(db.execute(f"pragma table_info({t})"))) for (t,) in db.execute("select name from sqlite_master where type='table'")}
@@ -875,7 +911,7 @@ def build_analytics(days: int) -> dict:
     if ids:
         q = ",".join("?" * len(ids))
         for r in db.execute(f"select session_id, role, content, timestamp from messages where session_id in ({q}) "
-                            f"and role in ('user','tool') and timestamp >= ?", (*ids, start)):
+                            f"and role in ('user','tool') and timestamp >= ?{live_rows_sql(db)}", (*ids, start)):
             t = ts(r["timestamp"]) or 0
             b = per_day.setdefault(_day(t), dict.fromkeys(per_day[next(iter(per_day))].keys(), 0))
             if r["role"] == "user":
@@ -940,7 +976,7 @@ def build_trace(sid: str, tool: Optional[str], limit: int) -> dict:
     for k in ("started_at", "ended_at", "last_activity_at"):
         s[k] = ts(s.get(k))
     rows = db.execute("select role, content, tool_name, tool_call_id, tool_calls, timestamp, finish_reason, token_count "
-                      "from messages where session_id = ? order by timestamp asc, id asc", (sid,)).fetchall()
+                      f"from messages where session_id = ?{live_rows_sql(db)} order by timestamp asc, id asc", (sid,)).fetchall()
     steps: list[dict] = []
     pending: dict[str, dict] = {}
     for r in rows:
@@ -987,7 +1023,19 @@ def build_trace(sid: str, tool: Optional[str], limit: int) -> dict:
 LOG_FILES = {"errors": "errors.log", "gateway": "gateway.log", "agent": "agent.log", "boot": "container-boot.log",
              "restart": "gateway-restart.log", "dashboard-auth": "dashboard-auth.log"}
 LEVELS = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
-LOG_RE = re.compile(r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})(?:,\d+)? +(DEBUG|INFO|WARNING|ERROR|CRITICAL) +([\w.\[\]-]+): ?(.*)$")
+# Hermes' line format is "%(asctime)s %(levelname)s%(session_tag)s %(name)s: %(message)s" where the
+# session tag is " [<session id>]" on every line logged inside a session and empty otherwise.
+LOG_RE = re.compile(r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})(?:,\d+)? +(DEBUG|INFO|WARNING|ERROR|CRITICAL)"
+                    r"(?: \[([^\]]*)\])? +([\w.\[\]-]+): ?(.*)$")
+
+
+def parse_log_line(line: str) -> Optional[dict]:
+    """One Hermes log line → {ts, level, logger, session, msg}; None for a continuation line."""
+    m = LOG_RE.match(line)
+    if not m:
+        return None
+    when, lvl, session, logger, msg = m.groups()
+    return {"ts": log_line_ts(line), "level": lvl, "logger": logger, "session": session or None, "msg": msg}
 
 
 def build_logs(file: str, level: str, q: str, lines: int) -> dict:
@@ -998,13 +1046,11 @@ def build_logs(file: str, level: str, q: str, lines: int) -> dict:
     ql = (q or "").lower()
     out, counts = [], dict.fromkeys(LEVELS, 0)
     for line in raw:
-        m = LOG_RE.match(line)
-        if m:
-            when, lvl, logger, msg = m.groups()
-            entry = {"ts": log_line_ts(line), "level": lvl, "logger": logger, "msg": msg}
-        else:
-            entry = {"ts": None, "level": "INFO", "logger": "", "msg": line}
-            if out and out[-1].get("msg") is not None and not m:   # continuation line (traceback)
+        entry = parse_log_line(line)
+        m = entry is not None
+        if not m:
+            entry = {"ts": None, "level": "INFO", "logger": "", "session": None, "msg": line}
+            if out and out[-1].get("msg") is not None:   # continuation line (traceback)
                 out[-1]["msg"] += "\n" + line
                 continue
         counts[entry["level"]] = counts.get(entry["level"], 0) + 1

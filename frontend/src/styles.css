@@ -100,9 +100,9 @@ h3.acc { cursor: pointer; user-select: none; }
 kbd { background: var(--panel2); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; font-size: 11px; }
 /* logs */
 .loglist { font-size: 11.5px; margin-top: 6px; }
-.log { display: grid; grid-template-columns: 60px 56px 90px; grid-auto-rows: auto; column-gap: 6px; padding: 4px 0; border-top: 1px solid var(--line); }
+.log { display: grid; grid-template-columns: 60px 56px minmax(0, 1fr) auto; grid-auto-rows: auto; column-gap: 6px; padding: 4px 0; border-top: 1px solid var(--line); }
 .log pre { grid-column: 1 / -1; margin: 2px 0 0; white-space: pre-wrap; word-break: break-word; font-size: 11px; color: var(--text); }
-.log .when { color: var(--muted); } .log .lvl { font-weight: 600; } .log .logger { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.log .when { color: var(--muted); } .log .sess { color: var(--accent, #6ad1ff); font-family: ui-monospace, monospace; font-size: 10.5px; text-decoration: none; white-space: nowrap; } .log .lvl { font-weight: 600; } .log .logger { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .log.warning .lvl { color: var(--amber); } .log.error .lvl, .log.critical .lvl { color: var(--red); } .log.info .lvl { color: var(--muted); }
 /* trace */
 .trace { font-size: 12px; }
