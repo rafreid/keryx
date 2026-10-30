@@ -143,3 +143,28 @@ def test_analytics_counts_live_rows(hermes_data):
     a = keryx.build_analytics(2)
     assert a["totals"]["tool_calls"] == 5                # s-running 4 + s-comp-root 1
     assert a["totals"]["tool_errors"] == 1
+
+
+def test_model_only_rows_are_never_painted(hermes_data):
+    """Hermes' DISPLAY_VISIBLE_SQL rule: a micro-compaction merge row (display_metadata.model_only) is
+    read by the model but is not a message anyone typed, so neither the trace nor the digest shows it."""
+    tr = keryx.build_trace("s-running", None, 100)
+    users = [s["text"] for s in tr["steps"] if s["kind"] == "user"]
+    assert users == ["please fix the build", "keep the tests green"]
+    n = nodes_by_id(keryx.build_graph(24, None))["session:s-running"]
+    assert n["user_messages"] == 2 and n["request"] == "please fix the build"
+    a = keryx.build_analytics(2)
+    # s-running 2 + s-waiting 1 + s-done 1 + lineage 3 (root, tip, the steer; not the hidden summary or the
+    # model-switch event) + s-branch 1 + s-sub 1
+    assert a["totals"]["user_messages"] == 9
+
+
+def test_hidden_rows_sql_degrades_on_old_schemas(tmp_path):
+    import sqlite3
+    db = sqlite3.connect(":memory:")
+    db.execute("create table messages (id integer primary key, session_id text, role text, content text, timestamp real)")
+    assert keryx.hidden_rows_sql(db) == ""
+    db.execute("alter table messages add column display_kind text")
+    assert keryx.hidden_rows_sql(db) == " and coalesce(display_kind, '') <> 'hidden'"
+    db.execute("alter table messages add column display_metadata text")
+    assert "model_only" in keryx.hidden_rows_sql(db)

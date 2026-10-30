@@ -97,6 +97,11 @@ def write_state_db(path: Path) -> None:
     session("s-quiet", "cli", NOW - 40 * 60, last=NOW - 5 * 60, last_activity_description="thinking about the plan", message_count=0)
     t0 = NOW - 2 * H
     msg("s-running", "user", "please fix the build", t0)
+    # a micro-compaction merge of adjacent user turns: the model reads it, nobody typed it, Hermes never paints it
+    msg("s-running", "user", "please fix the build\n\n(and keep the tests green)", t0 + 1,
+        display_metadata=json.dumps({"model_only": True}))
+    # an older, double-encoded metadata row (pre-guard Hermes wrote the JSON as a JSON string): not model-only
+    msg("s-running", "user", "keep the tests green", t0 + 2, display_metadata=json.dumps(json.dumps({"task_count": 1})))
     msg("s-running", "assistant", None, t0 + 10, tool_calls=call("terminal", {"command": "make"}, "c1"), finish_reason="tool_calls")
     msg("s-running", "tool", tool_result("built"), t0 + 20, tool_name="terminal", tool_call_id="c1")
     msg("s-running", "assistant", None, t0 + 30, tool_calls=call("write_file", {"path": "src/x.py", "content": "x"}, "c2"), finish_reason="tool_calls")
