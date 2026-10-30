@@ -38,7 +38,7 @@ export default function Header({ status, hours, setHours, view, setView, live, s
           {qr && <div className="popover qr">
             <img src={`/api/qr?text=${encodeURIComponent(location.href)}`} alt="QR code of this page" width="168" height="168" />
             <div className="small" style={{ wordBreak: 'break-all' }}>{location.href}</div>
-            <div className="small">scan from a phone on the same LAN or Tailscale network</div>
+            <div className="small">scan from a phone on the same LAN or Tailscale network · then "add to home screen" to keep it as an app</div>
           </div>}
         </span>
         <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} title="toggle theme">{theme === 'dark' ? '☾' : '☀'}</button>

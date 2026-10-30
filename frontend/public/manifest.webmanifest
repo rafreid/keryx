@@ -1,0 +1,17 @@
+{
+  "name": "Keryx",
+  "short_name": "Keryx",
+  "description": "Live, read-only 3D activity monitor for Hermes Agent",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0b0f17",
+  "theme_color": "#0b0f17",
+  "orientation": "any",
+  "categories": ["utilities", "developer tools"],
+  "icons": [
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}

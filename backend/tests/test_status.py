@@ -44,3 +44,16 @@ def test_open_session_states():
 ])
 def test_tool_result_failed(content, failed):
     assert keryx.tool_result_failed(content) is failed
+
+
+def test_storage_check(hermes_data, monkeypatch):
+    from conftest import keryx
+    st = {c["name"]: c for c in keryx.build_status()["checks"]}["storage"]
+    assert st["level"] == "green" and st["db"] > 0 and st["wal"] == 0 and st["logs"] > 0
+    assert "state.db" in st["detail"] and ("free" in st["detail"] or st["free"] is None)
+    # a swollen WAL is a warning, a nearly full disk is red
+    monkeypatch.setattr(keryx, "storage_state", lambda: {"db": 1, "wal": 300 << 20, "logs": 0, "free": 50 << 30, "total": 100 << 30, "free_pct": 50.0})
+    assert {c["name"]: c for c in keryx.build_status()["checks"]}["storage"]["level"] == "amber"
+    monkeypatch.setattr(keryx, "storage_state", lambda: {"db": 1, "wal": 0, "logs": 0, "free": 500 << 20, "total": 100 << 30, "free_pct": 0.5})
+    assert {c["name"]: c for c in keryx.build_status()["checks"]}["storage"]["level"] == "red"
+    assert keryx.fmt_bytes(1536) == "2 KB" and keryx.fmt_bytes(5 << 30) == "5.0 GB" and keryx.fmt_bytes(None) == "?"
