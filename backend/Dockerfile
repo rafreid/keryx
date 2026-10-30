@@ -1,4 +1,9 @@
 FROM python:3.12-alpine
+LABEL org.opencontainers.image.title="Keryx" \
+      org.opencontainers.image.description="Live visual activity monitor for Hermes Agent" \
+      org.opencontainers.image.source="https://github.com/rafreid/keryx" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.vendor="Aflux Systems LLC"
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

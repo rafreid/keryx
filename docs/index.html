@@ -1,0 +1,459 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Keryx</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="Keryx is a live, read-only visual activity monitor for Hermes Agent: a 3D force graph of sessions, tools, subagents, models and cron jobs, built from the agent's own records.">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a dark instrument panel (dark-first, like the dashboard itself), one reading column,
+   full-bleed screenshots between sections, the three-part visual grammar as the thesis. */
+:root {
+  --bg: #0b0f17; --panel: #121a27; --panel2: #18212f; --line: #223049;
+  --fg: #e6edf7; --muted: #8fa0b8; --accent: #6ad1ff; --accent-ink: #0b0f17;
+  --green: #3fb950; --amber: #d29922; --red: #f85149; --violet: #c3a6ff; --orange: #ffb86b; --pink: #f778ba;
+  --display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", sans-serif;
+  --body: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #f5f7fb; --panel: #ffffff; --panel2: #eef2f8; --line: #d3dbe8;
+    --fg: #14202e; --muted: #5b6b82; --accent: #0b7fc2; --accent-ink: #ffffff;
+    --green: #1f883d; --amber: #9a6700; --red: #cf222e; --violet: #6f42c1; --orange: #b35900; --pink: #bf3989;
+    color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --bg: #f5f7fb; --panel: #ffffff; --panel2: #eef2f8; --line: #d3dbe8;
+  --fg: #14202e; --muted: #5b6b82; --accent: #0b7fc2; --accent-ink: #ffffff;
+  --green: #1f883d; --amber: #9a6700; --red: #cf222e; --violet: #6f42c1; --orange: #b35900; --pink: #bf3989;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } .pulse { animation: none; } }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.6 var(--body); }
+img { max-width: 100%; height: auto; display: block; }
+a { color: var(--accent); text-decoration: none; }
+a:hover, a:focus-visible { text-decoration: underline; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+code, pre, kbd { font-family: var(--mono); font-size: 0.92em; }
+code { background: var(--panel2); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; }
+pre { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; overflow-x: auto; margin: 0; line-height: 1.5; }
+pre code { background: none; border: 0; padding: 0; }
+kbd { background: var(--panel2); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 6px; font-size: 0.85em; }
+h1, h2, h3 { font-family: var(--display); text-wrap: balance; line-height: 1.15; margin: 0; }
+h2 { font-size: clamp(26px, 3.2vw, 36px); font-weight: 700; letter-spacing: -0.01em; }
+h3 { font-size: 19px; font-weight: 600; }
+p { margin: 0; }
+.wrap { max-width: 1080px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.prose { max-width: 68ch; }
+.muted { color: var(--muted); }
+.eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); }
+
+/* nav */
+.nav { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
+.nav .wrap { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; padding-block: 10px; }
+.brand { display: flex; align-items: center; gap: 10px; font-family: var(--display); font-weight: 700; font-size: 20px; color: var(--fg); }
+.brand img { width: 26px; height: 26px; }
+.nav ul { list-style: none; margin: 0; padding: 0; display: flex; gap: 16px; flex-wrap: wrap; font-size: 14px; margin-left: auto; }
+.nav ul a { color: var(--muted); }
+.nav ul a:hover { color: var(--fg); }
+.btn { display: inline-flex; align-items: center; gap: 8px; padding: 9px 16px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); font-weight: 500; font-size: 15px; }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.btn:hover { text-decoration: none; filter: brightness(1.08); }
+
+/* hero */
+.hero .wrap { display: grid; grid-template-columns: minmax(0, 1fr); gap: 28px; padding-block: 56px 28px; }
+.hero h1 { font-size: clamp(38px, 6vw, 64px); font-weight: 700; letter-spacing: -0.02em; }
+.hero h1 em { font-style: normal; color: var(--accent); }
+.hero .lede { font-size: clamp(17px, 1.6vw, 20px); color: var(--muted); max-width: 60ch; }
+.hero .cta { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+.hero .greek { font-family: var(--display); color: var(--muted); font-size: 14px; }
+.shot { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: #0b0f17; box-shadow: 0 30px 80px -40px rgba(0,0,0,0.8); }
+.shot img { width: 100%; }
+figcaption { font-size: 13px; color: var(--muted); padding: 8px 2px 0; }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+.pulse { animation: pulse 2.4s ease-in-out infinite; }
+@keyframes pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.35); opacity: 0.6; } }
+
+/* sections */
+section { padding-block: 56px; border-top: 1px solid var(--line); }
+section .wrap { display: grid; gap: 22px; }
+.head { display: grid; gap: 8px; }
+.grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px; display: grid; gap: 8px; align-content: start; min-width: 0; }
+.card h3 { display: flex; align-items: center; gap: 10px; }
+.card p, .card li { font-size: 15px; color: var(--muted); }
+.card ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+.card strong { color: var(--fg); font-weight: 600; }
+
+/* grammar triad */
+.triad { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+.triad .card { border-top: 3px solid var(--accent); }
+.shapes { display: flex; flex-wrap: wrap; gap: 10px 14px; font-size: 14px; color: var(--muted); }
+.shapes span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { display: inline-block; width: 12px; height: 12px; border-radius: 50%; }
+.sw.sq { border-radius: 2px; } .sw.di { transform: rotate(45deg); border-radius: 2px; } .sw.ri { border-radius: 50%; border: 3px solid currentColor; background: transparent !important; width: 10px; height: 10px; }
+.sw.tri { width: 0; height: 0; border-left: 7px solid transparent; border-right: 7px solid transparent; border-top: 12px solid; border-radius: 0; background: none !important; }
+.sw.cyl { border-radius: 3px; width: 14px; height: 10px; }
+.statuses { display: flex; flex-wrap: wrap; gap: 8px; }
+.tag { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel2); color: var(--fg); }
+
+/* tables */
+.tbl { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; }
+table { border-collapse: collapse; width: 100%; font-size: 14.5px; }
+th, td { text-align: left; padding: 10px 12px; border-top: 1px solid var(--line); vertical-align: top; }
+thead th { border-top: 0; background: var(--panel2); font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+td code { white-space: nowrap; }
+
+/* steps */
+.steps { display: grid; gap: 14px; counter-reset: step; }
+.step { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 14px; align-items: start; }
+.step::before { counter-increment: step; content: counter(step); font-family: var(--display); font-weight: 700; font-size: 18px; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: var(--accent); color: var(--accent-ink); }
+.step > div { display: grid; gap: 8px; min-width: 0; }
+.callout { border-left: 3px solid var(--amber); background: var(--panel); padding: 12px 16px; border-radius: 0 8px 8px 0; font-size: 15px; color: var(--muted); }
+.callout strong { color: var(--fg); }
+
+/* two-up */
+.two { display: grid; gap: 22px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); align-items: start; }
+.two > * { min-width: 0; }
+
+footer { border-top: 1px solid var(--line); padding-block: 36px; font-size: 14px; color: var(--muted); }
+footer .wrap { display: flex; flex-wrap: wrap; gap: 10px 24px; justify-content: space-between; align-items: center; }
+footer .wrap > div { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; }
+</style>
+</head>
+<body>
+
+<nav class="nav" aria-label="Site">
+  <div class="wrap">
+    <a class="brand" href="#top"><img src="favicon.svg" alt="">Keryx</a>
+    <ul>
+      <li><a href="#features">Features</a></li>
+      <li><a href="#grammar">The picture</a></li>
+      <li><a href="#quickstart">Quick start</a></li>
+      <li><a href="#configuration">Configuration</a></li>
+      <li><a href="#api">API</a></li>
+      <li><a href="https://github.com/rafreid/keryx">GitHub</a></li>
+    </ul>
+  </div>
+</nav>
+
+<header class="hero" id="top">
+  <div class="wrap">
+    <div style="display:grid;gap:18px">
+      <div class="eyebrow">Open source · MIT · for Hermes Agent</div>
+      <h1>See what your <em>Hermes agent</em> is doing, as it does it.</h1>
+      <p class="lede">Keryx is a live, read-only activity monitor. It reads the agent's own records (its SQLite state, cron store and logs) without touching them, and draws them as a 3D force graph where shape, colour and position each carry one meaning.</p>
+      <div class="cta">
+        <a class="btn primary" href="#quickstart">Get running in two minutes</a>
+        <a class="btn" href="https://github.com/rafreid/keryx">Source on GitHub</a>
+        <span class="greek">κῆρυξ · the herald who carried messages for Hermes</span>
+      </div>
+    </div>
+    <figure class="shot" style="margin:0">
+      <img src="img/graph.png" width="1440" height="900" alt="The Keryx dashboard: a health header, a strip of running sessions, the 3D graph with Hermes at the centre and platforms, sessions, tools and cron jobs around it, and the overview side panel">
+      <figcaption>A Hermes install with two live sessions, a compacted Telegram chat, a subagent, two cron jobs and one open incident (sample data).</figcaption>
+    </figure>
+  </div>
+</header>
+
+<section id="why">
+  <div class="wrap">
+    <div class="grid">
+      <div class="card">
+        <h3><span class="dot" style="background:var(--green)"></span>Read-only, by construction</h3>
+        <p>Keryx opens Hermes' files and never writes them. It never calls the agent or its API. Every number on the page comes from what Hermes itself recorded, read through snapshot copies that refresh when a file changes.</p>
+      </div>
+      <div class="card">
+        <h3><span class="dot pulse" style="background:var(--accent)"></span>Live</h3>
+        <p>One watcher follows the data files and pushes a server-sent event to every open page the moment something changes. Running sessions breathe; active links carry particles at the session's call rate.</p>
+      </div>
+      <div class="card">
+        <h3><span class="dot" style="background:var(--violet)"></span>Beside Hermes, not inside it</h3>
+        <p>A small container (FastAPI + React) on port 9120 that mounts the Hermes data directory. Works with a native install or the official Hermes Docker image, on the same host. Nothing to install into Hermes.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="grammar">
+  <div class="wrap">
+    <div class="head">
+      <div class="eyebrow">One rule for the picture</div>
+      <h2>Shape says what. Colour says how. Position says when.</h2>
+      <p class="prose muted">Every node obeys the same three-part grammar, so once you have read one session you can read the whole graph at a glance.</p>
+    </div>
+    <div class="triad">
+      <div class="card">
+        <h3>Shape is the kind of thing</h3>
+        <div class="shapes">
+          <span><i class="sw ri" style="color:var(--accent)"></i>platform (ring)</span>
+          <span><i class="sw" style="background:var(--muted)"></i>session (sphere)</span>
+          <span><i class="sw di" style="background:var(--muted)"></i>subagent (octahedron)</span>
+          <span><i class="sw sq" style="background:var(--orange)"></i>tool call (cube)</span>
+          <span><i class="sw cyl" style="background:var(--pink)"></i>model (cylinder)</span>
+          <span><i class="sw tri" style="color:var(--amber)"></i>cron job (cone)</span>
+        </div>
+        <p>Hermes is the faceted core at the centre. Tool cubes are sized by call count and turn red when a call failed; model cylinders are sized by tokens.</p>
+      </div>
+      <div class="card">
+        <h3>Colour is how a session is doing</h3>
+        <div class="statuses">
+          <span class="tag"><i class="dot" style="background:var(--green)"></i>running</span>
+          <span class="tag"><i class="dot" style="background:var(--accent)"></i>waiting for you</span>
+          <span class="tag"><i class="dot" style="background:var(--amber)"></i>stale</span>
+          <span class="tag"><i class="dot" style="background:#4f8f6a"></i>ended</span>
+          <span class="tag"><i class="dot" style="background:var(--muted)"></i>closed by user</span>
+          <span class="tag"><i class="dot" style="background:var(--red)"></i>orphaned</span>
+          <span class="tag"><i class="dot" style="background:var(--red)"></i>failed</span>
+        </div>
+        <p>"Waiting for you" means the last message is Hermes' reply and the chat is open: the next move is yours. Failures come from the JSON result Hermes stores for each tool call, not from keyword matching. Anything touched in the last five minutes glows.</p>
+      </div>
+      <div class="card">
+        <h3>Position is when it started</h3>
+        <p>Each platform (Telegram, TUI, CLI, cron…) owns a wedge around the hub and its sessions sit inside it, ordered by start time. A labelled time axis runs down the side: in 3D the rings step downward from "now", in 2D they grow outward. Opacity fades with age. Subagents orbit the session that spawned them; tools cluster around the session that called them; models sit on a shelf above; cron jobs fan out below.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="features">
+  <div class="wrap">
+    <div class="head">
+      <div class="eyebrow">Everything on the page</div>
+      <h2>Features</h2>
+    </div>
+
+    <div class="two">
+      <figure class="shot" style="margin:0">
+        <img src="img/session.png" width="1440" height="900" alt="A session selected in Keryx: its tools fanned out in a ring, and the side panel showing status, request, plan progress, context gauge, cost, working directory, the agent's todo checklist, files touched and the turn-by-turn trace">
+        <figcaption>A selected session: tools fan out in a ring facing you; the panel shows its plan, context gauge, cost and trace.</figcaption>
+      </figure>
+      <div class="grid" style="grid-template-columns:1fr">
+        <div class="card">
+          <h3>Health header</h3>
+          <ul>
+            <li><strong>Gateway</strong> heartbeat, <strong>Telegram</strong> transport, <strong>cron</strong> scheduler, the <strong>error log</strong>, and session states, each green / amber / red; the worst one drives the title dot.</li>
+            <li>The cron check reads Hermes' own incident ledger and delivery queue: an open incident is red, undelivered results are amber.</li>
+            <li>Token totals for the window with the spend, prefixed <code>~</code> when it is an estimate rather than a provider-reported figure.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Right now</h3>
+          <ul>
+            <li>One card per open session: the user's request, the latest step, elapsed and idle time, calls per minute, subagents, git branch.</li>
+            <li><strong>Plan progress</strong> from the agent's own <code>todo_list</code>: done / total and the step in progress.</li>
+            <li><strong>Context gauge</strong>: how full the model's window was at the last call.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <h3>The graph</h3>
+        <ul>
+          <li>3D (default) or 2D, same layout and grammar.</li>
+          <li>Hover highlights a neighbourhood; click selects; sessions fan their tools out in a ring facing the camera.</li>
+          <li>Click a platform to collapse everything under it. Search dims what does not match. The legend has checkboxes to hide any kind or status.</li>
+          <li><strong>Spacing</strong> scales rings, link lengths and repulsion together; <strong>recenter</strong> frames the whole graph again. Both remembered per browser.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Time</h3>
+        <ul>
+          <li>Window selector from the last hour to all time.</li>
+          <li><strong>Replay</strong>: drag the bar to re-query the graph as of any moment in the window and watch sessions appear, run and end.</li>
+          <li>Click a label on the time axis to keep only the sessions that started in that span.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Compacted conversations</h3>
+        <ul>
+          <li>When Hermes compacts a long chat it ends the session and continues in a child. Keryx folds that lineage into <strong>one node</strong>: it starts when the first segment started and is coloured by the latest one.</li>
+          <li>The trace shows every segment with a ⟲ marker where the context was compacted.</li>
+          <li>Branches you made with <code>/branch</code> stay separate, joined to their origin; delegated subagents keep their purple link.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Session detail</h3>
+        <ul>
+          <li>Status, request, latest step, platform, model, timings, message and tool counts, call rate, subagents, end reason.</li>
+          <li>Tokens in / out, cache reads and hit rate, reasoning tokens, API calls, and the cost with its basis (provider-reported or estimated).</li>
+          <li>Working directory and git branch, profile, handoff state.</li>
+          <li>The agent's <strong>plan</strong> as a checklist (done, in progress, pending, cancelled).</li>
+          <li><strong>Files touched</strong>: writes, patches, reads and searches, most recent first.</li>
+          <li>The <strong>trace</strong>: every user turn, reply, tool call with arguments, result and duration, failures marked, plus Hermes' own events (model switch, steer, auto-continue, delegation results).</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Tasks tab</h3>
+        <ul>
+          <li><strong>Delegations</strong> board: what Hermes asked subagents to do, grouped in progress / completed / failed, with goals, children, duration and delivery state.</li>
+          <li><strong>Scheduled jobs</strong> with next run countdown, run history, missed slots, failure streaks and the scheduler heartbeat.</li>
+          <li><strong>Incidents</strong>: Hermes groups repeated cron failures by job and error signature; Keryx shows their lifecycle (detected → alerted → resolved / closed).</li>
+          <li><strong>Deliveries</strong>: cron results waiting to reach their chat, or that could not be delivered.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Sessions, analytics, logs</h3>
+        <ul>
+          <li><strong>Sessions</strong> grouped by platform, live ones pinned, filtered by the search box (<kbd>⌘K</kbd>).</li>
+          <li><strong>Analytics</strong>: daily trend of sessions, tool calls, failures and tokens over 7 to 90 days; model share; busiest day.</li>
+          <li><strong>Logs</strong>: filterable tails of every log file Hermes writes, by level and keyword. A line logged inside a session links to that session.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Notifications</h3>
+        <ul>
+          <li>In-app toasts, and desktop notifications if you allow them.</li>
+          <li>Fires when Hermes replies and waits for you, a session fails or is orphaned by a restart, a session goes quiet, a delegation finishes or fails, a cron job fails or misses its trigger, or the error log turns red.</li>
+          <li>Click a toast to jump to the node.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Navigation</h3>
+        <ul>
+          <li>Every selection is a browser history entry that remembers the selection, the tab and the camera pose. <kbd>Backspace</kbd> goes back, <kbd>Shift</kbd>+<kbd>Backspace</kbd> forward; <kbd>Alt</kbd>+<kbd>←</kbd> and trackpad swipes work too.</li>
+          <li>The URL hash (<code>#session:…</code>, <code>#cron:…</code>) is a deep link you can share, or scan from the QR popover to open on your phone.</li>
+          <li>Dark and light themes.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Into the Hermes dashboard</h3>
+        <ul>
+          <li>Set <code>HERMES_DASHBOARD_URL</code> and every session, cron job and the logs tab gets an "open in the Hermes dashboard" link. Keryx never calls the dashboard; the links are for you.</li>
+          <li>A redacted <strong>diagnostics</strong> download (counts, states, ids, masked error lines, no message content) to attach to bug reports.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="two">
+      <figure class="shot" style="margin:0">
+        <img src="img/tasks.png" width="1440" height="900" alt="The tasks tab: a completed delegation, two scheduled jobs with run history, an open incident and its lifecycle">
+        <figcaption>Tasks: delegations, scheduled jobs, Hermes' incident ledger.</figcaption>
+      </figure>
+      <figure class="shot" style="margin:0">
+        <img src="img/logs.png" width="1440" height="900" alt="The logs tab: error-level lines from errors.log, one of them tagged with the session that logged it">
+        <figcaption>Logs: every file Hermes writes, filtered by level; session-tagged lines link to their session.</figcaption>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<section id="quickstart">
+  <div class="wrap">
+    <div class="head">
+      <div class="eyebrow">Quick start</div>
+      <h2>Running in two minutes</h2>
+      <p class="prose muted">You need a Hermes Agent install whose data directory you can read, and Docker or Python 3.11+. Node is not required: a prebuilt image is published for every release.</p>
+    </div>
+    <div class="steps">
+      <div class="step"><div>
+        <h3>Clone and run the quick-start script</h3>
+<pre><code>git clone https://github.com/rafreid/keryx.git
+cd keryx
+./quickstart.sh</code></pre>
+        <p class="muted">It finds the Hermes data directory (<code>~/.hermes</code> for a native install, <code>/opt/hermes-data</code> or <code>/opt/data</code> for the Docker install), works out which user owns it, pulls the image and starts Keryx with Docker Compose. Without Docker it falls back to a Python virtualenv. <code>--build</code> builds from source, <code>--python</code> skips Docker, <code>HERMES_HOME=…</code> points at another directory.</p>
+      </div></div>
+      <div class="step"><div>
+        <h3>Open the page</h3>
+        <p class="muted">Keryx listens on <code>http://localhost:9120/</code>. <code>curl localhost:9120/api/health</code> should answer with <code>"state_db": true</code>; if it is <code>false</code>, the data path is wrong or not readable by the Keryx user.</p>
+      </div></div>
+      <div class="step"><div>
+        <h3>Optional: link it to the Hermes dashboard, lock it</h3>
+<pre><code># in docker-compose.yml, under the keryx service
+- HERMES_DASHBOARD_URL=http://192.168.1.100:9119   # "open in the Hermes dashboard" links
+- KERYX_TOKEN=change-me                            # one shared token for /api; the page asks once</code></pre>
+      </div></div>
+    </div>
+    <div class="callout"><strong>Permissions.</strong> Hermes keeps its data directory mode 0700, so Keryx must run as the user that owns it. The quick-start script reads the owner from the directory; by hand, pass <code>HERMES_UID</code> and <code>HERMES_GID</code> to Compose (<code>$(id -u)</code> for a native install, <code>10000</code> for the official Hermes container unless you changed it).</div>
+    <div class="two">
+      <div>
+        <h3>Hermes in Docker already?</h3>
+        <p class="muted" style="margin-top:6px">Paste the <code>keryx</code> service from the repository's <code>docker-compose.yml</code> into the compose file that runs Hermes, and mount the same host directory you give Hermes. The image is <code>ghcr.io/rafreid/keryx:latest</code> (amd64 and arm64).</p>
+      </div>
+      <div>
+        <h3>Keep it private</h3>
+        <p class="muted" style="margin-top:6px">Keryx shows everything Hermes recorded, including prompts and tool output. Bind the port to <code>127.0.0.1</code> and reach it over SSH or a VPN such as Tailscale, or set <code>KERYX_TOKEN</code>. Do not expose it to the internet. The only endpoint meant to be shared is the redacted diagnostics download.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="configuration">
+  <div class="wrap">
+    <div class="head">
+      <div class="eyebrow">Configuration</div>
+      <h2>Environment variables</h2>
+    </div>
+    <div class="tbl"><table>
+      <thead><tr><th>Variable</th><th>Default</th><th>Meaning</th></tr></thead>
+      <tbody>
+        <tr><td><code>HERMES_DATA</code></td><td><code>/opt/data</code></td><td>the Hermes data directory as seen by Keryx (the mount inside the container; <code>HERMES_HOME</code> is the host side for Compose)</td></tr>
+        <tr><td><code>GRAPH_PORT</code></td><td><code>9120</code></td><td>port to listen on</td></tr>
+        <tr><td><code>HERMES_DASHBOARD_URL</code></td><td>unset</td><td>where the Hermes dashboard (port 9119) is reachable from your browser; adds links on sessions, cron jobs and logs</td></tr>
+        <tr><td><code>KERYX_TOKEN</code></td><td>unset</td><td>optional shared secret; every <code>/api</code> route except <code>/api/health</code> then needs it as a bearer header, cookie or <code>?token=</code></td></tr>
+        <tr><td><code>ACTIVE_WINDOW</code></td><td><code>300</code></td><td>seconds; a session touched this recently is "active" and its links carry particles</td></tr>
+        <tr><td><code>STALE_AFTER</code></td><td><code>1800</code></td><td>seconds; a session mid-turn but idle for this long is shown as stale</td></tr>
+        <tr><td><code>CONTEXT_LENGTH</code></td><td><code>400000</code></td><td>assumed context window for the gauge when the model family is not recognised (Hermes does not record it; such gauges are marked <code>~</code>)</td></tr>
+      </tbody>
+    </table></div>
+    <h3>What Keryx reads</h3>
+    <p class="prose muted">From the Hermes data directory, read-only: <code>state.db</code> and its WAL, <code>cron/jobs.json</code>, <code>cron/executions.db</code>, <code>cron/incidents.db</code>, <code>cron/deliveries.db</code>, <code>cron/ticker_heartbeat</code> and <code>logs/*.log</code>. Files an older Hermes does not write are skipped and columns are feature-detected, so Keryx keeps working across Hermes versions. The volume is mounted read-write only because SQLite in WAL mode needs to create its <code>-shm</code> file; Keryx itself never writes.</p>
+  </div>
+</section>
+
+<section id="api">
+  <div class="wrap">
+    <div class="head">
+      <div class="eyebrow">For scripts and integrations</div>
+      <h2>HTTP API</h2>
+      <p class="prose muted">Everything the page shows is available as JSON on the same port.</p>
+    </div>
+    <div class="tbl"><table>
+      <thead><tr><th>Endpoint</th><th>Returns</th></tr></thead>
+      <tbody>
+        <tr><td><code>GET /api/graph?hours=24[&amp;at=…]</code></td><td>nodes and links; <code>at</code> replays the graph as of that moment; <code>aliases</code> maps compacted segment ids to their node</td></tr>
+        <tr><td><code>GET /api/now</code></td><td>running and waiting sessions digest</td></tr>
+        <tr><td><code>GET /api/status</code></td><td>health checks and dashboard links</td></tr>
+        <tr><td><code>GET /api/cost?hours=24</code></td><td>tokens and cost per model with a <code>cost_basis</code> (actual, estimated, included, unknown)</td></tr>
+        <tr><td><code>GET /api/tasks</code></td><td>delegations, cron jobs with history and incidents, scheduler heartbeat, incidents, delivery queue</td></tr>
+        <tr><td><code>GET /api/analytics?days=30</code></td><td>daily trend, model share, totals</td></tr>
+        <tr><td><code>GET /api/session/{id}/trace</code></td><td>ordered steps across every segment of a compacted conversation</td></tr>
+        <tr><td><code>GET /api/session/{id}/todo</code></td><td>the agent's current plan</td></tr>
+        <tr><td><code>GET /api/logs?file=…&amp;level=…&amp;q=…</code></td><td>log entries with level, logger and session id</td></tr>
+        <tr><td><code>GET /api/diagnostics</code></td><td>redacted snapshot for bug reports</td></tr>
+        <tr><td><code>GET /api/stream?hours=24</code></td><td>server-sent events, one <code>update</code> per data change</td></tr>
+        <tr><td><code>GET /api/health</code></td><td>liveness</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div>
+      <span>Keryx is an open-source project of <a href="https://www.afluxsystems.com">Aflux Systems LLC</a>, released under the MIT license.</span>
+    </div>
+    <div>
+      <a href="https://github.com/rafreid/keryx">GitHub</a>
+      <a href="https://github.com/rafreid/keryx/issues">Issues</a>
+      <a href="https://github.com/NousResearch/hermes-agent">Hermes Agent</a>
+      <a href="https://github.com/vasturiano/3d-force-graph">3d-force-graph</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>
