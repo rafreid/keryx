@@ -8,9 +8,10 @@ import Sessions from './Sessions.jsx'
 import Logs from './Logs.jsx'
 import Trace from './Trace.jsx'
 import Tasks from './Tasks.jsx'
+import Memory from './Memory.jsx'
 import { resumeCommand } from './grouping.js'
 
-const TABS = ['overview', 'sessions', 'tasks', 'analytics', 'logs']
+const TABS = ['overview', 'sessions', 'tasks', 'analytics', 'logs', 'memory']
 
 export default function SidePanel({ node, cost, status, onClose, graph, tasks, hidden, toggleHidden, showAll, search, onSelect, tab, setTab }) {
   // tab badges (AionUi shows pending-approval counts on its sidebar): things that want attention
@@ -35,6 +36,7 @@ export default function SidePanel({ node, cost, status, onClose, graph, tasks, h
         : tab === 'tasks' ? <Tasks tasks={tasks} onSelect={onSelect} links={status?.links} />
         : tab === 'analytics' ? <Analytics />
         : tab === 'logs' ? <Logs onSelect={onSelect} links={status?.links} />
+        : tab === 'memory' ? <Memory />
         : <Overview cost={cost} status={status} graph={graph} hidden={hidden} toggleHidden={toggleHidden} showAll={showAll} onSelect={onSelect} />}
     </div>
   )

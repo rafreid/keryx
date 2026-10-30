@@ -97,3 +97,33 @@ def test_search_like_fallback(hermes_data, monkeypatch):
     out = keryx.build_search("fix the build", 10)
     assert out["engine"] == "like" and [h["id"] for h in out["sessions"]] == ["s-running"]
     assert keryx.build_search("100%", 10)["sessions"] == []        # LIKE wildcards are escaped
+
+
+def test_memory_is_off_by_default(client):
+    m = client.get("/api/memory").json()
+    assert m["enabled"] is False and m["files"] == [] and "KERYX_SHOW_MEMORY" in m["hint"]
+    assert "pytest" not in client.get("/api/diagnostics").text   # memory content never leaks into diagnostics
+
+
+def test_memory_panel_when_enabled(client, monkeypatch):
+    from conftest import keryx
+    monkeypatch.setattr(keryx, "SHOW_MEMORY", True)
+    keryx.configure(keryx.DATA)
+    m = client.get("/api/memory").json()
+    assert m["enabled"] is True
+    mem, user = m["files"]
+    assert mem["file"] == "MEMORY.md" and [e["text"][:9] for e in mem["entries"]] == ["The repo ", "Deploys g", "[BLOCKED:"]
+    assert mem["entries"][2]["blocked"] is True and mem["entries"][0]["blocked"] is False
+    assert mem["limit"] == 100 and mem["hermes_enabled"] is True and mem["pct"] > 100   # over budget in the fixture
+    assert user["limit"] == 1375 and user["hermes_enabled"] is False                      # bad value → default; switch read
+    assert user["entries"] == [{"text": "Prefers short answers.", "blocked": False}] and user["chars"] == 22
+    assert mem["mtime"] and mem["exists"] is True
+
+
+def test_memory_config_scanner(tmp_path, monkeypatch):
+    from conftest import keryx
+    monkeypatch.setattr(keryx, "DATA", tmp_path)
+    assert keryx.memory_config() == keryx.MEMORY_DEFAULTS                                # no config.yaml
+    (tmp_path / "config.yaml").write_text("memory:\n  memory_char_limit: 3000\n  user_profile_enabled: no\n")
+    c = keryx.memory_config()
+    assert c["memory_char_limit"] == 3000 and c["user_profile_enabled"] is False and c["memory_enabled"] is True

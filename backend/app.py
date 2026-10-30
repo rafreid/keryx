@@ -9,6 +9,7 @@ cron store and gateway logs, and exposes:
   GET /api/stream?hours=24                SSE: pushes {graph, now, status, cost, tasks} when data changes
   GET /api/tasks                          delegations board + scheduled jobs with run history
   GET /api/search?q=                      sessions whose conversation mentions q (Hermes' FTS5 index)
+  GET /api/memory                         MEMORY.md / USER.md entries and budgets (only with KERYX_SHOW_MEMORY=1)
   GET /api/diagnostics                    redacted snapshot for bug reports (no prompts, no keys)
   GET /api/qr?text=                       QR code (SVG) for opening Keryx on a phone
   GET /api/health                         liveness
@@ -48,6 +49,14 @@ FILE_TOOLS = {"write_file": "write", "patch": "patch", "read_file": "read", "sea
 # http://192.168.1.100:9119. Empty = no deep links. Keryx never calls it; the links are for the user.
 DASHBOARD_URL = os.environ.get("HERMES_DASHBOARD_URL", "").strip().rstrip("/")
 TODO_TOOLS = ("todo_list", "todo")       # Hermes' task-list tool; its result is the agent's current plan
+# Opt-in: show Hermes' memory files (memories/MEMORY.md and USER.md) in a panel. They are personal notes
+# about you and your environment, so the panel stays off unless this is set; the diagnostics bundle
+# never includes them either way.
+SHOW_MEMORY = os.environ.get("KERYX_SHOW_MEMORY", "").strip().lower() in ("1", "true", "yes", "on")
+# Hermes separates memory entries with this (tools/memory_tool_store.ENTRY_DELIMITER)
+MEMORY_DELIMITER = "\n§\n"
+MEMORY_FILES = {"memory": "MEMORY.md", "user": "USER.md"}
+MEMORY_DEFAULTS = {"memory_char_limit": 2200, "user_char_limit": 1375, "memory_enabled": True, "user_profile_enabled": True}
 # Optional shared secret. When set, every /api/* route except /api/health needs it as a bearer
 # header, a `keryx_token` cookie, or `?token=` (the page sets the cookie from the first).
 TOKEN = os.environ.get("KERYX_TOKEN", "").strip()
@@ -173,7 +182,8 @@ def configure(data_dir: Path) -> None:
 def data_signature() -> tuple:
     return file_sig(DATA / "state.db", DATA / "state.db-wal", DATA / "cron" / "jobs.json",
                     DATA / "cron" / "executions.db", DATA / "cron" / "incidents.db", DATA / "cron" / "deliveries.db",
-                    DATA / "logs" / "errors.log", DATA / "skills" / ".usage.json")
+                    DATA / "logs" / "errors.log", DATA / "skills" / ".usage.json",
+                    DATA / "memories" / "MEMORY.md", DATA / "memories" / "USER.md", DATA / "config.yaml")
 
 
 # ----------------------------------------------------------------- loaders
@@ -1733,6 +1743,65 @@ def build_logs(file: str, level: str, q: str, lines: int) -> dict:
             "files": files}
 
 
+# ----------------------------------------------------------------- memory
+def memory_config() -> dict:
+    """The `memory:` section of Hermes' config.yaml (limits and on/off switches), read with a small
+    line scanner so Keryx needs no YAML dependency: the section is flat `key: value` pairs."""
+    out = dict(MEMORY_DEFAULTS)
+    try:
+        lines = (DATA / "config.yaml").read_text().splitlines()
+    except OSError:
+        return out
+    inside = False
+    for line in lines:
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        if not line[0].isspace():
+            inside = line.split(":")[0].strip() == "memory"
+            continue
+        if not inside or ":" not in line:
+            continue
+        key, _, val = line.strip().partition(":")
+        val = val.split("#")[0].strip().strip("'\"")
+        key = key.strip()
+        if key in ("memory_char_limit", "user_char_limit"):
+            try:
+                out[key] = int(val)
+            except ValueError:
+                pass
+        elif key in ("memory_enabled", "user_profile_enabled"):
+            out[key] = val.lower() in ("1", "true", "yes", "on")
+    return out
+
+
+def build_memory() -> dict:
+    """Hermes' two memory files as entry lists with their character budgets (hermes-webui's Memory
+    panel and cc-switch's Hermes page show the same files, editable; Keryx only reads)."""
+    out: dict[str, Any] = {"generated_at": time.time(), "enabled": SHOW_MEMORY, "files": []}
+    if not SHOW_MEMORY:
+        out["hint"] = "set KERYX_SHOW_MEMORY=1 to show Hermes' MEMORY.md and USER.md here"
+        return out
+    cfg = memory_config()
+    for target, name in MEMORY_FILES.items():
+        path = DATA / "memories" / name
+        f: dict[str, Any] = {"target": target, "file": name, "path": str(path), "entries": [], "chars": 0,
+                             "limit": cfg["memory_char_limit" if target == "memory" else "user_char_limit"],
+                             "hermes_enabled": cfg["memory_enabled" if target == "memory" else "user_profile_enabled"],
+                             "exists": path.exists(), "mtime": None}
+        if path.exists():
+            try:
+                raw = path.read_text(errors="replace")
+                f["mtime"] = path.stat().st_mtime
+                entries = [e.strip() for e in raw.split(MEMORY_DELIMITER) if e.strip()]
+                f["entries"] = [{"text": e, "blocked": e.startswith("[BLOCKED:")} for e in entries]
+                f["chars"] = sum(len(e) for e in entries)
+            except OSError as e:
+                f["error"] = str(e)
+        f["pct"] = round(100 * f["chars"] / f["limit"], 1) if f["limit"] else 0
+        out["files"].append(f)
+    return out
+
+
 # ----------------------------------------------------------------- full-text search
 FTS_TOKEN_RE = re.compile(r"[^\s\"]+")
 
@@ -1862,6 +1931,11 @@ def api_trace(sid: str, tool: Optional[str] = Query(None), limit: int = Query(30
 @app.get("/api/session/{sid}/todo")
 def api_todo(sid: str):
     return cached("todo", build_todo, sid)
+
+
+@app.get("/api/memory")
+def api_memory():
+    return cached("memory", build_memory)
 
 
 @app.get("/api/search")

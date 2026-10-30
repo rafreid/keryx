@@ -26,6 +26,7 @@ services:
       - CONTEXT_LENGTH=400000        # assumed context window when the model is not recognised
       - KERYX_TOKEN=${KERYX_TOKEN:-} # optional: when set, /api needs this bearer token (the page asks for it once)
       - HERMES_DASHBOARD_URL=${HERMES_DASHBOARD_URL:-}  # optional, e.g. http://192.168.1.100:9119: adds "open in the Hermes dashboard" links
+      - KERYX_SHOW_MEMORY=${KERYX_SHOW_MEMORY:-}  # optional: 1 shows Hermes' MEMORY.md / USER.md in a read-only panel (personal notes, off by default)
     ports:
       - "9120:9120"                  # bind to 127.0.0.1:9120:9120 if only a tunnel/VPN should reach it
     volumes:
