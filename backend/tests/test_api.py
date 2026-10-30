@@ -43,6 +43,20 @@ def test_logs_endpoint_exposes_session(client):
     assert [e["session"] for e in out["entries"]] == [None, "s-running"]
 
 
+def test_todo_endpoint(client):
+    t = client.get("/api/session/s-running/todo").json()
+    assert t["session"] == "s-running" and t["todo"]["summary"]["total"] == 3
+
+
+def test_dashboard_links(client, monkeypatch):
+    assert client.get("/api/status").json()["links"] is None
+    from conftest import keryx
+    monkeypatch.setattr(keryx, "DASHBOARD_URL", "http://hermes:9119")
+    keryx.configure(keryx.DATA)                         # drop the cached status
+    links = client.get("/api/status").json()["links"]
+    assert links["chat_resume"] == "http://hermes:9119/chat?resume=" and links["cron"] == "http://hermes:9119/cron"
+
+
 def test_diagnostics_is_redacted(client):
     r = client.get("/api/diagnostics")
     assert r.status_code == 200 and "attachment" in r.headers["content-disposition"]

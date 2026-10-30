@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { fmtTime } from './util.js'
 
 /** Tail of a Hermes log file, filterable by level and keyword, refreshed every 15 s. */
-export default function Logs({ onSelect }) {
+export default function Logs({ onSelect, links }) {
   const [file, setFile] = useState('errors')
   const [level, setLevel] = useState('WARNING')
   const [q, setQ] = useState('')
@@ -24,7 +24,7 @@ export default function Logs({ onSelect }) {
         </select>
         <input type="search" placeholder="keyword" value={q} onChange={e => setQ(e.target.value)} style={{ flex: 1, minWidth: 80 }} />
       </div>
-      {data && <div className="small">{data.matched} matching · {Object.entries(data.counts || {}).filter(([, n]) => n).map(([l, n]) => `${l.toLowerCase()} ${n}`).join(' · ')}</div>}
+      {data && <div className="small">{links?.logs && <a href={links.logs} target="_blank" rel="noreferrer" style={{ marginRight: 8 }}>Hermes dashboard logs ↗</a>}{data.matched} matching · {Object.entries(data.counts || {}).filter(([, n]) => n).map(([l, n]) => `${l.toLowerCase()} ${n}`).join(' · ')}</div>}
       <div className="loglist">
         {(data?.entries || []).slice().reverse().map((e, i) => (
           <div key={i} className={`log ${e.level.toLowerCase()}`}>

@@ -34,8 +34,8 @@ function Step({ s, open }) {
   const isOpen = open || o
   if (s.kind === 'user') return <div className="step user"><span className="when">{fmtTime(s.ts)}</span><b>you</b><div className="txt">{s.text}</div></div>
   if (s.kind === 'assistant') return <div className="step assistant"><span className="when">{fmtTime(s.ts)}</span><b>hermes</b><div className="txt">{s.text}</div></div>
-  if (s.kind === 'compaction') return <div className="step compaction" title={`segment ${s.segment}`}><span className="when">{fmtTime(s.ts)}</span><b>⟲ compacted</b><span className="small">{s.text}</span></div>
-  if (s.kind === 'event') return <div className="step event"><span className="when">{fmtTime(s.ts)}</span><b>{s.name.replace(/_/g, ' ')}</b>{s.text && <span className="small">{s.text}</span>}</div>
+  if (s.kind === 'compaction') return <div className="step compaction" title={`segment ${s.segment}`}><span className="when">{fmtTime(s.ts)}</span><b>⟲ compacted</b> <span className="small">{s.text}</span></div>
+  if (s.kind === 'event') return <div className="step event"><span className="when">{fmtTime(s.ts)}</span><b>{s.name.replace(/_/g, ' ')}</b>{s.text && <> <span className="small">{s.text}</span></>}</div>
   return (
     <div className={`step tool ${s.failed ? 'failed' : ''}`} onClick={() => setO(v => !v)}>
       <span className="when">{fmtTime(s.ts)}</span>

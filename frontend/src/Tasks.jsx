@@ -6,7 +6,7 @@ import Section from './Section.jsx'
  * Task board (after AionUi's Team Mode task board + scheduled-tasks page):
  * what Hermes delegated to subagents, and what its scheduler is going to do next.
  */
-export default function Tasks({ tasks, onSelect }) {
+export default function Tasks({ tasks, onSelect, links }) {
   const del = tasks?.delegations || []
   const jobs = tasks?.jobs || []
   const sched = tasks?.scheduler
@@ -30,6 +30,7 @@ export default function Tasks({ tasks, onSelect }) {
 
       <Section id="jobs" title="Scheduled jobs" summary={<><span className={`dot ${sched?.alive ? 'green' : 'red'}`} />{jobs.length} job{jobs.length === 1 ? '' : 's'}{jobs.some(j => j.state === 'error' || j.state === 'missed') ? <span className="err"> · needs attention</span> : ''}</>}>
         <div className="small" style={{ marginBottom: 6 }}>
+          {links?.cron && <a href={links.cron} target="_blank" rel="noreferrer" style={{ float: 'right' }}>manage in the Hermes dashboard ↗</a>}
           <span className={`dot ${sched?.alive ? 'green' : 'red'}`} />
           scheduler {sched?.alive ? `alive · tick ${ago(sched.heartbeat)}` : sched?.heartbeat ? `silent since ${ago(sched.heartbeat)}` : 'never seen'}
         </div>

@@ -101,6 +101,15 @@ def write_state_db(path: Path) -> None:
     msg("s-running", "tool", tool_result("built"), t0 + 20, tool_name="terminal", tool_call_id="c1")
     msg("s-running", "assistant", None, t0 + 30, tool_calls=call("write_file", {"path": "src/x.py", "content": "x"}, "c2"), finish_reason="tool_calls")
     msg("s-running", "tool", tool_result("", 1, "permission denied"), NOW - 30, tool_name="write_file", tool_call_id="c2")
+    # the agent's plan: two todo_list revisions, the newer one wins
+    plan = lambda a, b: json.dumps({"todos": [{"id": "1", "content": "run the build", "status": a},
+                                             {"id": "2", "content": "fix src/x.py", "status": b},
+                                             {"id": "3", "content": "rerun tests", "status": "pending"}],
+                                   "revision": 2, "summary": {}})
+    msg("s-running", "assistant", None, t0 + 5, tool_calls=call("todo_list", {"todos": []}, "c0"), finish_reason="tool_calls")
+    msg("s-running", "tool", plan("in_progress", "pending"), t0 + 6, tool_name="todo_list", tool_call_id="c0")
+    msg("s-running", "assistant", None, t0 + 25, tool_calls=call("todo_list", {"todos": []}, "c3"), finish_reason="tool_calls")
+    msg("s-running", "tool", plan("completed", "in_progress"), t0 + 26, tool_name="todo_list", tool_call_id="c3")
     # archived (compacted) duplicates of the two tool rows: Hermes keeps them for search, never shows them
     msg("s-running", "tool", tool_result("built"), t0 + 20, tool_name="terminal", tool_call_id="c1", active=0, compacted=1)
     msg("s-running", "tool", tool_result("", 1, "permission denied"), NOW - 30, tool_name="write_file", tool_call_id="c2", active=0, compacted=1)

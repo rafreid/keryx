@@ -41,6 +41,10 @@ MAX_SESSIONS = 600
 CONTEXT_LENGTH = int(os.environ.get("CONTEXT_LENGTH", "400000"))
 CONTEXT_LIMITS = {"gpt-5.4-mini": 400000, "gpt-5": 400000, "claude": 200000, "gemini": 1000000}
 FILE_TOOLS = {"write_file": "write", "patch": "patch", "read_file": "read", "search_files": "search"}
+# Where the Hermes dashboard (hermes dashboard, port 9119) is reachable from the browser, e.g.
+# http://192.168.1.100:9119. Empty = no deep links. Keryx never calls it; the links are for the user.
+DASHBOARD_URL = os.environ.get("HERMES_DASHBOARD_URL", "").strip().rstrip("/")
+TODO_TOOLS = ("todo_list", "todo")       # Hermes' task-list tool; its result is the agent's current plan
 # Optional shared secret. When set, every /api/* route except /api/health needs it as a bearer
 # header, a `keryx_token` cookie, or `?token=` (the page sets the cookie from the first).
 TOKEN = os.environ.get("KERYX_TOKEN", "").strip()
@@ -692,6 +696,7 @@ def build_graph(hours: float, at: Optional[float]) -> dict:
     digests = load_messages(db, seg_ids, upto=at, group=alias)
     usage = load_usage(db, seg_ids)
     per_session_usage = session_usage(db, seg_ids, alias)
+    todos = latest_todos(db, seg_ids)
     delegations = [d for d in load_delegations(db) if alias.get(d["origin_session"], d["origin_session"]) in id_set]
     for d in delegations:
         d["origin_session"] = alias.get(d["origin_session"], d["origin_session"])
@@ -773,6 +778,7 @@ def build_graph(hours: float, at: Optional[float]) -> dict:
             compacted_at=[t for t in s["compacted_at"] if t],
             cwd=s.get("cwd"), git_branch=s.get("git_branch"), profile=s.get("profile_name"),
             archived=bool(s.get("archived")), handoff=s.get("handoff_state"), user=s.get("user_id"),
+            plan=plan_of(todos, s["segments"]),
             val=3 + math.log1p(s.get("message_count") or 0),
         )
         parent = s.get("parent_session_id")
@@ -840,7 +846,9 @@ def build_now() -> dict:
         p = s.get("parent_session_id")
         s["parent_session_id"] = alias.get(p, p) if p else None
     ids = [s["id"] for s in sessions]
-    digests = load_messages(db, [seg for s in sessions for seg in s["segments"]], upto=None, group=alias)
+    open_segs = [seg for s in sessions for seg in s["segments"]]
+    digests = load_messages(db, open_segs, upto=None, group=alias)
+    todos = latest_todos(db, open_segs)
     id_set = set(ids)
     children: dict[str, list] = {}
     for s in sessions:
@@ -867,7 +875,7 @@ def build_now() -> dict:
             "is_subagent": is_subagent(s, id_set),
             "parent": s.get("parent_session_id"), "context": context_gauge(s),
             "compactions": s["compactions"], "tip": s["tip_id"],
-            "cwd": s.get("cwd"), "git_branch": s.get("git_branch"),
+            "cwd": s.get("cwd"), "git_branch": s.get("git_branch"), "plan": plan_of(todos, s["segments"]),
         })
     order = {"running": 0, "waiting": 1, "stale": 2}
     running.sort(key=lambda r: (order.get(r["status"], 3), -(r["last"] or 0)))
@@ -977,7 +985,85 @@ def build_status() -> dict:
           f"{running} running, {waiting} waiting for you, {stale} stale, {orphans} orphaned (24h)")
 
     worst = "red" if any(c["level"] == "red" for c in checks) else "amber" if any(c["level"] == "amber" for c in checks) else "green"
-    return {"generated_at": now, "level": worst, "checks": checks}
+    return {"generated_at": now, "level": worst, "checks": checks, "links": dashboard_links()}
+
+
+def dashboard_links() -> Optional[dict]:
+    """Deep links into the Hermes dashboard, if HERMES_DASHBOARD_URL says where it is.
+    `chat_resume` + a session id opens that conversation in the dashboard's chat page."""
+    if not DASHBOARD_URL:
+        return None
+    return {"home": DASHBOARD_URL, "chat_resume": DASHBOARD_URL + "/chat?resume=", "sessions": DASHBOARD_URL + "/sessions",
+            "cron": DASHBOARD_URL + "/cron", "logs": DASHBOARD_URL + "/logs", "analytics": DASHBOARD_URL + "/analytics"}
+
+
+def parse_todo(content: Any) -> Optional[dict]:
+    """A todo_list tool result → {items, summary}; None when it is not a valid list."""
+    try:
+        d = json.loads(content) if isinstance(content, str) else content
+    except Exception:
+        return None
+    if not isinstance(d, dict) or not isinstance(d.get("todos"), list):
+        return None
+    items = []
+    for it in d["todos"]:
+        if not isinstance(it, dict):
+            continue
+        items.append({"id": str(it.get("id", "?")), "content": short(it.get("content"), 300),
+                      "status": it.get("status") if it.get("status") in ("pending", "in_progress", "completed", "cancelled") else "pending",
+                      "parent": it.get("parent")})
+    summary = {s: sum(1 for i in items if i["status"] == s) for s in ("pending", "in_progress", "completed", "cancelled")}
+    summary["total"] = len(items)
+    current = next((i["content"] for i in items if i["status"] == "in_progress"), None)
+    return {"items": items, "summary": summary, "current": current, "revision": d.get("revision")}
+
+
+def latest_todos(db, session_ids: list[str]) -> dict[str, dict]:
+    """Newest todo_list result per session: the plan the agent is working through. Live rows
+    first; a compacted copy counts when the live transcript no longer holds one (Hermes does the
+    same when it restores a plan on resume)."""
+    if not session_ids:
+        return {}
+    cols = table_columns(db, "messages")
+    live = "active = 1 or compacted = 1" if "active" in cols else "1 = 1"
+    q = ",".join("?" * len(session_ids))
+    names = ",".join("?" * len(TODO_TOOLS))
+    try:
+        rows = db.execute(
+            f"select session_id, content, timestamp from messages where id in ("
+            f"  select max(id) from messages where session_id in ({q}) and tool_name in ({names}) and role = 'tool' "
+            f"  and ({live}) group by session_id)", (*session_ids, *TODO_TOOLS)).fetchall()
+    except sqlite3.OperationalError:
+        return {}
+    out = {}
+    for r in rows:
+        todo = parse_todo(r["content"])
+        if todo:
+            todo["ts"] = ts(r["timestamp"])
+            out[r["session_id"]] = todo
+    return out
+
+
+def plan_of(todos: dict[str, dict], segments: list[str]) -> Optional[dict]:
+    """The lineage's newest plan, as a compact badge for a node: done/total and the current step."""
+    best = max((todos[s] for s in segments if s in todos), key=lambda t: t["ts"] or 0, default=None)
+    if not best:
+        return None
+    s = best["summary"]
+    return {"done": s["completed"], "total": s["total"], "open": s["pending"] + s["in_progress"],
+            "current": short(best["current"], 120), "ts": best["ts"]}
+
+
+def build_todo(sid: str) -> dict:
+    db = STATE.get()
+    if db is None:
+        return {"error": "no state db"}
+    logical, alias = logical_sessions(load_sessions(db))
+    ls = next((x for x in logical if x["id"] == alias.get(sid, sid)), None)
+    segs = ls["segments"] if ls else [sid]
+    todos = latest_todos(db, segs)
+    best = max(todos.values(), key=lambda t: t["ts"] or 0, default=None)
+    return {"session": alias.get(sid, sid), "segments": segs, "todo": best}
 
 
 def scheduler_state(now: float) -> dict:
@@ -1477,6 +1563,11 @@ def api_analytics(days: int = Query(30, ge=1, le=365)):
 @app.get("/api/session/{sid}/trace")
 def api_trace(sid: str, tool: Optional[str] = Query(None), limit: int = Query(300, ge=1, le=2000)):
     return cached("trace", build_trace, sid, tool, limit)
+
+
+@app.get("/api/session/{sid}/todo")
+def api_todo(sid: str):
+    return cached("todo", build_todo, sid)
 
 
 @app.get("/api/tasks")

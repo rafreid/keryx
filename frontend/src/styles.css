@@ -113,6 +113,11 @@ kbd { background: var(--panel2); border: 1px solid var(--line); border-radius: 4
 .step.user { background: color-mix(in srgb, var(--accent) 8%, transparent); }
 .step.tool { cursor: pointer; } .step.tool:hover { background: var(--panel2); }
 .step.tool.failed b { color: var(--red); }
+.plan { margin: 4px 0 0; padding-left: 4px; list-style: none; font-size: 12px; }
+.plan li { padding: 2px 0; display: flex; gap: 6px; } .plan .mark { width: 14px; color: var(--muted); flex: none; }
+.plan li.completed { color: var(--muted); text-decoration: line-through; } .plan li.in_progress { color: var(--text); } .plan li.in_progress .mark { color: var(--green, #3fb950); }
+.plan li.cancelled { color: var(--muted); opacity: .7; }
+.card .plan { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .gate { position: fixed; inset: 0; background: color-mix(in srgb, var(--bg) 85%, transparent); display: flex; align-items: center; justify-content: center; z-index: 50; }
 .gate form { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 18px 20px; width: 320px; display: flex; flex-direction: column; gap: 8px; }
 .gate input { font-size: 14px; padding: 6px 8px; }
