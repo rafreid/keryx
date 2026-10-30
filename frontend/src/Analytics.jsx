@@ -32,7 +32,7 @@ export default function Analytics() {
         <Tile label="sessions" value={t.sessions} sub={`${t.sessions_per_day}/day · ${t.subagents} subagents`} />
         <Tile label="tool calls" value={num(t.tool_calls)} sub={t.tool_errors ? <span className="err">{t.tool_errors} failed</span> : 'no failures'} />
         <Tile label="tokens" value={`${num(t.tokens_in)} in`} sub={`${num(t.tokens_out)} out · ${t.api_calls} calls`} />
-        <Tile label="cache hit" value={`${((t.cache_hit || 0) * 100).toFixed(0)}%`} sub={t.cost_usd ? `est. $${t.cost_usd}` : 'subscription (no per-token cost)'} />
+        <Tile label="cache hit" value={`${((t.cache_hit || 0) * 100).toFixed(0)}%`} sub={t.cost_usd ? `${t.cost_basis === 'actual' ? '' : '~'}$${t.cost_usd}${t.cost_basis === 'actual' ? '' : ' est.'}` : t.cost_basis === 'included' ? 'subscription (included)' : 'no cost recorded'} />
       </div>
       <h3>{METRICS[metric]} per day {t.busiest_day ? <span className="small">· busiest {t.busiest_day}</span> : null}</h3>
       <svg viewBox={`0 0 ${W} ${H + 14}`} className="bars" preserveAspectRatio="none">

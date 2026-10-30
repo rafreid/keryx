@@ -91,7 +91,10 @@ def write_state_db(path: Path) -> None:
 
     # s-running: open, mid-turn (last row is a tool result), 2 live tool calls (1 failed) + archived copies
     session("s-running", "telegram", NOW - 2 * H, last=NOW - 30,
-            cfg={"_usage_anchor": {"prompt_tokens": 120000}}, cwd="/work/repo", git_branch="main")
+            cfg={"_usage_anchor": {"prompt_tokens": 120000}}, cwd="/work/repo", git_branch="main",
+            last_activity_description="writing src/x.py")
+    # a session with no messages at all: Hermes' own activity description is the only "latest step"
+    session("s-quiet", "cli", NOW - 40 * 60, last=NOW - 5 * 60, last_activity_description="thinking about the plan", message_count=0)
     t0 = NOW - 2 * H
     msg("s-running", "user", "please fix the build", t0)
     msg("s-running", "assistant", None, t0 + 10, tool_calls=call("terminal", {"command": "make"}, "c1"), finish_reason="tool_calls")
@@ -171,6 +174,24 @@ def write_cron(cron: Path) -> None:
     db.commit()
     db.close()
     (cron / "ticker_heartbeat").write_text(f"{NOW - 20} 4242")
+    db = sqlite3.connect(cron / "incidents.db")
+    db.execute("""create table cron_incidents (id text primary key, job_id text not null, error_sig text not null, state text not null,
+        failure_type text not null default 'unknown', first_seen_at text not null, last_seen_at text not null, acked_at text,
+        alerted_at text, closed_at text, error text not null, output_file text)""")
+    db.execute("insert into cron_incidents values ('inc1','job-bad','sig1','alerted','script',?,?,NULL,?,NULL,'boom: exit 1',NULL)",
+               (iso(NOW - 3 * H), iso(NOW - 1 * H), iso(NOW - 3 * H)))
+    db.execute("insert into cron_incidents values ('inc2','job-ok','sig2','resolved','timeout',?,?,NULL,NULL,NULL,'took too long',NULL)",
+               (iso(NOW - 48 * H), iso(NOW - 47 * H)))
+    db.commit(); db.close()
+    db = sqlite3.connect(cron / "deliveries.db")
+    db.execute("""create table deliveries (execution_id text primary key, job_json text not null, content text not null,
+        for_failure integer not null default 0, status text not null, owner_process_id text, owner_pid integer,
+        owner_started_at integer, created_at text not null, finished_at text, error text)""")
+    db.execute("insert into deliveries values ('e1', ?, 'digest text', 0, 'delivered', NULL, NULL, NULL, ?, ?, NULL)",
+               (json.dumps({"name": "daily digest"}), iso(NOW - 21 * H), iso(NOW - 21 * H + 50)))
+    db.execute("insert into deliveries values ('e2', ?, 'failure note', 1, 'failed', NULL, NULL, NULL, ?, ?, 'chat not found')",
+               (json.dumps({"name": "flaky sync"}), iso(NOW - 3 * H), iso(NOW - 3 * H + 10)))
+    db.commit(); db.close()
 
 
 def write_logs(logs: Path) -> None:

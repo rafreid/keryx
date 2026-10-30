@@ -90,14 +90,20 @@ function NodeDetail({ node, graph, onClose, onSelect }) {
   if (isSession && node.usage) rows.push(
     ['tokens', `${num(node.usage.tokens_in)} in · ${num(node.usage.tokens_out)} out`],
     ['cache reads', `${num(node.usage.cache_read)} (${node.usage.tokens_in + node.usage.cache_read ? ((node.usage.cache_read / (node.usage.tokens_in + node.usage.cache_read)) * 100).toFixed(0) : 0}% hit)`],
-    ['API calls', node.usage.api_calls], ['est. cost', node.usage.cost_usd ? `$${node.usage.cost_usd}` : '–'])
+    ['API calls', node.usage.api_calls], [costLabel(node.usage.cost_basis), node.usage.cost_usd ? `$${node.usage.cost_usd}` : node.usage.cost_basis === 'included' ? 'included in subscription' : '–'])
+  if (isSession && node.usage?.reasoning) rows.push(['reasoning tokens', num(node.usage.reasoning)])
+  if (isSession && (node.cwd || node.git_branch)) rows.push(['working dir', <span title={node.cwd || ''}>{node.cwd || '–'}{node.git_branch ? <span className="small"> · ⎇ {node.git_branch}</span> : null}</span>])
+  if (isSession && node.profile) rows.push(['profile', node.profile])
+  if (isSession && node.handoff) rows.push(['handoff', node.handoff])
+  if (isSession && node.archived) rows.push(['archived', 'yes'])
   if (isSession && node.parent) rows.push([node.fork === 'branch' ? 'branched from' : 'parent', <a href="#" onClick={e => { e.preventDefault(); onSelect(`session:${node.parent}`) }}>{graph?.nodes.find(n => n.id === `session:${node.parent}`)?.label || node.parent}</a>])
   if (isSession) rows.push(['id', node.id.replace('session:', '')])
   if (node.type === 'tool') rows.push(['session', node.session], ['calls', node.calls],
     ['failed', <span className={node.errors ? 'err' : 'ok'}>{node.errors}</span>], ['last call', `${fmtT(node.last)} (${ago(node.last)})`])
   if (node.type === 'model') rows.push(['providers', (node.providers || []).join(', ') || '–'],
     ['input tokens', num(node.tokens_in)], ['output tokens', num(node.tokens_out)], ['cache reads', num(node.cache_read)],
-    ['cache hit', `${((node.cache_hit || 0) * 100).toFixed(0)}%`], ['API calls', node.calls], ['est. cost', node.cost_usd ? `$${node.cost_usd}` : '–'])
+    ['cache hit', `${((node.cache_hit || 0) * 100).toFixed(0)}%`], ['cache writes', num(node.cache_write)], ['reasoning tokens', num(node.reasoning)],
+    ['API calls', node.calls], [costLabel(node.cost_basis), node.cost_usd ? `$${node.cost_usd}` : node.cost_basis === 'included' ? 'included in subscription' : '–'])
   if (node.type === 'cron') rows.push(['schedule', node.schedule], ['mode', node.no_agent ? `script only (${node.script})` : 'agent prompt'],
     ['tip', 'run history and next-run countdown live in the tasks tab'],
     ['paused', node.paused ? 'yes' : 'no'], ['last run', `${fmtT(node.last_run)} · ${node.last_status || 'never'}`],
@@ -145,8 +151,8 @@ function Overview({ cost, status, graph, hidden, toggleHidden, showAll, onSelect
         {(cost?.models || []).map(m => <tr key={m.model}><td title={(m.providers || []).join(', ')}>{m.model}</td><td>{num(m.input)}</td><td>{num(m.output)}</td><td>{((m.cache_hit || 0) * 100) | 0}%</td><td>{m.calls}</td></tr>)}
         {cost?.totals && <tr><td><b>total</b></td><td>{num(cost.totals.input)}</td><td>{num(cost.totals.output)}</td><td>{((cost.totals.cache_hit || 0) * 100) | 0}%</td><td>{cost.totals.calls}</td></tr>}
       </tbody></table>
-      {cost?.totals?.cost_usd ? <div className="small">estimated spend in window: ${cost.totals.cost_usd}</div>
-        : <div className="small">subscription providers report no per-token cost; cache hit shows how much prompt reuse you get.</div>}
+      {cost?.totals?.cost_usd ? <div className="small">{cost.totals.cost_basis === 'actual' ? 'spend in window (provider-reported)' : cost.totals.cost_basis === 'mixed' ? 'spend in window (part provider-reported, part estimated)' : 'estimated spend in window'}: ${cost.totals.cost_usd}</div>
+        : <div className="small">{cost?.totals?.cost_basis === 'included' ? 'subscription: usage is included, no per-token cost.' : 'no cost recorded; cache hit shows how much prompt reuse you get.'}</div>}
       </Section>
       <Section id="legend" title="Legend" summary={<>untick to hide{hidden?.size ? <> · {hidden.size} hidden · <a href="#" onClick={e => { e.preventDefault(); e.stopPropagation(); showAll() }}>show all</a></> : null}</>}>
       <table className="legend"><tbody>
@@ -181,4 +187,5 @@ function LegendRow({ id, hidden, toggle, glyph, name, desc }) {
     </tr>
   )
 }
+const costLabel = b => (b === 'actual' ? 'cost' : b === 'estimated' ? 'est. cost' : 'cost')
 const cls = s => (s === 'running' ? 'ok' : s === 'waiting' ? 'info' : s === 'stale' ? 'warn' : s === 'orphaned' || s === 'failed' ? 'err' : '')

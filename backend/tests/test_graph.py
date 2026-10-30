@@ -105,6 +105,21 @@ def test_trace_spans_lineage_with_markers(hermes_data):
         assert "hidden" not in " ".join(s.get("text", "") for s in tr["steps"])
 
 
+def test_session_columns_from_hermes(hermes_data):
+    n = nodes_by_id(keryx.build_graph(24, None))
+    r = n["session:s-running"]
+    assert r["cwd"] == "/work/repo" and r["git_branch"] == "main" and r["archived"] is False
+    assert r["last_step"].startswith("calling write_file")          # digest wins when there are messages
+    assert n["session:s-quiet"]["last_step"] == "thinking about the plan"   # else Hermes' own description
+    assert r["usage"]["cost_basis"] == "actual" and r["usage"]["cost_usd"] == 0.10 and r["usage"]["reasoning"] == 500
+
+
+def test_status_cron_reports_open_incident(hermes_data):
+    checks = {c["name"]: c for c in keryx.build_status()["checks"]}
+    assert checks["cron"]["level"] == "red" and "flaky sync" in checks["cron"]["detail"]
+    assert checks["cron"]["incidents"][0]["error"] == "boom: exit 1"
+
+
 def test_analytics_counts_live_rows(hermes_data):
     a = keryx.build_analytics(2)
     assert a["totals"]["tool_calls"] == 3                # s-running 2 + s-comp-root 1
