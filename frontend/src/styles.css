@@ -195,3 +195,28 @@ kbd { background: var(--panel2); border: 1px solid var(--line); border-radius: 4
 .trail a.cur { color: var(--accent); font-weight: 600; }
 .trail a.ahead { color: var(--muted); }
 .trail .sep { color: var(--line); }
+
+/* reading view: turns, outline, find, diff chips */
+.reader .seg { display: inline-flex; } .reader .seg button { border-radius: 0; margin-left: -1px; padding: 4px 8px; }
+.reader .seg button:first-child { border-radius: 6px 0 0 6px; } .reader .seg button:last-child { border-radius: 0 6px 6px 0; }
+.reader .seg button:disabled { opacity: .45; cursor: default; }
+.outline { margin: 6px 0 2px; }
+.outline ol { list-style: none; margin: 2px 0 6px; padding: 0; max-height: 180px; overflow: auto; border: 1px solid var(--line); border-radius: 6px; }
+.outline li a { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 6px; align-items: baseline; padding: 3px 6px; color: var(--text); text-decoration: none; font-size: 11.5px; }
+.outline li a:hover { background: var(--panel2); } .outline li.off a { opacity: .45; }
+.outline .n { color: var(--muted); font-variant-numeric: tabular-nums; } .outline .q { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.outline .m { white-space: nowrap; }
+.turn { margin-top: 8px; border-top: 2px solid var(--line); }
+.turn .step.user { border-top: none; } .turn .step.user.auto b { color: var(--muted); }
+.steps-head { font-size: 11px; color: var(--muted); padding: 4px 6px; cursor: pointer; user-select: none; background: var(--panel2); border-radius: 4px; margin: 2px 0; }
+.steps-head:hover { color: var(--text); }
+.step.assistant.final { background: color-mix(in srgb, var(--green) 7%, transparent); }
+.step.assistant.note .txt { color: var(--muted); font-style: italic; }
+.step.pending { border-top: none; padding-top: 2px; }
+.step .glyph { display: inline-block; width: 14px; text-align: center; color: var(--muted); margin-right: 4px; font-size: 11px; }
+.step .title { color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; margin-left: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; max-width: 55%; vertical-align: bottom; }
+.step .st { white-space: nowrap; }
+.diffline { font-size: 11px; margin-top: 2px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.add { color: var(--green); } .del { color: var(--red); } .diffline .path { color: var(--muted); }
+.pm { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.step.miss { opacity: .35; } .step.hit { box-shadow: inset 2px 0 0 var(--accent); }
