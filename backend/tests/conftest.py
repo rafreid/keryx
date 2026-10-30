@@ -246,8 +246,20 @@ def write_skills(skills: Path) -> None:
     }))
 
 
+def write_memory(root: Path) -> None:
+    """Hermes' memory files (tools/memory_tool_store.py: entries separated by a § line) and the config section."""
+    (root / "memories").mkdir()
+    (root / "memories" / "MEMORY.md").write_text("The repo uses pytest.\n§\nDeploys go through docker compose on the Proxmox host.\n§\n"
+                                                 "[BLOCKED: MEMORY.md entry contained threat pattern(s): x]")
+    (root / "memories" / "USER.md").write_text("Prefers short answers.")
+    (root / "config.yaml").write_text("model:\n  default: gpt-5\n\nmemory:\n  # notes\n  memory_enabled: true\n"
+                                      "  user_profile_enabled: false\n  memory_char_limit: 100   # tiny, for the test\n"
+                                      "  user_char_limit: 'abc'\n\nother:\n  memory_char_limit: 5\n")
+
+
 @pytest.fixture
 def hermes_data(tmp_path: Path):
+    write_memory(tmp_path)
     write_state_db(tmp_path / "state.db")
     write_cron(tmp_path / "cron")
     write_logs(tmp_path / "logs")

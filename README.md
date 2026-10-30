@@ -117,6 +117,7 @@ All settings are environment variables.
 | `GRAPH_PORT` | `9120` | port to listen on (Docker image only) |
 | `HERMES_DASHBOARD_URL` | unset | where the Hermes dashboard (`hermes dashboard`, port 9119) is reachable from your browser, e.g. `http://192.168.1.100:9119`; adds "open in the Hermes dashboard" links on sessions, cron jobs and logs. Keryx never calls it |
 | `KERYX_TOKEN` | unset | optional shared secret; when set, every `/api` route except `/api/health` requires it (see Security) |
+| `KERYX_SHOW_MEMORY` | unset | `1` adds a read-only **memory** tab showing Hermes' `memories/MEMORY.md` and `USER.md` entries with their character budgets. These are personal notes about you and your environment, so the tab is off until you ask for it; the diagnostics download never includes them |
 | `ACTIVE_WINDOW` | `300` | seconds; a session touched this recently is "active" and its links carry particles |
 | `STALE_AFTER` | `1800` | seconds; a session that is mid-turn but idle for this long is shown as stale |
 | `CONTEXT_LENGTH` | `400000` | assumed context window for the context gauge when the model name is not a recognised family (Hermes does not record the window size; such gauges are marked `~`) |
