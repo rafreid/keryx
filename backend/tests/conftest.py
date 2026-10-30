@@ -225,11 +225,25 @@ def write_logs(logs: Path) -> None:
     (logs / "gateway.log").write_text(f"{stamp(NOW - 3000)} INFO gateway: [Telegram] Connected to Telegram as @bot\n")
 
 
+def write_skills(skills: Path) -> None:
+    """Hermes' skill ledger (tools/skill_usage.py writes skills/.usage.json)."""
+    skills.mkdir()
+    iso = lambda t: time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime(t))
+    (skills / ".usage.json").write_text(json.dumps({
+        "git-workflow": {"use_count": 7, "view_count": 9, "patch_count": 1, "state": "active", "pinned": True,
+                         "last_used_at": iso(NOW - 3 * H), "created_at": iso(NOW - 40 * 86400), "archived_at": None},
+        "old-skill": {"use_count": 1, "view_count": 1, "patch_count": 0, "state": "archived", "pinned": False,
+                      "last_used_at": iso(NOW - 60 * 86400), "created_at": iso(NOW - 90 * 86400), "archived_at": iso(NOW - 50 * 86400)},
+        "broken": "not a dict",
+    }))
+
+
 @pytest.fixture
 def hermes_data(tmp_path: Path):
     write_state_db(tmp_path / "state.db")
     write_cron(tmp_path / "cron")
     write_logs(tmp_path / "logs")
+    write_skills(tmp_path / "skills")
     keryx.configure(tmp_path)
     return tmp_path
 

@@ -200,3 +200,34 @@ def test_step_titles_and_kinds():
 def test_files_carry_line_counts(hermes_data):
     n = nodes_by_id(keryx.build_graph(24, None))["session:s-running"]
     assert n["files"] == [{"path": "src/x.py", "op": "write", "added": 2, "removed": 0, "ts": n["files"][0]["ts"]}]
+
+
+def test_analytics_heatmap_and_skills(hermes_data):
+    a = keryx.build_analytics(7)
+    hm = a["heatmap"]
+    assert hm["weeks"] == 53 and len(hm["days"]) % 7 == 0 and len(hm["days"]) == 53 * 7
+    from datetime import date
+    assert date.fromisoformat(hm["start"]).weekday() == 0          # Monday-aligned grid
+    by = {d["day"]: d for d in hm["days"]}
+    import time
+    today = time.strftime("%Y-%m-%d", time.gmtime())
+    recent = sum(d["sessions"] for d in hm["days"])
+    assert recent == 12                                              # every fixture session started within the last day or so
+    assert sum(d["tool_calls"] for d in hm["days"]) == 0             # fixture sessions carry no tool_call_count column values
+    assert sum(d["tokens"] for d in hm["days"]) == 50000 + 2000 + 30000 + 8000 + 400
+    assert round(sum(d["cost_usd"] for d in hm["days"]), 2) == 0.13   # 0.10 actual + 0.03 estimated
+    assert hm["streak"] >= 1 and hm["active_days"] >= 1
+    assert today in by
+    assert sum(d["cost_usd"] for d in a["days"]) == 0.13             # per-day cost in the window too
+    skills = a["skills"]
+    assert [k["name"] for k in skills] == ["git-workflow", "old-skill"]   # the non-dict entry is dropped
+    assert skills[0]["uses"] == 7 and skills[0]["pinned"] is True and skills[1]["archived"] is True
+    assert a["totals"]["skills"] == 2 and a["totals"]["skills_used"] == 1
+
+
+def test_streak_counts_back_from_today():
+    days = [{"day": f"d{i}", "sessions": n} for i, n in enumerate([1, 0, 1, 1, 1])]
+    assert keryx._streak(days, "d4") == 3
+    days[4]["sessions"] = 0
+    assert keryx._streak(days, "d4") == 2                            # a quiet day so far does not break it
+    assert keryx._streak(days, "nope") == 0

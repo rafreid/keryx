@@ -220,3 +220,19 @@ kbd { background: var(--panel2); border: 1px solid var(--line); border-radius: 4
 .add { color: var(--green); } .del { color: var(--red); } .diffline .path { color: var(--muted); }
 .pm { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .step.miss { opacity: .35; } .step.hit { box-shadow: inset 2px 0 0 var(--accent); }
+
+/* year heatmap */
+.heat { margin-top: 12px; }
+.scroll-x { overflow-x: auto; padding-bottom: 4px; }
+svg.heatmap { display: block; }
+svg.heatmap .axis { fill: var(--muted); font-size: 8px; }
+svg.heatmap .c { fill: var(--panel2); stroke: var(--line); stroke-width: .5; }
+svg.heatmap .c.l1 { fill: color-mix(in srgb, var(--accent) 30%, var(--panel2)); }
+svg.heatmap .c.l2 { fill: color-mix(in srgb, var(--accent) 55%, var(--panel2)); }
+svg.heatmap .c.l3 { fill: color-mix(in srgb, var(--accent) 80%, var(--panel2)); }
+svg.heatmap .c.l4 { fill: var(--accent); }
+svg.heatmap .c.today { stroke: var(--text); stroke-width: 1; }
+.heatlegend i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin: 0 1px; background: var(--panel2); border: 1px solid var(--line); vertical-align: -1px; }
+.heatlegend i.l1 { background: color-mix(in srgb, var(--accent) 30%, var(--panel2)); } .heatlegend i.l2 { background: color-mix(in srgb, var(--accent) 55%, var(--panel2)); }
+.heatlegend i.l3 { background: color-mix(in srgb, var(--accent) 80%, var(--panel2)); } .heatlegend i.l4 { background: var(--accent); }
+tr.off td { opacity: .55; }

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
-import { num } from './util.js'
+import { ago, num } from './util.js'
+import Heatmap from './Heatmap.jsx'
 
 /** Usage analytics: daily trend (bars + table), model distribution, totals. */
 export default function Analytics() {
@@ -22,7 +23,7 @@ export default function Analytics() {
     <div>
       <div className="row">
         <select value={days} onChange={e => setDays(Number(e.target.value))}>
-          {[7, 14, 30, 90].map(d => <option key={d} value={d}>{d} days</option>)}
+          {[7, 14, 30, 90, 365].map(d => <option key={d} value={d}>{d} days</option>)}
         </select>
         <select value={metric} onChange={e => setMetric(e.target.value)}>
           {Object.entries(METRICS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
@@ -47,18 +48,28 @@ export default function Analytics() {
           </g>
         })}
       </svg>
+      <Heatmap data={data.heatmap} />
       <h3>Models</h3>
       <table className="cost"><thead><tr><td>model</td><td>share</td><td>in</td><td>out</td><td>cache</td><td>calls</td></tr></thead><tbody>
         {(data.models || []).map(m => <tr key={m.model}>
           <td title={(m.providers || []).join(', ')}><div className="sharebar" style={{ width: `${Math.max(2, m.share * 100)}%` }} />{m.model}</td>
           <td>{(m.share * 100).toFixed(0)}%</td><td>{num(m.input)}</td><td>{num(m.output)}</td><td>{((m.cache_hit || 0) * 100) | 0}%</td><td>{m.calls}</td></tr>)}
       </tbody></table>
+      {(data.skills || []).length > 0 && <>
+        <h3>Skills <span className="small" style={{ textTransform: 'none', letterSpacing: 0 }}>· {t.skills_used} of {t.skills} used in the window</span></h3>
+        <div className="scroll"><table className="cost"><thead><tr><td>skill</td><td>uses</td><td>views</td><td>last used</td></tr></thead><tbody>
+          {data.skills.map(k => <tr key={k.name} className={k.archived ? 'off' : ''}>
+            <td title={`${k.state}${k.pinned ? ' · pinned' : ''}${k.patches ? ` · patched ${k.patches}×` : ''}`}>{k.pinned ? '★ ' : ''}{k.name}{k.archived ? <span className="small"> · archived</span> : null}</td>
+            <td>{k.uses}</td><td>{k.views}</td><td>{k.last_used ? ago(k.last_used) : '–'}</td></tr>)}
+        </tbody></table></div>
+        <div className="small">from Hermes' skill ledger (skills/.usage.json), which Hermes updates when a skill is viewed or used.</div>
+      </>}
       <h3>Daily table</h3>
-      <div className="scroll"><table className="cost"><thead><tr><td>day</td><td>sess</td><td>msgs</td><td>calls</td><td>fail</td><td>tok in</td><td>tok out</td></tr></thead><tbody>
+      <div className="scroll"><table className="cost"><thead><tr><td>day</td><td>sess</td><td>msgs</td><td>calls</td><td>fail</td><td>tok in</td><td>tok out</td><td>cost</td></tr></thead><tbody>
         {[...rows].reverse().filter(r => r.sessions || r.tool_calls || r.user_messages).map(r =>
-          <tr key={r.day}><td>{r.day.slice(5)}</td><td>{r.sessions}</td><td>{r.user_messages}</td><td>{r.tool_calls}</td><td className={r.tool_errors ? 'err' : ''}>{r.tool_errors || ''}</td><td>{num(r.tokens_in)}</td><td>{num(r.tokens_out)}</td></tr>)}
+          <tr key={r.day}><td>{r.day.slice(5)}</td><td>{r.sessions}</td><td>{r.user_messages}</td><td>{r.tool_calls}</td><td className={r.tool_errors ? 'err' : ''}>{r.tool_errors || ''}</td><td>{num(r.tokens_in)}</td><td>{num(r.tokens_out)}</td><td>{r.cost_usd ? `$${r.cost_usd.toFixed(2)}` : ''}</td></tr>)}
       </tbody></table></div>
-      <div className="small">days are UTC; tokens are attributed to the day a session started.</div>
+      <div className="small">days are UTC; tokens and cost are attributed to the day a session started.</div>
     </div>
   )
 }
