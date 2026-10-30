@@ -79,12 +79,17 @@ All settings are environment variables.
 | `ACTIVE_WINDOW` | `300` | seconds; a session touched this recently is "active" and its links carry particles |
 | `STALE_AFTER` | `1800` | seconds; a session that is mid-turn but idle for this long is shown as stale |
 | `CONTEXT_LENGTH` | `400000` | assumed context window for the context gauge when the model name is not a recognised family (Hermes does not record the window size; such gauges are marked `~`) |
+| `KERYX_TOKEN` | unset | optional shared secret; when set, every `/api` route except `/api/health` requires it (see Security) |
 
 Colours and labels live in `frontend/src/util.js`; rebuild after changing them.
 
 ## Security
 
-Keryx has **no authentication** and shows everything Hermes recorded, including prompts, replies and tool output. Keep it on a private network: bind the port to `127.0.0.1` and reach it over an SSH tunnel, or use a VPN such as Tailscale. Do not expose it to the internet. The only endpoint designed to be shared is `/api/diagnostics`, which is redacted (counts, states, ids, error lines with secrets masked; no message content).
+Keryx shows everything Hermes recorded, including prompts, replies and tool output. Keep it on a private network: bind the port to `127.0.0.1` and reach it over an SSH tunnel, or use a VPN such as Tailscale. Do not expose it to the internet.
+
+Setting `KERYX_TOKEN` adds a shared secret on top of that: every `/api` route then needs `Authorization: Bearer <token>`, a `keryx_token` cookie, or `?token=`. The page asks for the token once and keeps it as a cookie; `curl` and scripts send the header. `/api/health` stays open for liveness probes but omits the data path without the token. This is a lock on the door, not a user system: there is one token, and anyone with it sees everything.
+
+The only endpoint designed to be shared is `/api/diagnostics`, which is redacted (counts, states, ids, error lines with secrets masked; no message content).
 
 ## Using it
 
@@ -127,13 +132,19 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 .venv/bin/pytest
 ```
 
-CI (GitHub Actions) runs the tests, builds the front end and smoke-tests the Docker image on every push and pull request.
+Front-end unit tests cover the pure modules (the semantic layout and the notification diff):
+
+```bash
+cd frontend && npm test
+```
+
+CI (GitHub Actions) runs both test suites, builds the front end and smoke-tests the Docker image on every push and pull request.
 
 Layout:
 
 ```
 backend/   FastAPI app (app.py), Dockerfile, requirements.txt, static/ (built front end, not committed)
-frontend/  Vite + React + react-force-graph source
+frontend/  Vite + React + react-force-graph source; src/hooks/ holds the camera and time-axis hooks used by GraphView
 ```
 
 ## API
@@ -148,7 +159,7 @@ frontend/  Vite + React + react-force-graph source
 - `GET /api/logs?file=<stem of any logs/*.log>&level=WARNING&q=text&lines=200`  entries carry the session id when Hermes logged the line inside a session
 - `GET /api/diagnostics`  redacted JSON snapshot for bug reports
 - `GET /api/qr?text=`  SVG QR code
-- `GET /api/stream?hours=24`  server-sent events, one `update` per data change
+- `GET /api/stream?hours=24`  server-sent events, one `update` per data change; one watcher serves every connected client
 - `GET /api/health`  liveness
 
 ## Credits

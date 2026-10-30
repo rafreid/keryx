@@ -16,6 +16,7 @@ cron store and gateway logs, and exposes:
 from __future__ import annotations
 
 import asyncio
+import hmac
 import json
 import math
 import os
@@ -27,7 +28,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -40,7 +41,9 @@ MAX_SESSIONS = 600
 CONTEXT_LENGTH = int(os.environ.get("CONTEXT_LENGTH", "400000"))
 CONTEXT_LIMITS = {"gpt-5.4-mini": 400000, "gpt-5": 400000, "claude": 200000, "gemini": 1000000}
 FILE_TOOLS = {"write_file": "write", "patch": "patch", "read_file": "read", "search_files": "search"}
-TELEGRAM_USER = os.environ.get("TELEGRAM_USER", "")
+# Optional shared secret. When set, every /api/* route except /api/health needs it as a bearer
+# header, a `keryx_token` cookie, or `?token=` (the page sets the cookie from the first).
+TOKEN = os.environ.get("KERYX_TOKEN", "").strip()
 
 # Hermes `sessions.end_reason` values, grouped by what they mean for the picture.
 # Orphans: the gateway (or a websocket backend) came back and reaped a session it no longer owned.
@@ -50,7 +53,31 @@ USER_CLOSE_REASONS = {"cli_close", "tui_shutdown", "tui_close", "user_exit", "se
 # The session was compacted: Hermes ends it and continues the same conversation in a child session.
 COMPRESSION_REASON = "compression"
 
-app = FastAPI(title="Keryx", version="2.2")
+app = FastAPI(title="Keryx", version="2.3")
+
+
+def authorised(request: Request) -> bool:
+    if not TOKEN:
+        return True
+    auth = request.headers.get("authorization", "")
+    presented = auth[7:].strip() if auth.lower().startswith("bearer ") else ""
+    presented = presented or request.cookies.get("keryx_token", "") or request.query_params.get("token", "")
+    return bool(presented) and hmac.compare_digest(presented, TOKEN)
+
+
+@app.middleware("http")
+async def require_token(request: Request, call_next):
+    """Keryx shows prompts and tool output; with KERYX_TOKEN set nothing under /api is served
+    without it. The static app stays open (it is only the viewer), /api/health stays open for
+    liveness probes but then omits the data path."""
+    path = request.url.path
+    if TOKEN and path.startswith("/api/") and path != "/api/health" and not authorised(request):
+        return JSONResponse({"error": "unauthorised", "hint": "send Authorization: Bearer <KERYX_TOKEN>"}, status_code=401,
+                            headers={"WWW-Authenticate": "Bearer"})
+    response = await call_next(request)
+    if TOKEN and request.query_params.get("token") and authorised(request) and "keryx_token" not in request.cookies:
+        response.set_cookie("keryx_token", TOKEN, httponly=True, samesite="strict", max_age=30 * 86400)
+    return response
 
 
 # ----------------------------------------------------------------- helpers
@@ -335,6 +362,17 @@ def hidden_rows_sql(db) -> str:
     return " and coalesce(display_kind, '') <> 'hidden'"
 
 
+# The digest only needs the first 400 characters of a chat turn, and of a tool result only the
+# fields tool_result_failed() looks at. Trimming in SQL keeps megabytes of tool output out of the
+# process: a window of 600 sessions easily carries tens of MB of content.
+DIGEST_CONTENT_SQL = (
+    "case when role = 'tool' and json_valid(content) then json_object("
+    "'error', json_extract(content, '$.error'), 'exit_code', json_extract(content, '$.exit_code'), "
+    "'output', substr(coalesce(json_extract(content, '$.output'), ''), 1, 40)) "
+    "else substr(content, 1, 400) end"
+)
+
+
 def load_messages(db, session_ids: list[str], upto: Optional[float],
                   group: Optional[dict[str, str]] = None) -> dict[str, dict]:
     """Per-session digest: first user message, last assistant step, tool stats (+errors), timestamps.
@@ -350,10 +388,12 @@ def load_messages(db, session_ids: list[str], upto: Optional[float],
         where_t = " and timestamp <= ?"
         params.append(upto)
     kind_col = ", display_kind" if "display_kind" in table_columns(db, "messages") else ", null as display_kind"
-    rows = db.execute(
-        f"select session_id, role, content, tool_name, tool_calls, timestamp, finish_reason{kind_col} from messages "
-        f"where session_id in ({q}){where_t}{live_rows_sql(db)}{hidden_rows_sql(db)} order by timestamp asc, id asc", params
-    ).fetchall()
+    sql = (f"select session_id, role, {DIGEST_CONTENT_SQL} as content, tool_name, tool_calls, timestamp, finish_reason{kind_col} "
+           f"from messages where session_id in ({q}){where_t}{live_rows_sql(db)}{hidden_rows_sql(db)} order by timestamp asc, id asc")
+    try:
+        rows = db.execute(sql, params).fetchall()
+    except sqlite3.OperationalError:                       # SQLite without the JSON functions: full content
+        rows = db.execute(sql.replace(DIGEST_CONTENT_SQL, "content"), params).fetchall()
     out: dict[str, dict] = {}
     for r in rows:
         sid = group.get(r["session_id"], r["session_id"])
@@ -921,21 +961,18 @@ def build_status() -> dict:
     # orphaned / failed sessions in last 24h
     orphans = stale = running = waiting = 0
     if db is not None:
-        for s in load_sessions(db):
-            last = s["last_activity_at"] or s["started_at"] or 0
-            if now - last > 86400:
-                continue
-            if s.get("end_reason") in ORPHAN_REASONS:
-                orphans += 1
-            if s["ended_at"] is None:
-                d = load_messages(db, [s["id"]], upto=None).get(s["id"], {})
-                st = session_status(s, now, d)
-                if st == "waiting":
-                    waiting += 1
-                elif st == "running":
-                    running += 1
-                else:
-                    stale += 1
+        recent = [s for s in load_sessions(db) if now - (s["last_activity_at"] or s["started_at"] or 0) <= 86400]
+        orphans = sum(1 for s in recent if s.get("end_reason") in ORPHAN_REASONS)
+        open_ = [s for s in recent if s["ended_at"] is None]
+        digests = load_messages(db, [s["id"] for s in open_], upto=None)     # one query for all open sessions
+        for s in open_:
+            st = session_status(s, now, digests.get(s["id"], {}))
+            if st == "waiting":
+                waiting += 1
+            elif st == "running":
+                running += 1
+            else:
+                stale += 1
     check("sessions", "amber" if orphans else "green",
           f"{running} running, {waiting} waiting for you, {stale} stale, {orphans} orphaned (24h)")
 
@@ -1398,8 +1435,11 @@ def cached(kind: str, builder, *args):
 
 
 @app.get("/api/health")
-def api_health():
-    return {"ok": True, "time": time.time(), "data": str(DATA), "state_db": (DATA / "state.db").exists()}
+def api_health(request: Request):
+    out = {"ok": True, "time": time.time(), "state_db": (DATA / "state.db").exists()}
+    if authorised(request):
+        out["data"] = str(DATA)
+    return out
 
 
 @app.get("/api/graph")
@@ -1465,22 +1505,79 @@ def bundle(hours: float) -> dict:
             "tasks": cached("tasks", build_tasks)}
 
 
+class Broadcaster:
+    """One watcher for all SSE clients.
+
+    Every client used to stat the data files itself every two seconds and build its own bundle on
+    each change. Now a single task polls the signature, builds one bundle per distinct window the
+    clients asked for, and hands the encoded event to every subscriber's queue. Starts lazily on
+    the first subscription and stops when the last client leaves."""
+
+    def __init__(self):
+        self.subs: dict[float, set[asyncio.Queue]] = {}
+        self.task: Optional[asyncio.Task] = None
+        self.last: dict[float, str] = {}         # hours → last event text, replayed to a new subscriber
+
+    async def subscribe(self, hours: float) -> asyncio.Queue:
+        q: asyncio.Queue = asyncio.Queue(maxsize=4)
+        self.subs.setdefault(hours, set()).add(q)
+        if hours in self.last:
+            q.put_nowait(self.last[hours])
+        else:
+            q.put_nowait(await self.render(hours))
+        if self.task is None or self.task.done():
+            self.task = asyncio.get_running_loop().create_task(self.run())
+        return q
+
+    def unsubscribe(self, hours: float, q: asyncio.Queue) -> None:
+        subs = self.subs.get(hours)
+        if subs:
+            subs.discard(q)
+            if not subs:
+                del self.subs[hours]
+                self.last.pop(hours, None)
+
+    async def render(self, hours: float) -> str:
+        payload = await asyncio.to_thread(bundle, hours)
+        text = f"event: update\ndata: {json.dumps(payload)}\n\n"
+        self.last[hours] = text
+        return text
+
+    async def run(self) -> None:
+        last_sig, last_sent = data_signature(), time.time()
+        while self.subs:
+            await asyncio.sleep(2)
+            sig, now = data_signature(), time.time()
+            if sig == last_sig and now - last_sent <= 60:
+                continue
+            last_sig, last_sent = sig, now
+            for hours in list(self.subs):
+                text = await self.render(hours)
+                for q in list(self.subs.get(hours, ())):
+                    if q.full():                 # a slow client: drop its stale event, keep the newest
+                        try:
+                            q.get_nowait()
+                        except asyncio.QueueEmpty:
+                            pass
+                    q.put_nowait(text)
+
+
+BROADCAST = Broadcaster()
+
+
 @app.get("/api/stream")
 async def api_stream(hours: float = Query(24, ge=0)):
     """Server-sent events: one 'update' per data change, keepalive every 25 s."""
     async def gen():
-        last_sig = None
-        last_sent = 0.0
-        while True:
-            sig = data_signature()
-            now = time.time()
-            if sig != last_sig or now - last_sent > 60:
-                payload = await asyncio.to_thread(bundle, hours)
-                yield f"event: update\ndata: {json.dumps(payload)}\n\n"
-                last_sig, last_sent = sig, now
-            elif now - last_sent > 25:
-                yield ": keepalive\n\n"
-            await asyncio.sleep(2)
+        q = await BROADCAST.subscribe(hours)
+        try:
+            while True:
+                try:
+                    yield await asyncio.wait_for(q.get(), timeout=25)
+                except asyncio.TimeoutError:
+                    yield ": keepalive\n\n"
+        finally:
+            BROADCAST.unsubscribe(hours, q)
     return StreamingResponse(gen(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
