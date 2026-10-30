@@ -19,6 +19,7 @@ services:
       - ACTIVE_WINDOW=300            # seconds: a session touched this recently counts as active
       - STALE_AFTER=1800             # seconds: running but idle this long becomes "stale"
       - CONTEXT_LENGTH=400000        # assumed context window when the model is not recognised
+      - KERYX_TOKEN=${KERYX_TOKEN:-} # optional: when set, /api needs this bearer token (the page asks for it once)
     ports:
       - "9120:9120"                  # bind to 127.0.0.1:9120:9120 if only a tunnel/VPN should reach it
     volumes:

@@ -20,33 +20,7 @@ export function useNotifications(data, desktop) {
     const was = prev.current
     prev.current = cur
     if (!was) return                                    // first load: nothing to compare against
-    const events = []
-    for (const [id, s] of Object.entries(cur.sessions)) {
-      const old = was.sessions[id]
-      if (!old) {
-        if (s.status === 'running' && !s.sub) events.push({ level: 'info', title: 'Session started', body: s.label, node: id })
-        continue
-      }
-      if (old.status === s.status) continue
-      if (s.status === 'waiting') events.push({ level: 'ok', title: s.sub ? 'Subagent replied' : 'Hermes replied — waiting for you', body: s.label, node: id })
-      else if (s.status === 'failed') events.push({ level: 'err', title: 'Session ended with tool errors', body: s.label, node: id })
-      else if (s.status === 'orphaned') events.push({ level: 'err', title: 'Session orphaned by a restart', body: s.label, node: id })
-      else if (s.status === 'stale' && old.status === 'running') events.push({ level: 'warn', title: 'Session went quiet', body: s.label, node: id })
-      else if (s.status === 'ended' && !s.sub) events.push({ level: 'info', title: 'Session ended', body: s.label, node: id })
-    }
-    for (const [id, d] of Object.entries(cur.delegations)) {
-      const old = was.delegations[id]
-      if (old && old.state !== d.state) {
-        if (d.state === 'completed') events.push({ level: 'ok', title: 'Delegation completed', body: d.goal, node: d.parent && `session:${d.parent}` })
-        else if (/fail|error/.test(d.state)) events.push({ level: 'err', title: 'Delegation failed', body: d.goal, node: d.parent && `session:${d.parent}` })
-      }
-    }
-    for (const [id, j] of Object.entries(cur.jobs)) {
-      const old = was.jobs[id]
-      if (old && old.state !== j.state && (j.state === 'error' || j.state === 'missed'))
-        events.push({ level: 'err', title: j.state === 'missed' ? 'Cron job missed its trigger' : 'Cron job failed', body: j.name, node: `cron:${id}` })
-    }
-    if (cur.errors === 'red' && was.errors !== 'red') events.push({ level: 'err', title: 'Errors piling up', body: cur.errorsDetail })
+    const events = diffEvents(was, cur)
     if (!events.length) return
     const stamped = events.map((e, i) => ({ ...e, id: `${Date.now()}-${i}` }))
     setToasts(t => [...t, ...stamped].slice(-6))
@@ -65,7 +39,39 @@ export function useNotifications(data, desktop) {
   return { toasts, dismiss }
 }
 
-function snapshot(data) {
+/** Events worth telling the user about, from two consecutive snapshots. Pure: unit-tested. */
+export function diffEvents(was, cur) {
+  const events = []
+  for (const [id, s] of Object.entries(cur.sessions)) {
+    const old = was.sessions[id]
+    if (!old) {
+      if (s.status === 'running' && !s.sub) events.push({ level: 'info', title: 'Session started', body: s.label, node: id })
+      continue
+    }
+    if (old.status === s.status) continue
+    if (s.status === 'waiting') events.push({ level: 'ok', title: s.sub ? 'Subagent replied' : 'Hermes replied — waiting for you', body: s.label, node: id })
+    else if (s.status === 'failed') events.push({ level: 'err', title: 'Session ended with tool errors', body: s.label, node: id })
+    else if (s.status === 'orphaned') events.push({ level: 'err', title: 'Session orphaned by a restart', body: s.label, node: id })
+    else if (s.status === 'stale' && old.status === 'running') events.push({ level: 'warn', title: 'Session went quiet', body: s.label, node: id })
+    else if (s.status === 'ended' && !s.sub) events.push({ level: 'info', title: 'Session ended', body: s.label, node: id })
+  }
+  for (const [id, d] of Object.entries(cur.delegations)) {
+    const old = was.delegations[id]
+    if (old && old.state !== d.state) {
+      if (d.state === 'completed') events.push({ level: 'ok', title: 'Delegation completed', body: d.goal, node: d.parent && `session:${d.parent}` })
+      else if (/fail|error/.test(d.state)) events.push({ level: 'err', title: 'Delegation failed', body: d.goal, node: d.parent && `session:${d.parent}` })
+    }
+  }
+  for (const [id, j] of Object.entries(cur.jobs)) {
+    const old = was.jobs[id]
+    if (old && old.state !== j.state && (j.state === 'error' || j.state === 'missed'))
+      events.push({ level: 'err', title: j.state === 'missed' ? 'Cron job missed its trigger' : 'Cron job failed', body: j.name, node: `cron:${id}` })
+  }
+  if (cur.errors === 'red' && was.errors !== 'red') events.push({ level: 'err', title: 'Errors piling up', body: cur.errorsDetail })
+  return events
+}
+
+export function snapshot(data) {
   const sessions = {}
   for (const n of data.graph?.nodes || []) if (n.type === 'session' || n.type === 'subagent') sessions[n.id] = { status: n.status, label: n.label, sub: n.type === 'subagent' }
   const delegations = {}

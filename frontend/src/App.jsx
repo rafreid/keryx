@@ -4,7 +4,7 @@ import NowStrip from './NowStrip.jsx'
 import GraphView from './GraphView.jsx'
 import SidePanel from './SidePanel.jsx'
 import TimeAxis from './TimeAxis.jsx'
-import { fetchGraphAt, useDebounced, useLive } from './api.js'
+import { fetchGraphAt, submitToken, useDebounced, useLive } from './api.js'
 import { fmtTime } from './util.js'
 import { useNotifications } from './notify.js'
 import { useNavHistory } from './history.js'
@@ -135,6 +135,7 @@ export default function App() {
         <SidePanel node={selectedNode} cost={data?.cost} status={data?.status} graph={graph} tasks={data?.tasks} onClose={() => navigate(null)}
                    hidden={hidden} toggleHidden={toggleHidden} showAll={showAll} search={search} onSelect={navigate} tab={tab} setTab={setTab} />
       </div>
+      {conn === 'auth' && <TokenGate />}
       <div className="toasts">
         {toasts.map(t => <div key={t.id} className={`toast ${t.level}`} onClick={() => { if (t.node) { navigate(t.node) } dismiss(t.id) }}>
           <b>{t.title}</b>{t.body && <div className="small">{t.body}</div>}
@@ -166,6 +167,24 @@ function Trail({ trail, idx, back, forward, go }) {
       })}
       {from + 5 < trail.length && <span className="small">…</span>}
       <button disabled={!next} onClick={forward} title={next ? `forward to ${next.label}  (Shift+Backspace, Alt+→ or ⌘])` : 'nothing ahead'}>›</button>
+    </div>
+  )
+}
+
+/** Shown when the backend answers 401: KERYX_TOKEN is set and this browser has no cookie yet. */
+function TokenGate() {
+  const [t, setT] = useState('')
+  const [bad, setBad] = useState(false)
+  const go = async e => { e.preventDefault(); if (!(await submitToken(t))) setBad(true) }
+  return (
+    <div className="gate">
+      <form onSubmit={go}>
+        <h2>Keryx is locked</h2>
+        <div className="small">This Keryx runs with <code>KERYX_TOKEN</code> set. Paste the token once; it is kept as a cookie in this browser.</div>
+        <input type="password" autoFocus placeholder="token" value={t} onChange={e => { setT(e.target.value); setBad(false) }} />
+        {bad && <div className="small err">that token was refused</div>}
+        <button type="submit" className="on">unlock</button>
+      </form>
     </div>
   )
 }

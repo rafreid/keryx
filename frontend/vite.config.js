@@ -7,4 +7,5 @@ export default defineConfig({
   build: { outDir: '../backend/static', emptyOutDir: true },
   // `npm run dev` proxies /api to a running Keryx backend; point KERYX_API at yours
   server: { proxy: { '/api': process.env.KERYX_API || 'http://localhost:9120' } },
+  test: { environment: 'node', include: ['src/**/*.test.js'] },
 })

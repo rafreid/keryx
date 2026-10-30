@@ -6,4 +6,7 @@ COPY app.py .
 COPY static ./static
 ENV HERMES_DATA=/opt/data GRAPH_PORT=9120
 EXPOSE 9120
+# /api/health answers without a token, so the probe works with KERYX_TOKEN set
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD wget -qO- "http://127.0.0.1:${GRAPH_PORT}/api/health" | grep -q '"ok":true' || exit 1
 CMD ["sh", "-c", "uvicorn app:app --host 0.0.0.0 --port ${GRAPH_PORT}"]
