@@ -119,22 +119,27 @@ class Snapshot:
 
 STATE = Snapshot(DATA / "state.db")
 CRON_EXEC = Snapshot(DATA / "cron" / "executions.db")
+CRON_INCIDENTS = Snapshot(DATA / "cron" / "incidents.db")      # Hermes' failure-signature ledger
+CRON_DELIVERIES = Snapshot(DATA / "cron" / "deliveries.db")    # Hermes' delivery queue
 
 
 def configure(data_dir: Path) -> None:
     """Point Keryx at another Hermes data directory (tests; a future reload endpoint).
     Rebuilds the snapshots and drops the response cache so nothing from the old directory leaks."""
-    global DATA, STATE, CRON_EXEC
+    global DATA, STATE, CRON_EXEC, CRON_INCIDENTS, CRON_DELIVERIES
     DATA = Path(data_dir)
     STATE = Snapshot(DATA / "state.db")
     CRON_EXEC = Snapshot(DATA / "cron" / "executions.db")
+    CRON_INCIDENTS = Snapshot(DATA / "cron" / "incidents.db")
+    CRON_DELIVERIES = Snapshot(DATA / "cron" / "deliveries.db")
     with _cache_lock:
         _cache.clear()
 
 
 def data_signature() -> tuple:
     return file_sig(DATA / "state.db", DATA / "state.db-wal", DATA / "cron" / "jobs.json",
-                    DATA / "cron" / "executions.db", DATA / "logs" / "errors.log")
+                    DATA / "cron" / "executions.db", DATA / "cron" / "incidents.db", DATA / "cron" / "deliveries.db",
+                    DATA / "logs" / "errors.log")
 
 
 # ----------------------------------------------------------------- loaders
@@ -399,10 +404,14 @@ def load_usage(db, session_ids: list[str]) -> dict[str, dict]:
     if not session_ids:
         return {}
     q = ",".join("?" * len(session_ids))
+    cols = table_columns(db, "session_model_usage")
+    opt = lambda c: f"sum(coalesce({c},0))" if c in cols else "0"      # columns newer Hermes added
     try:
         rows = db.execute(
             f"select model, coalesce(billing_provider,'') as provider, sum(input_tokens) i, sum(output_tokens) o, "
-            f"sum(cache_read_tokens) c, sum(api_call_count) n, sum(coalesce(estimated_cost_usd,0)) cost, "
+            f"sum(cache_read_tokens) c, {opt('cache_write_tokens')} cw, {opt('reasoning_tokens')} rt, sum(api_call_count) n, "
+            f"sum(coalesce(estimated_cost_usd,0)) est, {opt('actual_cost_usd')} act, "
+            f"{'cost_status' if 'cost_status' in cols else 'null'} as cost_status, "
             f"count(distinct session_id) sessions from session_model_usage where session_id in ({q}) group by 1,2",
             session_ids,
         ).fetchall()
@@ -412,20 +421,73 @@ def load_usage(db, session_ids: list[str]) -> dict[str, dict]:
     for r in rows:
         key = r["model"] or "unknown-model"
         cur = out.setdefault(key, {"model": key, "providers": set(), "input": 0, "output": 0, "cache_read": 0,
-                                   "calls": 0, "cost_usd": 0.0, "sessions": 0})
+                                   "cache_write": 0, "reasoning": 0, "calls": 0, "cost_usd": 0.0, "estimated_usd": 0.0,
+                                   "actual_usd": 0.0, "cost_status": set(), "sessions": 0})
         if r["provider"]:
             cur["providers"].add(r["provider"])
         cur["input"] += r["i"] or 0
         cur["output"] += r["o"] or 0
         cur["cache_read"] += r["c"] or 0
+        cur["cache_write"] += r["cw"] or 0
+        cur["reasoning"] += r["rt"] or 0
         cur["calls"] += r["n"] or 0
-        cur["cost_usd"] += r["cost"] or 0
+        cur["estimated_usd"] += r["est"] or 0
+        cur["actual_usd"] += r["act"] or 0
+        if r["cost_status"]:
+            cur["cost_status"].add(r["cost_status"])
         cur["sessions"] += r["sessions"] or 0
     for v in out.values():
         v["providers"] = sorted(v["providers"])
         denom = v["input"] + v["cache_read"]
         v["cache_hit"] = round(v["cache_read"] / denom, 3) if denom else 0.0
+        v["cost_usd"], v["cost_basis"] = cost_of(v["estimated_usd"], v["actual_usd"], v["cost_status"])
+        v["cost_status"] = sorted(v["cost_status"])
+        v["estimated_usd"], v["actual_usd"] = round(v["estimated_usd"], 4), round(v["actual_usd"], 4)
     return out
+
+
+def session_usage(db, session_ids: list[str], alias: Optional[dict[str, str]] = None) -> dict[str, dict]:
+    """Per-session totals (summed over a lineage's segments when `alias` maps them to one id)."""
+    out: dict[str, dict] = {}
+    if not session_ids:
+        return out
+    alias = alias or {}
+    cols = table_columns(db, "session_model_usage")
+    opt = lambda c: f"sum(coalesce({c},0))" if c in cols else "0"
+    try:
+        q = ",".join("?" * len(session_ids))
+        for r in db.execute(f"select session_id, sum(input_tokens) i, sum(output_tokens) o, sum(cache_read_tokens) c, "
+                            f"{opt('cache_write_tokens')} cw, {opt('reasoning_tokens')} rt, sum(api_call_count) n, "
+                            f"sum(coalesce(estimated_cost_usd,0)) est, {opt('actual_cost_usd')} act, "
+                            f"{'group_concat(distinct cost_status)' if 'cost_status' in cols else 'null'} st "
+                            f"from session_model_usage where session_id in ({q}) group by 1", session_ids):
+            u = out.setdefault(alias.get(r["session_id"], r["session_id"]),
+                               {"tokens_in": 0, "tokens_out": 0, "cache_read": 0, "cache_write": 0, "reasoning": 0,
+                                "api_calls": 0, "estimated_usd": 0.0, "actual_usd": 0.0, "statuses": set()})
+            u["tokens_in"] += r["i"] or 0; u["tokens_out"] += r["o"] or 0; u["cache_read"] += r["c"] or 0
+            u["cache_write"] += r["cw"] or 0; u["reasoning"] += r["rt"] or 0; u["api_calls"] += r["n"] or 0
+            u["estimated_usd"] += r["est"] or 0; u["actual_usd"] += r["act"] or 0
+            u["statuses"].update((r["st"] or "").split(","))
+    except sqlite3.OperationalError:
+        return {}
+    for u in out.values():
+        u["cost_usd"], u["cost_basis"] = cost_of(u["estimated_usd"], u["actual_usd"], u.pop("statuses"))
+        u["estimated_usd"], u["actual_usd"] = round(u["estimated_usd"], 4), round(u["actual_usd"], 4)
+    return out
+
+
+def cost_of(estimated: float, actual: float, statuses) -> tuple[float, str]:
+    """What to call the money: Hermes stamps `cost_status` per usage row ("ok" = the provider
+    reported the real cost, "estimated" = priced from a table, "included" = subscription,
+    "unknown"). Prefer the provider's figure; fall back to the estimate; say which one it is."""
+    statuses = set(statuses or ())
+    if actual > 0:
+        return round(actual, 4), "actual"
+    if estimated > 0:
+        return round(estimated, 4), "estimated"
+    if "included" in statuses:
+        return 0.0, "included"
+    return 0.0, "unknown"
 
 
 def load_delegations(db) -> list[dict]:
@@ -457,14 +519,62 @@ def load_cron() -> tuple[list[dict], list[dict]]:
     db = CRON_EXEC.get()
     if db is not None:
         try:
-            for r in db.execute("select job_id, status, started_at, finished_at, error from executions "
-                                "order by rowid desc limit 500"):
-                e = dict(r)
-                e["started_at"], e["finished_at"] = ts(e["started_at"]), ts(e["finished_at"])
+            cols = table_columns(db, "executions")
+            for r in db.execute("select * from executions order by coalesce(claimed_at, started_at) desc, rowid desc limit 500"):
+                e = {k: r[k] for k in ("job_id", "status", "started_at", "finished_at", "error")}
+                for k in ("scheduled_instant", "progress_at", "delivery_outcome", "claimed_at", "source"):
+                    e[k] = r[k] if k in cols else None
+                for k in ("started_at", "finished_at", "scheduled_instant", "progress_at", "claimed_at"):
+                    e[k] = ts(e[k])
+                e["ledger_missed"] = "scheduled_instant" in cols   # this store books missed slots itself
                 execs.append(e)
         except sqlite3.OperationalError:
             pass
     return jobs, execs
+
+
+def load_incidents() -> list[dict]:
+    """Hermes' cron incident ledger: one row per job + normalised error, with a lifecycle
+    detected → alerted → resolved (ran OK again) / closed (operator acknowledged)."""
+    db = CRON_INCIDENTS.get()
+    if db is None:
+        return []
+    try:
+        rows = db.execute("select * from cron_incidents order by last_seen_at desc limit 200").fetchall()
+    except sqlite3.OperationalError:
+        return []
+    out = []
+    for r in rows:
+        d = dict(r)
+        for k in ("first_seen_at", "last_seen_at", "acked_at", "alerted_at", "closed_at"):
+            d[k] = ts(d.get(k))
+        d["error"] = short(d.get("error"), 240)
+        d["open"] = d.get("state") in ("detected", "alerted")
+        out.append(d)
+    return out
+
+
+def load_deliveries() -> dict:
+    """Hermes' cron delivery queue: results waiting to reach their chat, and those that failed."""
+    db = CRON_DELIVERIES.get()
+    empty = {"pending": 0, "delivering": 0, "failed": 0, "delivered": 0, "unknown": 0, "suppressed": 0, "recent": []}
+    if db is None:
+        return empty
+    try:
+        counts = dict(db.execute("select status, count(*) from deliveries group by 1").fetchall())
+        recent = [dict(r) for r in db.execute("select execution_id, status, for_failure, created_at, finished_at, error, job_json "
+                                               "from deliveries where status in ('pending','delivering','failed') "
+                                               "order by created_at desc limit 20")]
+    except sqlite3.OperationalError:
+        return empty
+    for r in recent:
+        try:
+            r["job"] = (json.loads(r.pop("job_json") or "{}") or {}).get("name")
+        except Exception:
+            r["job"] = None
+        r["created_at"], r["finished_at"] = ts(r.get("created_at")), ts(r.get("finished_at"))
+        r["error"] = short(r.get("error"), 160)
+    return {**empty, **counts, "recent": recent}
 
 
 LOG_TS = re.compile(r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})")
@@ -541,19 +651,7 @@ def build_graph(hours: float, at: Optional[float]) -> dict:
     seg_ids = [seg for s in sel for seg in s["segments"]]
     digests = load_messages(db, seg_ids, upto=at, group=alias)
     usage = load_usage(db, seg_ids)
-    per_session_usage: dict[str, dict] = {}
-    if seg_ids:
-        try:
-            q = ",".join("?" * len(seg_ids))
-            for r in db.execute(f"select session_id, sum(input_tokens) i, sum(output_tokens) o, sum(cache_read_tokens) c, "
-                                f"sum(api_call_count) n, sum(coalesce(estimated_cost_usd,0)) cost from session_model_usage "
-                                f"where session_id in ({q}) group by 1", seg_ids):
-                u = per_session_usage.setdefault(alias.get(r["session_id"], r["session_id"]),
-                                                 {"tokens_in": 0, "tokens_out": 0, "cache_read": 0, "api_calls": 0, "cost_usd": 0.0})
-                u["tokens_in"] += r["i"] or 0; u["tokens_out"] += r["o"] or 0; u["cache_read"] += r["c"] or 0
-                u["api_calls"] += r["n"] or 0; u["cost_usd"] = round(u["cost_usd"] + (r["cost"] or 0), 4)
-        except sqlite3.OperationalError:
-            pass
+    per_session_usage = session_usage(db, seg_ids, alias)
     delegations = [d for d in load_delegations(db) if alias.get(d["origin_session"], d["origin_session"]) in id_set]
     for d in delegations:
         d["origin_session"] = alias.get(d["origin_session"], d["origin_session"])
@@ -586,7 +684,8 @@ def build_graph(hours: float, at: Optional[float]) -> dict:
     for m, u in usage.items():
         add_node(f"model:{m}", type="model", label=m, val=8 + 2 * math.log1p((u["input"] + u["output"]) / 1e5),
                  tokens_in=u["input"], tokens_out=u["output"], cache_read=u["cache_read"], cache_hit=u["cache_hit"],
-                 calls=u["calls"], cost_usd=round(u["cost_usd"], 4), providers=u["providers"])
+                 cache_write=u["cache_write"], reasoning=u["reasoning"],
+                 calls=u["calls"], cost_usd=u["cost_usd"], cost_basis=u["cost_basis"], providers=u["providers"])
 
     counts = {"running": 0, "waiting": 0, "stale": 0, "active": 0, "orphaned": 0, "failed": 0, "errors": 0,
               "tool_calls": 0, "subagents": 0}
@@ -623,7 +722,7 @@ def build_graph(hours: float, at: Optional[float]) -> dict:
             f"session:{sid}", type="subagent" if is_sub else "session", label=short(s["title"], 70),
             source=s.get("source"), model=s.get("model"), status=status, active=active,
             started=s["started_at"], ended=s["ended_at"], last=last, age=age,
-            request=d.get("request"), last_step=d.get("last_step"),
+            request=d.get("request"), last_step=d.get("last_step") or short(s.get("last_activity_description"), 140) or None,
             messages=s.get("message_count") or 0, user_messages=d.get("user_messages", 0),
             tool_calls=d.get("tool_calls", 0), tool_errors=d.get("tool_errors", 0),
             calls_per_min=len(recent), children=children.get(sid, 0), end_reason=s.get("end_reason"),
@@ -632,6 +731,8 @@ def build_graph(hours: float, at: Optional[float]) -> dict:
             context=context_gauge(s), files=d.get("files", [])[-40:],
             segments=s["segments"], compactions=s["compactions"], tip=s["tip_id"],
             compacted_at=[t for t in s["compacted_at"] if t],
+            cwd=s.get("cwd"), git_branch=s.get("git_branch"), profile=s.get("profile_name"),
+            archived=bool(s.get("archived")), handoff=s.get("handoff_state"), user=s.get("user_id"),
             val=3 + math.log1p(s.get("message_count") or 0),
         )
         parent = s.get("parent_session_id")
@@ -719,12 +820,14 @@ def build_now() -> dict:
         running.append({
             "id": s["id"], "title": short(s["title"], 80), "source": s.get("source"), "model": s.get("model"),
             "status": status, "started": s["started_at"], "last": last, "elapsed": now - (s["started_at"] or now),
-            "idle": now - last, "request": d.get("request"), "last_step": d.get("last_step"),
+            "idle": now - last, "request": d.get("request"),
+            "last_step": d.get("last_step") or short(s.get("last_activity_description"), 140) or None,
             "tool_calls": d.get("tool_calls", 0), "tool_errors": d.get("tool_errors", 0),
             "calls_per_min": len(recent), "children": len(children.get(s["id"], [])),
             "is_subagent": is_subagent(s, id_set),
             "parent": s.get("parent_session_id"), "context": context_gauge(s),
             "compactions": s["compactions"], "tip": s["tip_id"],
+            "cwd": s.get("cwd"), "git_branch": s.get("git_branch"),
         })
     order = {"running": 0, "waiting": 1, "stale": 2}
     running.sort(key=lambda r: (order.get(r["status"], 3), -(r["last"] or 0)))
@@ -773,13 +876,24 @@ def build_status() -> dict:
     # cron: scheduler heartbeat, missed triggers, last run
     jobs, execs = load_cron()
     sched = scheduler_state(now)
-    missed = [j["name"] for j in cron_jobs_detail(jobs, execs, now) if j["missed"]]
+    incidents = load_incidents()
+    details = cron_jobs_detail(jobs, execs, now, incidents)
+    missed = [j["name"] for j in details if j["missed"]]
+    open_inc = [i for i in incidents if i["open"]]
+    deliveries = load_deliveries()
+    stuck = deliveries["pending"] + deliveries["delivering"] + deliveries["failed"]
     if not jobs:
         check("cron", "amber", "no jobs defined")
     elif sched["age"] is not None and sched["age"] > 900:
         check("cron", "red", f"scheduler silent for {int(sched['age'] // 60)}m ({len(jobs)} job(s))")
+    elif open_inc:
+        names = {j["id"]: j["name"] for j in details}
+        check("cron", "red", f"{len(open_inc)} open incident(s): " + ", ".join(dict.fromkeys(names.get(i['job_id'], i['job_id']) for i in open_inc[:3])),
+              incidents=[{"job": names.get(i["job_id"], i["job_id"]), "error": i["error"]} for i in open_inc[:3]])
     elif missed:
         check("cron", "red", f"missed trigger: {', '.join(missed[:3])}")
+    elif stuck:
+        check("cron", "amber", f"{stuck} result(s) not delivered ({deliveries['failed']} failed)")
     else:
         last = execs[0] if execs else None
         failed = [e for e in execs[:20] if e["status"] in ("failed", "error")]
@@ -839,22 +953,36 @@ def scheduler_state(now: float) -> dict:
     return {"heartbeat": hb, "age": (now - hb) if hb else None, "alive": bool(hb) and (now - hb) < 900}
 
 
-def cron_jobs_detail(jobs: list[dict], execs: list[dict], now: float) -> list[dict]:
+def cron_jobs_detail(jobs: list[dict], execs: list[dict], now: float, incidents: Optional[list[dict]] = None) -> list[dict]:
     by_job: dict[str, list[dict]] = {}
     for e in execs:
         by_job.setdefault(e["job_id"], []).append(e)
+    inc_by_job: dict[str, list[dict]] = {}
+    for i in incidents or []:
+        inc_by_job.setdefault(i["job_id"], []).append(i)
     out = []
     for j in jobs:
         jid = j.get("id")
         hist = by_job.get(jid, [])[:20]
         next_run = ts(j.get("next_run_at"))
         last_run = ts(j.get("last_run_at")) or ((hist[0].get("finished_at") or hist[0].get("started_at")) if hist else None)
-        # missed trigger: the scheduled instant is well past and nothing ran for it (AionUi's missed-trigger detection)
-        missed = bool(j.get("enabled", True)) and not j.get("paused_at") and next_run is not None \
-            and now - next_run > 600 and not any((e.get("started_at") or 0) >= next_run - 60 for e in hist)
+        enabled = bool(j.get("enabled", True)) and not j.get("paused_at")
+        if hist and hist[0]["ledger_missed"]:
+            # current Hermes books every slot it could not fire as a `missed` execution row; the job
+            # has a missed trigger when its newest ledger row is one (a later run clears it)
+            missed = enabled and hist[0]["status"] == "missed"
+            missed_count = sum(1 for e in hist if e["status"] == "missed")
+        else:
+            # older stores: the scheduled instant is well past and nothing ran for it
+            missed = enabled and next_run is not None and now - next_run > 600 \
+                and not any((e.get("started_at") or 0) >= next_run - 60 for e in hist)
+            missed_count = int(missed)
         ld = j.get("last_dispatch") or {}
-        state = "paused" if j.get("paused_at") or not j.get("enabled", True) else \
-            "error" if (j.get("failure_streak") or 0) > 0 or j.get("last_status") in ("failed", "error") else \
+        open_incidents = [i for i in inc_by_job.get(jid, []) if i["open"]]
+        running = next((e for e in hist if e["status"] == "running"), None)
+        state = "paused" if not enabled else \
+            "running" if running else \
+            "error" if open_incidents or (j.get("failure_streak") or 0) > 0 or j.get("last_status") in ("failed", "error") else \
             "missed" if missed else "scheduled"
         out.append({
             "id": jid, "name": j.get("name") or jid, "schedule": j.get("schedule_display") or (j.get("schedule") or {}).get("display"),
@@ -864,8 +992,14 @@ def cron_jobs_detail(jobs: list[dict], execs: list[dict], now: float) -> list[di
             "next_run": next_run, "last_run": last_run, "last_status": j.get("last_status"),
             "last_error": short(j.get("last_error"), 200), "failure_streak": j.get("failure_streak") or 0,
             "completed": (j.get("repeat") or {}).get("completed"), "lateness": ld.get("lateness_seconds"),
-            "missed": missed, "created_at": ts(j.get("created_at")),
+            "missed": missed, "missed_count": missed_count, "created_at": ts(j.get("created_at")),
+            "timezone": j.get("timezone"), "catch_up": j.get("catch_up"),
+            "progress_at": running["progress_at"] if running else None,
+            "incidents": [{"id": i["id"], "state": i["state"], "type": i.get("failure_type"), "error": i["error"],
+                           "first_seen": i["first_seen_at"], "last_seen": i["last_seen_at"], "open": i["open"]}
+                          for i in inc_by_job.get(jid, [])[:5]],
             "history": [{"status": e.get("status"), "started": e.get("started_at"), "finished": e.get("finished_at"),
+                         "scheduled": e.get("scheduled_instant"),
                          "duration": ((e.get("finished_at") or 0) - (e.get("started_at") or 0)) if e.get("finished_at") and e.get("started_at") else None,
                          "delivery": e.get("delivery_outcome"), "error": short(e.get("error"), 160)} for e in hist],
         })
@@ -917,8 +1051,12 @@ def build_tasks() -> dict:
                 "summary": summary,
             })
     jobs, execs = load_cron()
-    return {"generated_at": now, "delegations": delegations, "jobs": cron_jobs_detail(jobs, execs, now),
-            "scheduler": scheduler_state(now)}
+    incidents = load_incidents()
+    names = {j.get("id"): j.get("name") or j.get("id") for j in jobs}
+    for i in incidents:
+        i["job"] = names.get(i["job_id"], i["job_id"])
+    return {"generated_at": now, "delegations": delegations, "jobs": cron_jobs_detail(jobs, execs, now, incidents),
+            "scheduler": scheduler_state(now), "incidents": incidents[:50], "deliveries": load_deliveries()}
 
 
 SECRET_RE = re.compile(r"(sk-[A-Za-z0-9_\-]{8,}|plf_[A-Za-z0-9]{6,}|\d{6,}:[A-Za-z0-9_\-]{20,}|bearer\s+\S+|token=\S+)", re.I)
@@ -994,10 +1132,18 @@ def build_cost(hours: float) -> dict:
     models = sorted(usage.values(), key=lambda u: -(u["input"] + u["output"]))
     tot = {"input": sum(u["input"] for u in models), "output": sum(u["output"] for u in models),
            "cache_read": sum(u["cache_read"] for u in models), "calls": sum(u["calls"] for u in models),
-           "cost_usd": round(sum(u["cost_usd"] for u in models), 4)}
+           "cache_write": sum(u["cache_write"] for u in models), "reasoning": sum(u["reasoning"] for u in models),
+           "cost_usd": round(sum(u["cost_usd"] for u in models), 4), "cost_basis": cost_basis_of(models)}
     denom = tot["input"] + tot["cache_read"]
     tot["cache_hit"] = round(tot["cache_read"] / denom, 3) if denom else 0.0
     return {"generated_at": now, "window_hours": hours, "models": models, "totals": tot}
+
+
+def cost_basis_of(models: list[dict]) -> str:
+    bases = {u["cost_basis"] for u in models if u.get("cost_usd")}
+    if not bases:
+        return next((u["cost_basis"] for u in models if u.get("cost_basis") == "included"), "unknown")
+    return bases.pop() if len(bases) == 1 else "mixed"
 
 
 # ----------------------------------------------------------------- analytics / trace / logs
@@ -1063,7 +1209,8 @@ def build_analytics(days: int) -> dict:
         "user_messages": sum(v["user_messages"] for v in per_day.values()),
         "tokens_in": sum(u["input"] for u in models), "tokens_out": sum(u["output"] for u in models),
         "cache_read": sum(u["cache_read"] for u in models), "api_calls": sum(u["calls"] for u in models),
-        "cost_usd": round(sum(u["cost_usd"] for u in models), 4),
+        "cost_usd": round(sum(u["cost_usd"] for u in models), 4), "cost_basis": cost_basis_of(models),
+        "cache_write": sum(u["cache_write"] for u in models), "reasoning": sum(u["reasoning"] for u in models),
     }
     denom = tot["tokens_in"] + tot["cache_read"]
     tot["cache_hit"] = round(tot["cache_read"] / denom, 3) if denom else 0.0
@@ -1167,8 +1314,21 @@ EVENT_KINDS = {"model_switch", "auto_continue", "steer", "async_delegation_compl
                "skill_invocation", "personality_switch", "internal_notification"}
 
 
-LOG_FILES = {"errors": "errors.log", "gateway": "gateway.log", "agent": "agent.log", "boot": "container-boot.log",
-             "restart": "gateway-restart.log", "dashboard-auth": "dashboard-auth.log"}
+def log_files() -> dict[str, str]:
+    """Every *.log in the Hermes logs directory, keyed by stem (errors, gateway, agent, audit, update…).
+    Hermes adds log files over time, so the list is discovered rather than fixed."""
+    out = {}
+    try:
+        for p in sorted((DATA / "logs").glob("*.log")):
+            if p.is_file():
+                out[p.stem] = p.name
+    except OSError:
+        pass
+    return out
+
+
+# the ones worth showing first when they exist
+LOG_PRIORITY = ["errors", "gateway", "agent", "audit", "cron", "update", "container-boot", "gateway-restart", "dashboard-auth"]
 LEVELS = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 # Hermes' line format is "%(asctime)s %(levelname)s%(session_tag)s %(name)s: %(message)s" where the
 # session tag is " [<session id>]" on every line logged inside a session and empty otherwise.
@@ -1186,7 +1346,8 @@ def parse_log_line(line: str) -> Optional[dict]:
 
 
 def build_logs(file: str, level: str, q: str, lines: int) -> dict:
-    name = LOG_FILES.get(file, LOG_FILES["errors"])
+    files_map = log_files()
+    name = files_map.get(file) or files_map.get("errors") or "errors.log"
     path = DATA / "logs" / name
     raw = tail_lines(path, 2_000_000)
     min_idx = LEVELS.index(level) if level in LEVELS else 0
@@ -1207,7 +1368,8 @@ def build_logs(file: str, level: str, q: str, lines: int) -> dict:
             continue
         out.append(entry)
     files = []
-    for key, fn in LOG_FILES.items():
+    order = {k: i for i, k in enumerate(LOG_PRIORITY)}
+    for key, fn in sorted(files_map.items(), key=lambda kv: (order.get(kv[0], 99), kv[0])):
         p = DATA / "logs" / fn
         if p.exists():
             st = p.stat()

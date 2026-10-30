@@ -21,9 +21,9 @@ export default function Header({ status, hours, setHours, view, setView, live, s
         </span>
       ))}
       {cost?.totals && (
-        <span className="check" title={`cache hit ${(cost.totals.cache_hit * 100).toFixed(0)}% · ${cost.totals.calls} API calls`}>
+        <span className="check" title={`cache hit ${(cost.totals.cache_hit * 100).toFixed(0)}% · ${cost.totals.calls} API calls${cost.totals.cost_usd ? ` · cost ${cost.totals.cost_basis === 'actual' ? 'reported by the provider' : cost.totals.cost_basis === 'mixed' ? 'partly estimated' : 'estimated (~)'}` : ''}`}>
           <b>tokens</b> {fmtTok(cost.totals.input)} in · {fmtTok(cost.totals.output)} out
-          {cost.totals.cost_usd ? ` · $${cost.totals.cost_usd.toFixed(2)}` : ''}
+          {cost.totals.cost_usd ? ` · ${cost.totals.cost_basis === 'actual' ? '' : '~'}$${cost.totals.cost_usd.toFixed(2)}` : ''}
         </span>
       )}
       <div className="right">
