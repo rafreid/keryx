@@ -10,3 +10,7 @@ __pycache__/
 .idea/
 # local screenshots from playwright checks
 .playwright-mcp/
+
+# python virtualenv and test caches
+backend/.venv/
+.pytest_cache/

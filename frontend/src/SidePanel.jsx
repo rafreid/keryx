@@ -33,7 +33,7 @@ export default function SidePanel({ node, cost, status, onClose, graph, tasks, h
         : tab === 'sessions' ? <Sessions graph={graph} selected={null} onSelect={onSelect} search={search} />
         : tab === 'tasks' ? <Tasks tasks={tasks} onSelect={onSelect} />
         : tab === 'analytics' ? <Analytics />
-        : tab === 'logs' ? <Logs />
+        : tab === 'logs' ? <Logs onSelect={onSelect} />
         : <Overview cost={cost} status={status} graph={graph} hidden={hidden} toggleHidden={toggleHidden} showAll={showAll} onSelect={onSelect} />}
     </div>
   )

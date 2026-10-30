@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { fmtTime } from './util.js'
 
 /** Tail of a Hermes log file, filterable by level and keyword, refreshed every 15 s. */
-export default function Logs() {
+export default function Logs({ onSelect }) {
   const [file, setFile] = useState('errors')
   const [level, setLevel] = useState('WARNING')
   const [q, setQ] = useState('')
@@ -31,6 +31,8 @@ export default function Logs() {
             <span className="when">{e.ts ? fmtTime(e.ts) : ''}</span>
             <span className="lvl">{e.level}</span>
             <span className="logger" title={e.logger}>{e.logger.split('.').slice(-1)[0]}</span>
+            {e.session && <a className="sess" href="#" title={`logged inside session ${e.session} · click to select it`}
+               onClick={ev => { ev.preventDefault(); ev.stopPropagation(); onSelect?.(`session:${e.session}`) }}>{e.session.slice(0, 8)}</a>}
             <pre>{e.msg}</pre>
           </div>
         ))}
