@@ -68,3 +68,32 @@ def test_diagnostics_is_redacted(client):
 def test_replay_graph(client):
     g = client.get("/api/graph?hours=24&at=1").json()
     assert g["replay"] is True and g["stats"]["sessions"] == 0
+
+
+def test_search_finds_sessions_by_conversation(client):
+    out = client.get("/api/search?q=long chat").json()
+    assert out["engine"] in ("fts5", "like")
+    ids = [h["id"] for h in out["sessions"]]
+    assert ids == ["s-comp-root"]                                   # both segments of the lineage fold into the root
+    hit = out["sessions"][0]
+    assert hit["hits"] == 1 and hit["snippets"][0]["role"] == "user"
+    assert "[long]" in hit["snippets"][0]["text"] or "long chat" in hit["snippets"][0]["text"]   # FTS5 marks tokens; LIKE does not
+    # the hidden compressed summary and tool output never match; the model-only merge never matches
+    assert client.get("/api/search?q=compressed summary").json()["sessions"] == []
+    assert client.get("/api/search?q=keep the tests").json()["sessions"][0]["id"] == "s-running"
+    assert client.get("/api/search?q=x").json()["sessions"] == []   # too short
+    assert client.get("/api/search?q=%22build%22%20OR%20(").json()["rows"] >= 0   # FTS syntax is matched literally, never raises
+
+
+def test_fts_query_quotes_tokens():
+    from conftest import keryx
+    assert keryx.fts_query('fix the-build NOT "x"') == '"fix" "the-build" "NOT" "x"'
+    assert keryx.fts_query("") == ""
+
+
+def test_search_like_fallback(hermes_data, monkeypatch):
+    from conftest import keryx
+    monkeypatch.setattr(keryx, "has_fts", lambda db: False)
+    out = keryx.build_search("fix the build", 10)
+    assert out["engine"] == "like" and [h["id"] for h in out["sessions"]] == ["s-running"]
+    assert keryx.build_search("100%", 10)["sessions"] == []        # LIKE wildcards are escaped

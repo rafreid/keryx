@@ -163,6 +163,14 @@ def write_state_db(path: Path) -> None:
                "values ('s-running','gpt-5','openai',5,50000,2000,30000,1000,500,0.12,0.10,'ok')")
     db.execute("insert into session_model_usage (session_id, model, billing_provider, api_call_count, input_tokens, output_tokens, "
                "cache_read_tokens, estimated_cost_usd, cost_status) values ('s-waiting','claude-sonnet','anthropic',2,8000,400,0,0.03,'estimated')")
+    try:                                   # Hermes' word index: an external-content FTS5 table over a view of messages
+        db.executescript("""
+            create view messages_fts_src as select id, case when role = 'tool' then substr(coalesce(content, ''), 1, 4000)
+                else content end as content, tool_name, tool_calls from messages;
+            create virtual table messages_fts using fts5(content, tool_name, tool_calls, content='messages_fts_src', content_rowid='id');
+            insert into messages_fts(messages_fts) values ('rebuild');""")
+    except sqlite3.OperationalError:       # SQLite built without FTS5: Keryx falls back to LIKE
+        pass
     db.execute("insert into gateway_heartbeats values ('gw1', 123, ?, ?, '', 'host')", (NOW - 86400, NOW - 30))
     db.execute("insert into async_delegations (delegation_id, origin_session, parent_session_id, state, dispatched_at, completed_at, "
                "updated_at, task_json, result_json, delivery_state) values ('d1','s-running','s-running','completed',?,?,?,?,?,'delivered')",
