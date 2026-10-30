@@ -1,6 +1,11 @@
 # Keryx next to a Hermes agent.
 #
-#   HERMES_HOME=~/.hermes HERMES_UID=$(id -u) HERMES_GID=$(id -g) docker compose up -d --build
+#   ./quickstart.sh                              # finds the data directory and runs this file for you
+#   HERMES_HOME=~/.hermes HERMES_UID=$(id -u) HERMES_GID=$(id -g) docker compose up -d
+#
+# By default the published image ghcr.io/rafreid/keryx is pulled, so Node is not needed.
+# `docker compose up -d --build` builds from this checkout instead (run `npm run build` in
+# frontend/ first; backend/static is not committed).
 #
 # HERMES_HOME is the Hermes data directory on the host (~/.hermes for a native install; the
 # directory you mount at /opt/data if Hermes itself runs in Docker). Keryx runs as the same
@@ -8,8 +13,8 @@
 # You can also paste the service block into the compose file that runs Hermes.
 services:
   keryx:
-    build: ./backend                 # run `npm run build` in frontend/ first (backend/static is not committed)
-    image: keryx:local
+    image: ghcr.io/rafreid/keryx:latest
+    build: ./backend                 # only used by `docker compose up --build`
     container_name: keryx
     restart: unless-stopped
     user: "${HERMES_UID:-10000}:${HERMES_GID:-10000}"
