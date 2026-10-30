@@ -359,11 +359,33 @@ def tool_result_failed(content: Any) -> bool:
     return out.lstrip().startswith("Traceback")
 
 
+def has_json(db) -> bool:
+    """SQLite built with the JSON1 functions (every Python since 3.9 ships one; guarded anyway)."""
+    try:
+        db.execute("select json_valid('{}')")
+        return True
+    except sqlite3.OperationalError:
+        return False
+
+
+# Hermes' own display rule (hermes_state_messages.DISPLAY_VISIBLE_SQL): a row whose display_metadata
+# carries model_only is read by the model but was never typed as one message. Micro-compaction writes
+# such a row when it merges adjacent user turns; the original turns stay visible, so painting the merge
+# too shows the same request twice. json_valid guards rows whose metadata is not JSON at all.
+MODEL_ONLY_SQL = ("coalesce(json_extract(case when json_valid(display_metadata) then display_metadata "
+                  "else json_object() end, '$.model_only'), 0) = 0")
+
+
 def hidden_rows_sql(db) -> str:
-    """Skip display_kind='hidden' rows: model-facing scaffolding Hermes itself never paints."""
-    if "display_kind" not in table_columns(db, "messages"):
-        return ""
-    return " and coalesce(display_kind, '') <> 'hidden'"
+    """Skip the rows Hermes itself never paints: display_kind='hidden' scaffolding and model-only
+    merges (see MODEL_ONLY_SQL). Older databases lack the columns; then nothing is hidden."""
+    cols = table_columns(db, "messages")
+    out = ""
+    if "display_kind" in cols:
+        out += " and coalesce(display_kind, '') <> 'hidden'"
+    if "display_metadata" in cols and has_json(db):
+        out += f" and {MODEL_ONLY_SQL}"
+    return out
 
 
 # The digest only needs the first 400 characters of a chat turn, and of a tool result only the
@@ -1298,11 +1320,14 @@ def build_analytics(days: int) -> dict:
             b["subagents"] += 1
     if ids:
         q = ",".join("?" * len(ids))
-        for r in db.execute(f"select session_id, role, content, timestamp from messages where session_id in ({q}) "
-                            f"and role in ('user','tool') and timestamp >= ?{live_rows_sql(db)}", (*ids, start)):
+        kind_col = ", display_kind" if "display_kind" in table_columns(db, "messages") else ", null as display_kind"
+        for r in db.execute(f"select session_id, role, content, timestamp{kind_col} from messages where session_id in ({q}) "
+                            f"and role in ('user','tool') and timestamp >= ?{live_rows_sql(db)}{hidden_rows_sql(db)}", (*ids, start)):
             t = ts(r["timestamp"]) or 0
             b = per_day.setdefault(_day(t), dict.fromkeys(per_day[next(iter(per_day))].keys(), 0))
             if r["role"] == "user":
+                if r["display_kind"] in EVENT_KINDS and r["display_kind"] != "steer":
+                    continue                      # Hermes' injected event rows are not the human speaking
                 b["user_messages"] += 1
             else:
                 b["tool_calls"] += 1
