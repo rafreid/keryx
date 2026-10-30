@@ -16,6 +16,7 @@ cron store and gateway logs, and exposes:
 from __future__ import annotations
 
 import asyncio
+import datetime as _dt
 import difflib
 import hmac
 import json
@@ -171,7 +172,7 @@ def configure(data_dir: Path) -> None:
 def data_signature() -> tuple:
     return file_sig(DATA / "state.db", DATA / "state.db-wal", DATA / "cron" / "jobs.json",
                     DATA / "cron" / "executions.db", DATA / "cron" / "incidents.db", DATA / "cron" / "deliveries.db",
-                    DATA / "logs" / "errors.log")
+                    DATA / "logs" / "errors.log", DATA / "skills" / ".usage.json")
 
 
 # ----------------------------------------------------------------- loaders
@@ -1403,6 +1404,86 @@ def _day(t: float) -> str:
     return datetime.fromtimestamp(t, timezone.utc).strftime("%Y-%m-%d")
 
 
+HEATMAP_WEEKS = 53
+
+
+def build_heatmap(db, now: float) -> dict:
+    """A year of days (53 ISO weeks ending this week, Monday-aligned, UTC) with sessions started, tool
+    calls, tokens and cost per day: the calendar heatmap cc-switch's and GitHub's usage pages draw.
+    Reads the sessions table directly (no MAX_SESSIONS cap) so a busy year is still complete."""
+    today = datetime.fromtimestamp(now, timezone.utc).date()
+    monday = today - _dt.timedelta(days=today.weekday())
+    start_day = monday - _dt.timedelta(weeks=HEATMAP_WEEKS - 1)
+    start = datetime(start_day.year, start_day.month, start_day.day, tzinfo=timezone.utc).timestamp()
+    days: dict[str, dict] = {}
+    d = start_day
+    while d <= today + _dt.timedelta(days=6 - today.weekday()):
+        days[d.isoformat()] = {"day": d.isoformat(), "sessions": 0, "tool_calls": 0, "tokens": 0, "cost_usd": 0.0}
+        d += _dt.timedelta(days=1)
+    cols = table_columns(db, "sessions")
+    tcc = "coalesce(tool_call_count, 0)" if "tool_call_count" in cols else "0"
+    rows = db.execute(f"select id, started_at, {tcc} as calls from sessions where started_at >= ?", (start,)).fetchall()
+    day_of = {}
+    for r in rows:
+        t = ts(r["started_at"])
+        if t is None:
+            continue
+        key = _day(t)
+        b = days.get(key)
+        if b is None:
+            continue
+        day_of[r["id"]] = key
+        b["sessions"] += 1
+        b["tool_calls"] += r["calls"] or 0
+    if day_of:
+        usage = session_usage(db, list(day_of))
+        for sid, u in usage.items():
+            b = days[day_of[sid]]
+            b["tokens"] += u["tokens_in"] + u["tokens_out"] + u["cache_read"]
+            b["cost_usd"] += u["cost_usd"] or 0
+    for b in days.values():
+        b["cost_usd"] = round(b["cost_usd"], 4)
+    out = list(days.values())
+    active = [b for b in out if b["sessions"]]
+    return {"start": start_day.isoformat(), "weeks": HEATMAP_WEEKS, "days": out,
+            "active_days": len(active), "streak": _streak(out, today.isoformat()),
+            "max": {k: max((b[k] for b in out), default=0) for k in ("sessions", "tool_calls", "tokens", "cost_usd")}}
+
+
+def _streak(days: list[dict], today: str) -> int:
+    """Consecutive days with a session, counted back from today (yesterday if today is quiet so far)."""
+    idx = {b["day"]: i for i, b in enumerate(days)}
+    i = idx.get(today)
+    if i is None:
+        return 0
+    if not days[i]["sessions"]:
+        i -= 1
+    n = 0
+    while i >= 0 and days[i]["sessions"]:
+        n += 1
+        i -= 1
+    return n
+
+
+def load_skill_usage() -> list[dict]:
+    """Hermes' skill ledger (skills/.usage.json, written by tools/skill_usage.py): per skill the use and view
+    counts, last use, lifecycle state. Read-only; hermes-webui's Insights page shows the same file."""
+    try:
+        raw = json.loads((DATA / "skills" / ".usage.json").read_text())
+    except Exception:
+        return []
+    out = []
+    for name, v in (raw.items() if isinstance(raw, dict) else []):
+        if not isinstance(v, dict):
+            continue
+        out.append({"name": name, "uses": int(v.get("use_count") or 0), "views": int(v.get("view_count") or 0),
+                    "patches": int(v.get("patch_count") or 0), "state": v.get("state") or "active",
+                    "pinned": bool(v.get("pinned")), "last_used": ts(v.get("last_used_at")),
+                    "created": ts(v.get("created_at")), "archived": v.get("archived_at") is not None})
+    out.sort(key=lambda x: (-(x["last_used"] or 0), -x["uses"], x["name"]))
+    return out
+
+
 def build_analytics(days: int) -> dict:
     db = STATE.get()
     now = time.time()
@@ -1412,11 +1493,11 @@ def build_analytics(days: int) -> dict:
     sessions = [s for s in load_sessions(db) if (s["started_at"] or 0) >= start]
     ids = [s["id"] for s in sessions]
     per_day: dict[str, dict] = {}
+    empty = {"sessions": 0, "subagents": 0, "user_messages": 0, "tool_calls": 0, "tool_errors": 0,
+             "tokens_in": 0, "tokens_out": 0, "cache_read": 0, "cost_usd": 0.0}
     for i in range(days):
-        per_day[_day(start + i * 86400 + 1)] = {"sessions": 0, "subagents": 0, "user_messages": 0, "tool_calls": 0,
-                                                 "tool_errors": 0, "tokens_in": 0, "tokens_out": 0, "cache_read": 0}
-    per_day.setdefault(_day(now), {"sessions": 0, "subagents": 0, "user_messages": 0, "tool_calls": 0,
-                                   "tool_errors": 0, "tokens_in": 0, "tokens_out": 0, "cache_read": 0})
+        per_day[_day(start + i * 86400 + 1)] = dict(empty)
+    per_day.setdefault(_day(now), dict(empty))
     day_of_session = {}
     for s in sessions:
         d = _day(s["started_at"])
@@ -1440,16 +1521,13 @@ def build_analytics(days: int) -> dict:
                 b["tool_calls"] += 1
                 if tool_result_failed(r["content"]):
                     b["tool_errors"] += 1
-        try:
-            for r in db.execute(f"select session_id, sum(input_tokens) i, sum(output_tokens) o, sum(cache_read_tokens) c "
-                                f"from session_model_usage where session_id in ({q}) group by 1", ids):
-                d = day_of_session.get(r["session_id"])
-                if d and d in per_day:
-                    per_day[d]["tokens_in"] += r["i"] or 0
-                    per_day[d]["tokens_out"] += r["o"] or 0
-                    per_day[d]["cache_read"] += r["c"] or 0
-        except sqlite3.OperationalError:
-            pass
+        for sid, u in session_usage(db, ids).items():
+            d = day_of_session.get(sid)
+            if d and d in per_day:
+                per_day[d]["tokens_in"] += u["tokens_in"]
+                per_day[d]["tokens_out"] += u["tokens_out"]
+                per_day[d]["cache_read"] += u["cache_read"]
+                per_day[d]["cost_usd"] = round(per_day[d]["cost_usd"] + (u["cost_usd"] or 0), 4)
     usage = load_usage(db, ids)
     models = sorted(usage.values(), key=lambda u: -(u["input"] + u["output"]))
     total_tok = sum(u["input"] + u["output"] for u in models) or 1
@@ -1471,7 +1549,11 @@ def build_analytics(days: int) -> dict:
     tot["cache_hit"] = round(tot["cache_read"] / denom, 3) if denom else 0.0
     busiest = max(days_list, key=lambda d: d["tool_calls"], default=None)
     tot["busiest_day"] = busiest["day"] if busiest and busiest["tool_calls"] else None
-    return {"generated_at": now, "window_days": days, "days": days_list, "models": models, "totals": tot}
+    skills = load_skill_usage()
+    tot["skills"] = len(skills)
+    tot["skills_used"] = sum(1 for k in skills if (k["last_used"] or 0) >= start)
+    return {"generated_at": now, "window_days": days, "days": days_list, "models": models, "totals": tot,
+            "skills": skills[:40], "heatmap": build_heatmap(db, now)}
 
 
 def _result_text(content: Any) -> str:
