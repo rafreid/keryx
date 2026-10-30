@@ -8,6 +8,7 @@ import Sessions from './Sessions.jsx'
 import Logs from './Logs.jsx'
 import Trace from './Trace.jsx'
 import Tasks from './Tasks.jsx'
+import { resumeCommand } from './grouping.js'
 
 const TABS = ['overview', 'sessions', 'tasks', 'analytics', 'logs']
 
@@ -141,6 +142,7 @@ function NodeDetail({ node, graph, onClose, onSelect, links }) {
       <h2>{node.label}</h2>
       <table><tbody>{rows.map(([k, v]) => <tr key={k}><td>{k}</td><td>{v}</td></tr>)}</tbody></table>
       {isSession && links?.chat_resume && <div className="small" style={{ marginTop: 6 }}><a href={links.chat_resume + encodeURIComponent(node.tip || node.id.replace('session:', ''))} target="_blank" rel="noreferrer">open in the Hermes dashboard ↗</a></div>}
+      {isSession && <Resume node={node} />}
       {node.type === 'cron' && links?.cron && <div className="small" style={{ marginTop: 6 }}><a href={links.cron} target="_blank" rel="noreferrer">manage in the Hermes dashboard ↗</a></div>}
       {isSession && <Plan sessionId={node.id.replace('session:', '')} />}
       {isSession && node.files?.length > 0 && <><h3>Files touched <span className="small" style={{ textTransform: 'none', letterSpacing: 0 }}>· ✎ write ✚ patch 👁 read ⌕ search</span></h3><Files files={node.files} /></>}
@@ -216,5 +218,17 @@ function LegendRow({ id, hidden, toggle, glyph, name, desc }) {
     </tr>
   )
 }
+/** The terminal command that continues this conversation (Hermes' -r/--resume takes the session id). */
+function Resume({ node }) {
+  const [copied, setCopied] = useState(false)
+  const cmd = resumeCommand(node)
+  const copy = async () => { try { await navigator.clipboard.writeText(cmd); setCopied(true); setTimeout(() => setCopied(false), 1500) } catch {} }
+  return (
+    <div className="resume small" title="run this where Hermes is installed to pick the conversation up in a terminal">
+      resume in a terminal: <code>{cmd}</code> <a href="#" onClick={e => { e.preventDefault(); copy() }}>{copied ? 'copied ✓' : 'copy'}</a>
+    </div>
+  )
+}
+
 const costLabel = b => (b === 'actual' ? 'cost' : b === 'estimated' ? 'est. cost' : 'cost')
 const cls = s => (s === 'running' ? 'ok' : s === 'waiting' ? 'info' : s === 'stale' ? 'warn' : s === 'orphaned' || s === 'failed' ? 'err' : '')

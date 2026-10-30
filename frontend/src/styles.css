@@ -236,3 +236,13 @@ svg.heatmap .c.today { stroke: var(--text); stroke-width: 1; }
 .heatlegend i.l1 { background: color-mix(in srgb, var(--accent) 30%, var(--panel2)); } .heatlegend i.l2 { background: color-mix(in srgb, var(--accent) 55%, var(--panel2)); }
 .heatlegend i.l3 { background: color-mix(in srgb, var(--accent) 80%, var(--panel2)); } .heatlegend i.l4 { background: var(--accent); }
 tr.off td { opacity: .55; }
+
+/* sessions list: tags, pins, conversation search */
+.tagchip { display: inline-block; font-size: 10.5px; padding: 0 6px; margin-left: 5px; border-radius: 9px; border: 1px solid var(--line); color: var(--muted); text-decoration: none; line-height: 16px; vertical-align: 1px; }
+.tagchip:hover { border-color: var(--accent); color: var(--accent); } .tagchip.on { border-color: var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.tags { display: inline-flex; flex-wrap: wrap; gap: 2px 0; align-items: center; }
+.srow .pin { margin-left: auto; color: var(--muted); text-decoration: none; opacity: 0; font-size: 13px; padding: 0 2px; }
+.srow:hover .pin, .srow .pin.on { opacity: 1; } .srow .pin.on { color: var(--amber); }
+.snip { margin-top: 2px; line-height: 1.3; } .snip mark { background: color-mix(in srgb, var(--accent) 30%, transparent); color: var(--text); border-radius: 2px; padding: 0 1px; }
+.snt { color: var(--text); opacity: .85; }
+.resume { margin-top: 6px; } .resume code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; background: var(--panel2); padding: 1px 5px; border-radius: 4px; user-select: all; }

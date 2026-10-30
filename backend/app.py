@@ -8,6 +8,7 @@ cron store and gateway logs, and exposes:
   GET /api/cost?hours=24                  token/cost totals per model for the window
   GET /api/stream?hours=24                SSE: pushes {graph, now, status, cost, tasks} when data changes
   GET /api/tasks                          delegations board + scheduled jobs with run history
+  GET /api/search?q=                      sessions whose conversation mentions q (Hermes' FTS5 index)
   GET /api/diagnostics                    redacted snapshot for bug reports (no prompts, no keys)
   GET /api/qr?text=                       QR code (SVG) for opening Keryx on a phone
   GET /api/health                         liveness
@@ -1732,6 +1733,68 @@ def build_logs(file: str, level: str, q: str, lines: int) -> dict:
             "files": files}
 
 
+# ----------------------------------------------------------------- full-text search
+FTS_TOKEN_RE = re.compile(r"[^\s\"]+")
+
+
+def fts_query(q: str) -> str:
+    """Quote every token so FTS5 syntax characters in user input (`-`, `*`, `:`, parentheses) are
+    matched literally; FTS5's implicit AND joins the tokens. Mirrors hermes_state_search's sanitiser."""
+    toks = [t.replace('"', '""') for t in FTS_TOKEN_RE.findall(q or "")]
+    return " ".join(f'"{t}"' for t in toks)
+
+
+def has_fts(db) -> bool:
+    try:
+        return bool(db.execute("select 1 from sqlite_master where type = 'table' and name = 'messages_fts'").fetchone())
+    except sqlite3.OperationalError:
+        return False
+
+
+def build_search(q: str, limit: int) -> dict:
+    """Sessions whose conversation mentions `q` (hermes-webui searches message content; Keryx's search box
+    only knew titles and digests). Uses Hermes' own FTS5 index (messages_fts, maintained by its triggers)
+    when the database has it, a LIKE scan otherwise; rows of a compression lineage fold into one hit.
+    Returns snippets, so the match shows why a session came up."""
+    db = STATE.get()
+    q = (q or "").strip()
+    if db is None or len(q) < 2:
+        return {"q": q, "sessions": [], "rows": 0, "engine": None}
+    logical, alias = logical_sessions(load_sessions(db))
+    meta = {ls["id"]: ls for ls in logical}
+    live, hidden = live_rows_sql(db, "m"), hidden_rows_sql(db).replace(" display_", " m.display_").replace("(display_", "(m.display_")
+    rows: list = []
+    engine = "fts5" if has_fts(db) else "like"
+    if engine == "fts5":
+        try:
+            rows = db.execute(
+                f"select m.session_id, m.role, m.timestamp, snippet(messages_fts, 0, '[', ']', '…', 14) as snip "
+                f"from messages_fts join messages m on m.id = messages_fts.rowid "
+                f"where messages_fts match ? and m.role in ('user', 'assistant'){live}{hidden} "
+                f"order by rank limit 400", (fts_query(q),)).fetchall()
+        except sqlite3.OperationalError:
+            engine = "like"
+    if engine == "like":
+        rows = db.execute(
+            f"select m.session_id, m.role, m.timestamp, substr(m.content, max(1, instr(lower(m.content), lower(?)) - 60), 160) as snip "
+            f"from messages m where m.role in ('user', 'assistant') and m.content like ? escape '\\'{live}{hidden} "
+            f"order by m.timestamp desc limit 400", (q, "%" + q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%")).fetchall()
+    hits: dict[str, dict] = {}
+    for r in rows:
+        sid = alias.get(r["session_id"], r["session_id"])
+        ls = meta.get(sid)
+        if ls is None:
+            continue
+        h = hits.setdefault(sid, {"id": sid, "title": ls.get("title"), "source": ls.get("source"), "hits": 0,
+                                  "last": ls.get("last_activity_at"), "ended": ls.get("ended_at") is not None,
+                                  "snippets": []})
+        h["hits"] += 1
+        if len(h["snippets"]) < 3:
+            h["snippets"].append({"role": r["role"], "ts": ts(r["timestamp"]), "text": short(r["snip"], 200)})
+    out = sorted(hits.values(), key=lambda h: (-(h["last"] or 0)))[:limit]
+    return {"q": q, "sessions": out, "rows": len(rows), "engine": engine}
+
+
 # ----------------------------------------------------------------- cache + routes
 _cache: dict[tuple, tuple] = {}
 _cache_lock = threading.Lock()
@@ -1799,6 +1862,11 @@ def api_trace(sid: str, tool: Optional[str] = Query(None), limit: int = Query(30
 @app.get("/api/session/{sid}/todo")
 def api_todo(sid: str):
     return cached("todo", build_todo, sid)
+
+
+@app.get("/api/search")
+def api_search(q: str = Query("", max_length=200), limit: int = Query(30, ge=1, le=100)):
+    return cached("search", build_search, q, limit)
 
 
 @app.get("/api/tasks")
