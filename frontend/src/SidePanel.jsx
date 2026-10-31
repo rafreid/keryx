@@ -171,7 +171,7 @@ function Overview({ cost, status, graph, hidden, toggleHidden, showAll, onSelect
       </tbody></table>
       <Section id="health" title="Health" summary={<span className={`dot ${status?.level || 'amber'}`} />}>
       <table><tbody>{(status?.checks || []).map(c => (
-        <tr key={c.name}><td><span className={`dot ${c.level}`} />{c.name}</td><td>{c.detail}{c.recent?.length ? <div className="small">{c.recent.map((l, i) => <div key={i}>{l}</div>)}</div> : null}</td></tr>
+        <tr key={c.name}><td><span className={`dot ${c.level}`} />{c.name.replace(/_/g, ' ')}</td><td>{c.detail}{c.recent?.length ? <div className="small">{c.recent.map((l, i) => <div key={i}>{l}</div>)}</div> : null}</td></tr>
       ))}</tbody></table>
       </Section>
       {changes.length > 0 && <Section id="files" title="Recent file changes" summary={`${changes.length}`}>

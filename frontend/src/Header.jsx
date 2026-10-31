@@ -5,6 +5,11 @@ const WINDOWS = [[1, 'last hour'], [6, '6 hours'], [24, '24 hours'], [168, '7 da
 
 export default function Header({ status, hours, setHours, view, setView, live, setLive, conn, cost, theme, setTheme, notify, setNotify }) {
   const level = status?.level || 'amber'
+  // one chip per health check, except the platforms (telegram, whatsapp, webhook, api server…), which share a chip
+  const checks = status?.checks || []
+  const plats = checks.filter(c => c.kind === 'platform')
+  const others = checks.filter(c => c.kind !== 'platform')
+  const hermes = status?.hermes
   const [qr, setQr] = useState(false)
   const toggleNotify = async () => {
     if (notify) { setNotify(false); return }
@@ -14,12 +19,17 @@ export default function Header({ status, hours, setHours, view, setView, live, s
   }
   return (
     <div className="header">
-      <h1><span className={`dot ${level} ${level === 'red' ? 'pulse' : ''}`} />Keryx <span className="small" style={{ fontWeight: 400 }}>· Hermes activity</span></h1>
-      {(status?.checks || []).map(c => (
+      <h1><span className={`dot ${level} ${level === 'red' ? 'pulse' : ''}`} />Keryx <span className="small" style={{ fontWeight: 400 }} title={hermes ? `gateway ${hermes.state}${hermes.desired && hermes.desired !== hermes.state ? ` (wanted ${hermes.desired})` : ''} · pid ${hermes.pid ?? '?'} · ${hermes.sha || ''}` : ''}>· Hermes activity{hermes?.version ? ` · Hermes ${hermes.version}` : ''}</span></h1>
+      {others.map(c => (
         <span key={c.name} className="check" title={(c.recent && c.recent.join('\n')) || c.last || c.detail}>
           <span className={`dot ${c.level}`} /><b>{c.name}</b> {c.detail}
         </span>
       ))}
+      {plats.length > 0 && (
+        <span className="check" title={plats.map(p => `${p.name}: ${p.detail}`).join('\n')}>
+          <b>platforms</b> {plats.map(p => <span key={p.name} className="plat"><span className={`dot ${p.level}`} />{p.name.replace(/_/g, ' ')}</span>)}
+        </span>
+      )}
       {cost?.totals && (
         <span className="check" title={`cache hit ${(cost.totals.cache_hit * 100).toFixed(0)}% · ${cost.totals.calls} API calls${cost.totals.cost_usd ? ` · cost ${cost.totals.cost_basis === 'actual' ? 'reported by the provider' : cost.totals.cost_basis === 'mixed' ? 'partly estimated' : 'estimated (~)'}` : ''}`}>
           <b>tokens</b> {fmtTok(cost.totals.input)} in · {fmtTok(cost.totals.output)} out

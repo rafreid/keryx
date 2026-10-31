@@ -257,9 +257,36 @@ def write_memory(root: Path) -> None:
                                       "  user_char_limit: 'abc'\n\nother:\n  memory_char_limit: 5\n")
 
 
+def write_gateway_state(root: Path, **over) -> None:
+    """Hermes' gateway_state.json (gateway/run_startup.py): process state plus one record per platform."""
+    iso = lambda t: time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime(t))
+    state = {
+        "gateway_state": "running", "desired_state": "running", "timestamp": int(NOW - 60), "updated_at": iso(NOW - 60),
+        "kind": "hermes-gateway", "pid": 163, "argv": ["python", "-m", "gateway.run", "--token", "SECRET-ARGV"], "start_time": 15639937,
+        "code_sha": "d923a5eb487a17c0a68801bba9ef0f56c81040a8", "code_version": "0.22.2", "served_profiles": ["default"],
+        "restart_requested": False, "exit_reason": None,
+        "platforms": {
+            "telegram": {"state": "connected", "error_code": None, "error_message": None, "updated_at": iso(NOW - 3 * H),
+                         "writer_pid": 163, "needs_attention": False, "retrying_since": None},
+            "whatsapp": {"state": "retrying", "error_code": "whatsapp_bridge_exited",
+                         "error_message": "WhatsApp bridge process exited unexpectedly (token=abc123)", "updated_at": iso(NOW - 9 * 86400),
+                         "writer_pid": 170, "needs_attention": False, "retrying_since": None},
+            "api_server": {"state": "connected", "error_code": None, "error_message": None, "updated_at": iso(NOW - 60),
+                           "needs_attention": False, "listener_base": "http://127.0.0.1:8642",
+                           "metrics": {"host": "127.0.0.1", "port": 8642, "active_runs": 1, "stored_runs": 4, "last_request_at": iso(NOW - 120),
+                                       "metrics_today": {"day": "2026-10-31", "requests": 12, "messages": 3, "tokens": 900, "latency_p95_ms": 80}}},
+            "webhook": {"state": "connected", "error_code": None, "error_message": None, "updated_at": iso(NOW - 2 * H),
+                        "needs_attention": False, "listener_base": "http://127.0.0.1:8644"},
+        },
+    }
+    state.update(over)
+    (root / "gateway_state.json").write_text(json.dumps(state))
+
+
 @pytest.fixture
 def hermes_data(tmp_path: Path):
     write_memory(tmp_path)
+    write_gateway_state(tmp_path)
     write_state_db(tmp_path / "state.db")
     write_cron(tmp_path / "cron")
     write_logs(tmp_path / "logs")

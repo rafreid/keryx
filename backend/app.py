@@ -183,7 +183,8 @@ def data_signature() -> tuple:
     return file_sig(DATA / "state.db", DATA / "state.db-wal", DATA / "cron" / "jobs.json",
                     DATA / "cron" / "executions.db", DATA / "cron" / "incidents.db", DATA / "cron" / "deliveries.db",
                     DATA / "logs" / "errors.log", DATA / "skills" / ".usage.json",
-                    DATA / "memories" / "MEMORY.md", DATA / "memories" / "USER.md", DATA / "config.yaml")
+                    DATA / "memories" / "MEMORY.md", DATA / "memories" / "USER.md", DATA / "config.yaml",
+                    DATA / "gateway_state.json")
 
 
 # ----------------------------------------------------------------- loaders
@@ -1040,27 +1041,54 @@ def build_status() -> dict:
             hb_age = (now - hb) if hb else None
         except sqlite3.OperationalError:
             pass
+    gw = gateway_summary(load_gateway_state(), now)
     if hb_age is None:
-        check("gateway", "red", "no heartbeat recorded")
+        level, detail = "red", "no heartbeat recorded"
     elif hb_age < 120:
-        check("gateway", "green", f"heartbeat {int(hb_age)}s ago", age=hb_age)
+        level, detail = "green", f"heartbeat {int(hb_age)}s ago"
     elif hb_age < 900:
-        check("gateway", "amber", f"heartbeat {int(hb_age // 60)}m ago", age=hb_age)
+        level, detail = "amber", f"heartbeat {int(hb_age // 60)}m ago"
     else:
-        check("gateway", "red", f"no heartbeat for {int(hb_age // 60)}m", age=hb_age)
+        level, detail = "red", f"no heartbeat for {int(hb_age // 60)}m"
+    extra: dict[str, Any] = {"age": hb_age}
+    if gw:
+        # Hermes' own account of the process (gateway_state.json) outranks the heartbeat table when it is
+        # fresher and says something is wrong: a gateway can keep its heartbeat row while a platform
+        # thread is dead, or sit in `degraded` after a partial start.
+        extra.update(state=gw["state"], wanted=gw["desired"], version=gw["version"], pid=gw["pid"])
+        if gw["stale"]:
+            level = worst_of(level, "amber")
+            detail += f" · state file {int(gw['age'] // 60)}m old"
+        elif gw["level"] == "red":
+            level, detail = "red", f"gateway {gw['state']}" + (f", wanted {gw['desired']}" if gw["desired"] and gw["desired"] != gw["state"] else "")
+        elif gw["desired"] and gw["desired"] != gw["state"]:
+            level = worst_of(level, "amber")
+            detail = f"gateway {gw['state']}, wanted {gw['desired']} · " + detail
+        elif gw["level"] == "amber":
+            level = worst_of(level, "amber")
+            detail = f"gateway {gw['state']} · " + detail
+        if gw["version"]:
+            detail += f" · Hermes {gw['version']}"
+    check("gateway", level, detail, **extra)
 
-    # telegram transport (from gateway.log)
-    tg_lines = [l for l in tail_lines(DATA / "logs" / "gateway.log")
-                if "[Telegram]" in l and re.search(r"Connected to Telegram|recovered|failed|Disconnected|lost", l)]
-    if not tg_lines:
-        check("telegram", "amber", "no transport events in log")
+    # platforms: one check per transport from gateway_state.json (hermes-desktop's Gateway screen reads
+    # the same records); the gateway.log scrape is only the fallback for a Hermes that predates the file
+    if gw and gw["platforms"]:
+        for pf in gw["platforms"]:
+            check(pf["name"], pf["level"], pf["detail"], kind="platform", state=pf["state"],
+                  error_code=pf["error_code"], updated=pf["updated"], since=pf["since"])
     else:
-        last_l = tg_lines[-1]
-        when = log_line_ts(last_l)
-        ok = bool(re.search(r"Connected to Telegram|recovered", last_l))
-        check("telegram", "green" if ok else "amber",
-              ("connected" if ok else "transport trouble") + (f" ({int((now - when) // 60)}m ago)" if when else ""),
-              last=short(last_l.split("[Telegram]")[-1], 120))
+        tg_lines = [l for l in tail_lines(DATA / "logs" / "gateway.log")
+                    if "[Telegram]" in l and re.search(r"Connected to Telegram|recovered|failed|Disconnected|lost", l)]
+        if not tg_lines:
+            check("telegram", "amber", "no transport events in log", kind="platform")
+        else:
+            last_l = tg_lines[-1]
+            when = log_line_ts(last_l)
+            ok = bool(re.search(r"Connected to Telegram|recovered", last_l))
+            check("telegram", "green" if ok else "amber",
+                  ("connected" if ok else "transport trouble") + (f" ({int((now - when) // 60)}m ago)" if when else ""),
+                  last=short(last_l.split("[Telegram]")[-1], 120), kind="platform")
 
     # cron: scheduler heartbeat, missed triggers, last run
     jobs, execs = load_cron()
@@ -1140,7 +1168,90 @@ def build_status() -> dict:
               + (f" · {fmt_bytes(st['free'])} free" if st["free"] is not None else ""), **st)
 
     worst = "red" if any(c["level"] == "red" for c in checks) else "amber" if any(c["level"] == "amber" for c in checks) else "green"
-    return {"generated_at": now, "level": worst, "checks": checks, "links": dashboard_links()}
+    return {"generated_at": now, "level": worst, "checks": checks, "links": dashboard_links(),
+            "hermes": {k: gw[k] for k in ("state", "desired", "level", "version", "sha", "pid", "started", "updated", "age", "stale",
+                                           "profiles", "restart_requested")} if gw else None}
+
+
+LEVEL_RANK = {"green": 0, "amber": 1, "red": 2}
+worst_of = lambda *levels: max(levels, key=lambda l: LEVEL_RANK.get(l, 1))
+
+# Hermes' vocabulary for the process (gateway/run_startup.py writes these) and for one transport
+GATEWAY_LEVEL = {"running": "green", "starting": "amber", "degraded": "amber", "stopping": "amber",
+                 "stopped": "red", "startup_failed": "red"}
+PLATFORM_LEVEL = {"connected": "green", "retrying": "amber", "fatal": "red", "disconnected": "red", "stopped": "amber"}
+GATEWAY_STALE_AFTER = 900          # the gateway rewrites the file on every platform change and on a timer
+
+
+def load_gateway_state() -> Optional[dict]:
+    """`gateway_state.json`: the gateway's own account of itself, written by hermes-agent on start,
+    on every platform state change and on shutdown. Absent on older Hermes or when it never started."""
+    try:
+        d = json.loads((DATA / "gateway_state.json").read_text())
+    except (OSError, ValueError):
+        return None
+    if not isinstance(d, dict) or d.get("kind", "hermes-gateway") != "hermes-gateway":
+        return None
+    return d
+
+
+def gateway_summary(gs: Optional[dict], now: float) -> Optional[dict]:
+    """The state file reduced to what the picture needs: process state and version, and one row per
+    platform with a traffic-light level, the error Hermes recorded and when the state last changed.
+    `argv`, paths and anything else that could carry a secret never leave this function."""
+    if not gs:
+        return None
+    state = str(gs.get("gateway_state") or "unknown")
+    desired = gs.get("desired_state")
+    updated = ts(gs.get("updated_at")) or ts(gs.get("timestamp"))
+    age = (now - updated) if updated else None
+    stale = state == "running" and age is not None and age > GATEWAY_STALE_AFTER
+    platforms = []
+    for name, p in sorted((gs.get("platforms") or {}).items()):
+        if not isinstance(p, dict):
+            continue
+        pstate = str(p.get("state") or "unknown")
+        level = PLATFORM_LEVEL.get(pstate, "amber")
+        if p.get("needs_attention"):
+            level = "red"
+        err = redact(short(p.get("error_message"), 160) or "")
+        when = ts(p.get("updated_at"))
+        since = ts(p.get("retrying_since")) or (when if pstate == "retrying" else None)
+        detail = pstate
+        if pstate == "retrying":
+            detail = "retrying" + (f" since {_rel(now - since)}" if since else "") + (f" · {err}" if err else "")
+        elif level == "red":
+            detail = f"{pstate}" + (f": {err}" if err else "")
+        elif pstate == "connected":
+            m = p.get("metrics") if isinstance(p.get("metrics"), dict) else None
+            if m:
+                today = m.get("metrics_today") if isinstance(m.get("metrics_today"), dict) else {}
+                bits = [f"{m.get('active_runs', 0)} active run(s)"]
+                if today.get("requests"):
+                    bits.append(f"{today['requests']} request(s) today")
+                detail = "connected · " + " · ".join(bits)
+            elif when:
+                detail = f"connected {_rel(now - when)}"
+        platforms.append({"name": name, "state": pstate, "level": level, "detail": detail, "error_code": p.get("error_code"),
+                          "error": err or None, "updated": when, "since": since, "needs_attention": bool(p.get("needs_attention")),
+                          "listener": p.get("listener_base")})
+    return {"state": state, "desired": desired, "level": GATEWAY_LEVEL.get(state, "amber"), "version": gs.get("code_version"),
+            "sha": (gs.get("code_sha") or "")[:12] or None, "pid": gs.get("pid"),
+            "started": None,       # start_time is Linux /proc ticks since boot (a pid fingerprint), not an epoch
+            "updated": updated, "age": age, "stale": stale, "profiles": gs.get("served_profiles") or [],
+            "restart_requested": bool(gs.get("restart_requested")), "exit_reason": gs.get("exit_reason"), "platforms": platforms}
+
+
+def _rel(seconds: float) -> str:
+    """'3m ago' / '2h ago' / '9d ago' for a non-negative age."""
+    seconds = max(0, seconds)
+    if seconds < 90:
+        return f"{int(seconds)}s ago"
+    if seconds < 5400:
+        return f"{int(seconds // 60)}m ago"
+    if seconds < 172800:
+        return f"{int(seconds // 3600)}h ago"
+    return f"{int(seconds // 86400)}d ago"
 
 
 def storage_state() -> dict:
@@ -1407,6 +1518,9 @@ def build_diagnostics() -> dict:
             out["schema_error"] = str(e)
     status = build_status()
     out["health"] = [{"name": c["name"], "level": c["level"], "detail": redact(c["detail"])} for c in status["checks"]]
+    gw = gateway_summary(load_gateway_state(), now)
+    out["hermes"] = {k: gw[k] for k in ("state", "desired", "version", "sha", "age", "stale", "profiles", "restart_requested", "exit_reason")} | {
+        "platforms": [{k: p[k] for k in ("name", "state", "level", "error_code", "needs_attention")} | {"error": redact(p["error"] or "")} for p in gw["platforms"]]} if gw else None
     tasks = build_tasks()
     out["cron"] = {"scheduler": tasks["scheduler"],
                    "jobs": [{k: j[k] for k in ("id", "name", "schedule", "kind", "state", "enabled", "mode", "next_run", "last_run",
