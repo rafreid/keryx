@@ -19,7 +19,7 @@ export default function Header({ status, hours, setHours, view, setView, live, s
   }
   return (
     <div className="header">
-      <h1><span className={`dot ${level} ${level === 'red' ? 'pulse' : ''}`} />Keryx <span className="small" style={{ fontWeight: 400 }} title={hermes ? `gateway ${hermes.state}${hermes.desired && hermes.desired !== hermes.state ? ` (wanted ${hermes.desired})` : ''} · pid ${hermes.pid ?? '?'} · ${hermes.sha || ''}` : ''}>· Hermes activity{hermes?.version ? ` · Hermes ${hermes.version}` : ''}</span></h1>
+      <h1 title={(status?.attention || []).filter(a => a.severity !== 'info').map(a => `${a.severity === 'red' ? '●' : '○'} ${a.label}`).join('\n') || 'all clear'}><span className={`dot ${level} ${level === 'red' ? 'pulse' : ''}`} />Keryx <span className="small" style={{ fontWeight: 400 }} title={hermes ? `gateway ${hermes.state}${hermes.desired && hermes.desired !== hermes.state ? ` (wanted ${hermes.desired})` : ''} · pid ${hermes.pid ?? '?'} · ${hermes.sha || ''}` : ''}>· Hermes activity{hermes?.version ? ` · Hermes ${hermes.version}` : ''}</span></h1>
       {others.map(c => (
         <span key={c.name} className="check" title={(c.recent && c.recent.join('\n')) || c.last || c.detail}>
           <span className={`dot ${c.level}`} /><b>{c.name}</b> {c.detail}

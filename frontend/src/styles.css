@@ -272,3 +272,11 @@ tr.off td { opacity: .55; }
 .krun { margin: 3px 0; } .kevents .when { color: var(--muted); }
 .lane-empty { color: var(--muted); opacity: .6; margin: 2px 0 2px 8px; }
 .section .glyph { color: var(--accent); }
+
+/* attention list */
+.att { display: grid; grid-template-columns: auto auto 1fr; gap: 4px 6px; align-items: baseline; padding: 4px 6px; border-radius: 6px; cursor: pointer; font-size: 12px; }
+.att:hover { background: var(--panel2); }
+.att .src { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .4px; }
+.att .det { grid-column: 3; color: var(--muted); }
+.att.red .lbl { color: var(--red); } .att.amber .lbl { color: var(--amber); }
+.dot.blue { background: var(--blue); }
