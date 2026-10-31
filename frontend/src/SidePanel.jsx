@@ -31,7 +31,7 @@ export default function SidePanel({ node, cost, status, onClose, graph, tasks, h
   return (
     <div className="side">
       <div className="tabs">
-        {TABS.map(t => <button key={t} className={tab === t && !node ? 'on' : ''} onClick={() => { onClose(); setTab(t) }}>
+        {TABS.map(t => <button key={t} className={tab === t && !node ? 'on' : ''} onClick={e => { onClose(); setTab(t); e.currentTarget.scrollIntoView({ inline: 'nearest', block: 'nearest' }) }}>
           {t}{badges[t] ? <span className={`badge ${badgeLevel[t]}`}>{badges[t]}</span> : null}
         </button>)}
       </div>
@@ -135,59 +135,73 @@ function Plan({ sessionId }) {
 const PLAN_MARK = { completed: '✓', in_progress: '▶', pending: '○', cancelled: '✕' }
 
 function NodeDetail({ node, graph, onClose, onSelect, links }) {
-  const rows = [['type', <span><Shape type={node.type} color={nodeBaseColor(node)} />{(TYPE[node.type]?.label || node.type).split(' — ')[0]}</span>]]
   const isSession = node.type === 'session' || node.type === 'subagent'
-  if (isSession) rows.push(
+  const sid = isSession ? node.id.replace('session:', '') : null
+  const typeRow = ['type', <span><Shape type={node.type} color={nodeBaseColor(node)} />{(TYPE[node.type]?.label || node.type).split(' — ')[0]}</span>]
+  // what a session is doing, in four lines; everything else sits in sections below the trace
+  const summary = isSession ? [
     ['status', <span className={cls(node.status)}>{STATUS[node.status]?.label || node.status}</span>],
-    ['request', node.request || '–'], ['latest step', node.last_step || '–'],
+    ['request', <span className="req">{node.request || '–'}</span>],
+    ['latest step', node.last_step || '–'],
+    ['context', <ContextGauge c={node.context} />],
+  ] : [typeRow]
+  const usage = isSession && node.usage ? [
+    ['tokens', `${num(node.usage.tokens_in)} in · ${num(node.usage.tokens_out)} out`],
+    ['cache reads', `${num(node.usage.cache_read)} (${node.usage.tokens_in + node.usage.cache_read ? ((node.usage.cache_read / (node.usage.tokens_in + node.usage.cache_read)) * 100).toFixed(0) : 0}% hit)`],
+    ['API calls', node.usage.api_calls],
+    [costLabel(node.usage.cost_basis), node.usage.cost_usd ? `$${node.usage.cost_usd}` : node.usage.cost_basis === 'included' ? 'included in subscription' : '–'],
+    node.usage.reasoning ? ['reasoning tokens', num(node.usage.reasoning)] : null,
+    ['tool calls', <span>{node.tool_calls}{node.tool_errors ? <span className="err"> · {node.tool_errors} failed</span> : null}</span>],
+    ['messages', `${node.messages} total · ${node.user_messages} from you`],
+    ['rate', `${node.calls_per_min || 0} calls per minute`],
+  ].filter(Boolean) : isSession ? [
+    ['tool calls', <span>{node.tool_calls}{node.tool_errors ? <span className="err"> · {node.tool_errors} failed</span> : null}</span>],
+    ['messages', `${node.messages} total · ${node.user_messages} from you`],
+  ] : []
+  const env = isSession ? [
     ['platform', node.source], ['model', node.model],
     ['started', fmtT(node.started)], ['last activity', `${fmtT(node.last)} (${ago(node.last)})`],
     ['duration', dur((node.ended || node.last) - node.started)],
-    ['messages', `${node.messages} total · ${node.user_messages} from user`],
-    ['tool calls', <span>{node.tool_calls}{node.tool_errors ? <span className="err"> · {node.tool_errors} failed</span> : null}</span>],
-    ['rate', `${node.calls_per_min || 0} calls/min`], ['subagents', node.children || 0],
-    ['plan', node.plan ? <span>{node.plan.done}/{node.plan.total} done{node.plan.current ? <span className="small"> · ▶ {node.plan.current}</span> : null}</span> : '–'],
-    ['context', <ContextGauge c={node.context} />],
-    ['compactions', node.compactions ? <span title={`segments: ${(node.segments || []).join(' → ')}`}>⟲ {node.compactions}× · {(node.segments || []).length} segments · latest {String(node.tip || '').slice(0, 8)}</span> : 'none'],
-    ['end reason', node.end_reason || '–'])
-  if (isSession && node.usage) rows.push(
-    ['tokens', `${num(node.usage.tokens_in)} in · ${num(node.usage.tokens_out)} out`],
-    ['cache reads', `${num(node.usage.cache_read)} (${node.usage.tokens_in + node.usage.cache_read ? ((node.usage.cache_read / (node.usage.tokens_in + node.usage.cache_read)) * 100).toFixed(0) : 0}% hit)`],
-    ['API calls', node.usage.api_calls], [costLabel(node.usage.cost_basis), node.usage.cost_usd ? `$${node.usage.cost_usd}` : node.usage.cost_basis === 'included' ? 'included in subscription' : '–'])
-  if (isSession && node.usage?.reasoning) rows.push(['reasoning tokens', num(node.usage.reasoning)])
-  if (isSession && (node.cwd || node.git_branch)) rows.push(['working dir', <span title={node.cwd || ''}>{node.cwd || '–'}{node.git_branch ? <span className="small"> · ⎇ {node.git_branch}</span> : null}</span>])
-  if (isSession && node.profile) rows.push(['profile', node.profile])
-  if (isSession && node.task) rows.push(['kanban card', <span title={`board ${node.task.board} · ${node.task.id}`}>{node.task.title} <span className="small">· {node.task.status}</span></span>])
-  if (isSession && node.handoff) rows.push(['handoff', node.handoff])
-  if (isSession && node.archived) rows.push(['archived', 'yes'])
-  if (isSession && (node.pinned || node.hidden || node.internal)) rows.push(['in Hermes', [node.pinned ? '★ pinned' : null, node.hidden ? 'hidden from the session list' : null, node.internal ? `internal (${node.source})` : null].filter(Boolean).join(' · ')])
-  if (isSession && node.parent) rows.push([node.fork === 'branch' ? 'branched from' : 'parent', <a href="#" onClick={e => { e.preventDefault(); onSelect(`session:${node.parent}`) }}>{graph?.nodes.find(n => n.id === `session:${node.parent}`)?.label || node.parent}</a>])
-  if (isSession) rows.push(['id', node.id.replace('session:', '')])
-  if (node.type === 'tool') rows.push(['session', node.session], ['calls', node.calls],
+    node.end_reason ? ['end reason', node.end_reason] : null,
+    node.cwd || node.git_branch ? ['working dir', <span title={node.cwd || ''}>{node.cwd || '–'}{node.git_branch ? <span className="small"> · ⎇ {node.git_branch}</span> : null}</span>] : null,
+    node.profile ? ['profile', node.profile] : null,
+    node.task ? ['kanban card', <span title={`board ${node.task.board} · ${node.task.id}`}>{node.task.title} <span className="small">· {node.task.status}</span></span>] : null,
+    node.handoff ? ['handoff', node.handoff] : null,
+    node.children ? ['subagents', node.children] : null,
+    node.parent ? [node.fork === 'branch' ? 'branched from' : 'parent', <a href="#" onClick={e => { e.preventDefault(); onSelect(`session:${node.parent}`) }}>{graph?.nodes.find(n => n.id === `session:${node.parent}`)?.label || node.parent}</a>] : null,
+    node.compactions ? ['compactions', <span title={`segments: ${(node.segments || []).join(' → ')}`}>⟲ {node.compactions}× · {(node.segments || []).length} segments · latest {String(node.tip || '').slice(0, 8)}</span>] : null,
+    node.archived || node.pinned || node.hidden || node.internal ? ['in Hermes', [node.pinned ? '★ pinned' : null, node.hidden ? 'hidden from the session list' : null, node.internal ? `internal (${node.source})` : null, node.archived ? 'archived' : null].filter(Boolean).join(' · ')] : null,
+    ['id', sid],
+  ].filter(Boolean) : []
+  const other = []
+  if (node.type === 'tool') other.push(['session', node.session], ['calls', node.calls],
     ['failed', <span className={node.errors ? 'err' : 'ok'}>{node.errors}</span>], ['last call', `${fmtT(node.last)} (${ago(node.last)})`])
-  if (node.type === 'model') rows.push(['providers', (node.providers || []).join(', ') || '–'],
+  if (node.type === 'model') other.push(['providers', (node.providers || []).join(', ') || '–'],
     ['input tokens', num(node.tokens_in)], ['output tokens', num(node.tokens_out)], ['cache reads', num(node.cache_read)],
     ['cache hit', `${((node.cache_hit || 0) * 100).toFixed(0)}%`], ['cache writes', num(node.cache_write)], ['reasoning tokens', num(node.reasoning)],
     ['API calls', node.calls], [costLabel(node.cost_basis), node.cost_usd ? `$${node.cost_usd}` : node.cost_basis === 'included' ? 'included in subscription' : '–'])
-  if (node.type === 'cron') rows.push(['schedule', node.schedule], ['mode', node.no_agent ? `script only (${node.script})` : 'agent prompt'],
-    ['tip', 'run history and next-run countdown live in the tasks tab'],
+  if (node.type === 'cron') other.push(['schedule', node.schedule], ['mode', node.no_agent ? `script only (${node.script})` : 'agent prompt'],
     ['paused', node.paused ? 'yes' : 'no'], ['last run', `${fmtT(node.last_run)} · ${node.last_status || 'never'}`],
-    ['next run', fmtT(node.next_run)], ['last error', node.last_error || '–'])
-  if (node.type === 'source') rows.push(['sessions', graph?.nodes.filter(n => n.source === node.label && (n.type === 'session' || n.type === 'subagent')).length || 0],
-    ['tip', 'click the node to collapse / expand'])
+    ['next run', fmtT(node.next_run)], ['last error', node.last_error || '–'], ['tip', 'run history and the next-run countdown live in the tasks tab'])
+  if (node.type === 'source') other.push(['sessions', graph?.nodes.filter(n => n.source === node.label && (n.type === 'session' || n.type === 'subagent')).length || 0],
+    ['tip', 'click the node to collapse or expand its sessions'])
+  const Rows = ({ rows }) => <table><tbody>{rows.map(([k, v]) => <tr key={k}><td>{k}</td><td>{v}</td></tr>)}</tbody></table>
   return (
     <div>
-      <span className="close" onClick={onClose}>✕</span>
-      <h2>{node.label}</h2>
-      <table><tbody>{rows.map(([k, v]) => <tr key={k}><td>{k}</td><td>{v}</td></tr>)}</tbody></table>
-      {isSession && links?.chat_resume && <div className="small" style={{ marginTop: 6 }}><a href={links.chat_resume + encodeURIComponent(node.tip || node.id.replace('session:', ''))} target="_blank" rel="noreferrer">open in the Hermes dashboard ↗</a></div>}
+      <span className="close" onClick={onClose} role="button" aria-label="close" title="close (Esc)">✕</span>
+      <h2>{isSession ? <Shape type={node.type} color={nodeBaseColor(node)} /> : null}{node.label}</h2>
+      <div className="nd-summary"><Rows rows={summary} /></div>
+      {other.length > 0 && <Rows rows={other} />}
       {isSession && <Resume node={node} />}
+      {isSession && links?.chat_resume && <div className="small" style={{ marginTop: 4 }}><a href={links.chat_resume + encodeURIComponent(node.tip || sid)} target="_blank" rel="noreferrer">open in the Hermes dashboard ↗</a></div>}
       {node.type === 'cron' && links?.cron && <div className="small" style={{ marginTop: 6 }}><a href={links.cron} target="_blank" rel="noreferrer">manage in the Hermes dashboard ↗</a></div>}
-      {isSession && <Plan sessionId={node.id.replace('session:', '')} />}
-      {isSession && <ContextMix sessionId={node.id.replace('session:', '')} />}
-      {isSession && node.files?.length > 0 && <><h3>Files touched <span className="small" style={{ textTransform: 'none', letterSpacing: 0 }}>· ✎ write ✚ patch 👁 read ⌕ search</span></h3><Files files={node.files} /></>}
-      {isSession && <><h3>Trace</h3><Trace sessionId={node.id.replace('session:', '')} /></>}
-      {node.type === 'tool' && <><h3>Calls</h3><Trace sessionId={node.session} tool={node.label} /></>}
+      {isSession && <Section id="nd-trace" title="Trace"><Trace sessionId={sid} /></Section>}
+      {isSession && <Plan sessionId={sid} />}
+      {isSession && <ContextMix sessionId={sid} />}
+      {isSession && node.files?.length > 0 && <Section id="nd-files" title="Files touched" summary={<span>{node.files.length} · ✎ write ✚ patch 👁 read ⌕ search</span>}><Files files={node.files} /></Section>}
+      {isSession && <Section id="nd-usage" title="Cost and usage" defaultOpen={false} summary={node.usage ? `${num(node.usage.tokens_in)} in · ${num(node.usage.tokens_out)} out${node.usage.cost_usd ? ` · $${node.usage.cost_usd}` : ''}` : `${node.tool_calls} tool calls`}><Rows rows={usage} /></Section>}
+      {isSession && <Section id="nd-env" title="Lineage and environment" defaultOpen={false} summary={`${node.source} · ${node.model || 'no model'}${node.git_branch ? ` · ⎇ ${node.git_branch}` : ''}`}><Rows rows={env} /></Section>}
+      {node.type === 'tool' && <Section id="nd-calls" title="Calls"><Trace sessionId={node.session} tool={node.label} /></Section>}
     </div>
   )
 }

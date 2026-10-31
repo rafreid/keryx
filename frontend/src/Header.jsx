@@ -6,12 +6,13 @@ const WINDOWS = [[1, 'last hour'], [6, '6 hours'], [24, '24 hours'], [168, '7 da
 
 export default function Header({ status, hours, setHours, view, setView, live, setLive, conn, cost, theme, setTheme, notify, setNotify, sound, setSound }) {
   const level = status?.level || 'amber'
-  // one chip per health check, except the platforms (telegram, whatsapp, webhook, api server…), which share a chip
+  // the title dot summarises health; only checks that are not green stay inline, the rest sit behind one pill
   const checks = status?.checks || []
-  const plats = checks.filter(c => c.kind === 'platform')
-  const others = checks.filter(c => c.kind !== 'platform')
+  const trouble = checks.filter(c => c.level !== 'green')
+  const nRed = trouble.filter(c => c.level === 'red').length, nAmber = trouble.length - nRed
   const hermes = status?.hermes
   const [qr, setQr] = useState(false)
+  const [health, setHealth] = useState(false)
   const toggleSound = () => {
     if (sound) { setSound(false); return }
     if (unlockAudio()) { setSound(true); playSound('ok') }          // the gesture unlocks audio; the chime confirms it works
@@ -25,16 +26,23 @@ export default function Header({ status, hours, setHours, view, setView, live, s
   return (
     <div className="header">
       <h1 title={(status?.attention || []).filter(a => a.severity !== 'info').map(a => `${a.severity === 'red' ? '●' : '○'} ${a.label}`).join('\n') || 'all clear'}><span className={`dot ${level} ${level === 'red' ? 'pulse' : ''}`} />Keryx{status?.keryx ? <span className="ver">{status.keryx}</span> : null} <span className="small" style={{ fontWeight: 400 }} title={hermes ? `gateway ${hermes.state}${hermes.desired && hermes.desired !== hermes.state ? ` (wanted ${hermes.desired})` : ''} · pid ${hermes.pid ?? '?'} · ${hermes.sha || ''}` : ''}>· Hermes activity{hermes?.version ? ` · Hermes ${hermes.version}` : ''}</span></h1>
-      {others.map(c => (
+      <span className="healthwrap">
+        <button className={`pill ${health ? 'on' : ''}`} onClick={() => setHealth(h => !h)} aria-expanded={health} aria-label="health checks"
+                title={trouble.length ? trouble.map(c => `${c.name}: ${c.detail}`).join('\n') : 'every check is green'}>
+          <span className={`dot ${level}`} />health{trouble.length ? <> · {nRed ? <span className="err">{nRed} red</span> : null}{nRed && nAmber ? ' · ' : ''}{nAmber ? <span className="warn">{nAmber} amber</span> : null}</> : ' · all green'}
+        </button>
+        {health && <div className="popover health">
+          <table><tbody>{checks.map(c => (
+            <tr key={c.name}><td><span className={`dot ${c.level}`} />{c.name.replace(/_/g, ' ')}</td><td>{c.detail}</td></tr>
+          ))}</tbody></table>
+          <div className="small">the title dot shows the worst check · the Overview's attention list says what to do about it</div>
+        </div>}
+      </span>
+      {trouble.map(c => (
         <span key={c.name} className="check" title={(c.recent && c.recent.join('\n')) || c.last || c.detail}>
-          <span className={`dot ${c.level}`} /><b>{c.name}</b> {c.detail}
+          <span className={`dot ${c.level}`} /><b>{c.name.replace(/_/g, ' ')}</b> {short(c.detail)}
         </span>
       ))}
-      {plats.length > 0 && (
-        <span className="check" title={plats.map(p => `${p.name}: ${p.detail}`).join('\n')}>
-          <b>platforms</b> {plats.map(p => <span key={p.name} className="plat"><span className={`dot ${p.level}`} />{p.name.replace(/_/g, ' ')}</span>)}
-        </span>
-      )}
       {cost?.totals && (
         <span className="check" title={`cache hit ${(cost.totals.cache_hit * 100).toFixed(0)}% · ${cost.totals.calls} API calls${cost.totals.cost_usd ? ` · cost ${cost.totals.cost_basis === 'actual' ? 'reported by the provider' : cost.totals.cost_basis === 'mixed' ? 'partly estimated' : 'estimated (~)'}` : ''}`}>
           <b>tokens</b> {fmtTok(cost.totals.input)} in · {fmtTok(cost.totals.output)} out
@@ -65,4 +73,5 @@ export default function Header({ status, hours, setHours, view, setView, live, s
     </div>
   )
 }
+const short = (t, n = 64) => (t && t.length > n ? t.slice(0, n - 1) + '…' : t)
 const fmtTok = n => (n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(0) + 'k' : String(n || 0))

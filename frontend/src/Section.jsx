@@ -1,8 +1,8 @@
 import React, { useCallback, useState } from 'react'
 
 /** Collapsible side-panel section; open state is remembered per browser (keryx.ov.<id>). */
-export default function Section({ id, title, summary, level = '', sub = false, children }) {
-  const [open, setOpen] = useState(() => { try { return localStorage.getItem(`keryx.ov.${id}`) !== '0' } catch { return true } })
+export default function Section({ id, title, summary, level = '', sub = false, defaultOpen = true, children }) {
+  const [open, setOpen] = useState(() => { try { const v = localStorage.getItem(`keryx.ov.${id}`); return v == null ? defaultOpen : v !== '0' } catch { return defaultOpen } })
   const toggle = useCallback(() => setOpen(o => { try { localStorage.setItem(`keryx.ov.${id}`, o ? '0' : '1') } catch {} return !o }), [id])
   return (
     <div className={`section ${open ? 'open' : 'closed'}`}>
