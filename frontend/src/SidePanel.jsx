@@ -129,6 +129,7 @@ function NodeDetail({ node, graph, onClose, onSelect, links }) {
   if (isSession && node.task) rows.push(['kanban card', <span title={`board ${node.task.board} · ${node.task.id}`}>{node.task.title} <span className="small">· {node.task.status}</span></span>])
   if (isSession && node.handoff) rows.push(['handoff', node.handoff])
   if (isSession && node.archived) rows.push(['archived', 'yes'])
+  if (isSession && (node.pinned || node.hidden || node.internal)) rows.push(['in Hermes', [node.pinned ? '★ pinned' : null, node.hidden ? 'hidden from the session list' : null, node.internal ? `internal (${node.source})` : null].filter(Boolean).join(' · ')])
   if (isSession && node.parent) rows.push([node.fork === 'branch' ? 'branched from' : 'parent', <a href="#" onClick={e => { e.preventDefault(); onSelect(`session:${node.parent}`) }}>{graph?.nodes.find(n => n.id === `session:${node.parent}`)?.label || node.parent}</a>])
   if (isSession) rows.push(['id', node.id.replace('session:', '')])
   if (node.type === 'tool') rows.push(['session', node.session], ['calls', node.calls],

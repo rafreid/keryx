@@ -212,7 +212,7 @@ def test_analytics_heatmap_and_skills(hermes_data):
     import time
     today = time.strftime("%Y-%m-%d", time.gmtime())
     recent = sum(d["sessions"] for d in hm["days"])
-    assert recent == 12                                              # every fixture session started within the last day or so
+    assert recent == 15                                              # every fixture session started within the last day or so
     assert sum(d["tool_calls"] for d in hm["days"]) == 0             # fixture sessions carry no tool_call_count column values
     assert sum(d["tokens"] for d in hm["days"]) == 50000 + 2000 + 30000 + 8000 + 400
     assert round(sum(d["cost_usd"] for d in hm["days"]), 2) == 0.13   # 0.10 actual + 0.03 estimated
@@ -257,3 +257,13 @@ def test_trace_without_reasoning_columns(tmp_path):
     keryx.configure(tmp_path)
     tr = keryx.build_trace("old", None, 10)
     assert [s["kind"] for s in tr["steps"]] == ["user", "assistant"] and tr["thinking"] == 0
+
+
+def test_hermes_session_flags_reach_the_nodes(hermes_data):
+    n = nodes_by_id(keryx.build_graph(24, None))
+    assert n["session:s-pinned"]["pinned"] is True and n["session:s-pinned"]["hidden"] is False and n["session:s-pinned"]["internal"] is False
+    assert n["session:s-hidden"]["hidden"] is True
+    assert n["session:s-oneshot"]["internal"] is True and n["session:s-running"]["internal"] is False
+    assert n["session:s-running"]["pinned"] is False
+    d = keryx.build_diagnostics()
+    assert d["sessions"]["flags"] == {"pinned": 1, "hidden": 1, "archived": 0, "internal": 1}
