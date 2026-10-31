@@ -12,6 +12,7 @@ import Memory from './Memory.jsx'
 import Board from './Board.jsx'
 import { resumeCommand } from './grouping.js'
 import { glyphOf } from './turns.js'
+import { useRefetch } from './hooks/useTick.js'
 
 import { TABS } from './tabs.js'
 
@@ -64,12 +65,7 @@ function ContextGauge({ c }) {
 /** What fills the context window (hermes-workspace's context-bloat analysis, per session): parts, then tools. */
 function ContextMix({ sessionId }) {
   const [c, setC] = useState(null)
-  React.useEffect(() => {
-    let dead = false
-    const load = () => fetch(`/api/session/${encodeURIComponent(sessionId)}/context`).then(r => r.json()).then(d => { if (!dead) setC(d) }).catch(() => {})
-    load(); const t = setInterval(load, 15000)
-    return () => { dead = true; clearInterval(t) }
-  }, [sessionId])
+  useRefetch(dead => fetch(`/api/session/${encodeURIComponent(sessionId)}/context`).then(r => r.json()).then(d => { if (!dead()) setC(d) }).catch(() => {}), [sessionId])
   if (!c || c.error || !c.total_chars) return null
   const parts = c.parts.filter(p => p.chars > 0)
   return (
@@ -114,12 +110,7 @@ function Files({ files, limit = 14 }) {
 /** The agent's own task list (Hermes' todo_list tool), newest revision across the lineage. */
 function Plan({ sessionId }) {
   const [data, setData] = useState(null)
-  React.useEffect(() => {
-    let dead = false
-    const load = () => fetch(`/api/session/${encodeURIComponent(sessionId)}/todo`).then(r => r.json()).then(d => { if (!dead) setData(d) }).catch(() => {})
-    load(); const t = setInterval(load, 10000)
-    return () => { dead = true; clearInterval(t) }
-  }, [sessionId])
+  useRefetch(dead => fetch(`/api/session/${encodeURIComponent(sessionId)}/todo`).then(r => r.json()).then(d => { if (!dead()) setData(d) }).catch(() => {}), [sessionId])
   const todo = data?.todo
   if (!todo) return null
   const s = todo.summary

@@ -5,7 +5,7 @@ import { tz } from './util.js'
 
 const WINDOWS = [[1, 'last hour'], [6, '6 hours'], [24, '24 hours'], [168, '7 days'], [0, 'all time']]
 
-export default function Header({ status, hours, setHours, view, setView, live, setLive, conn, cost, theme, setTheme, notify, setNotify, sound, setSound }) {
+export default function Header({ status, hours, setHours, view, setView, live, setLive, conn, cost, theme, setTheme, notify, setNotify, sound, setSound, onHelp }) {
   const level = status?.level || 'amber'
   // the title dot summarises health; only checks that are not green stay inline, the rest sit behind one pill
   const checks = status?.checks || []
@@ -66,6 +66,7 @@ export default function Header({ status, hours, setHours, view, setView, live, s
             <div className="small">scan from a phone on the same LAN or Tailscale network · then "add to home screen" to keep it as an app</div>
           </div>}
         </span>
+        <button onClick={onHelp} aria-label="how to read Keryx" title="how to read this">?</button>
         <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label={theme === 'dark' ? 'switch to the light theme' : 'switch to the dark theme'} title="toggle theme">{theme === 'dark' ? '☾' : '☀'}</button>
         <button className={live ? 'on' : ''} onClick={() => setLive(!live)} aria-pressed={live} aria-label={live ? 'pause live updates' : 'resume live updates'} title={`connection: ${conn}`}>
           {live ? (conn === 'live' ? '● live' : `● ${conn}`) : '○ paused'}

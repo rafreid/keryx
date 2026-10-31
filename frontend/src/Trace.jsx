@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { dur, fmtTime, num } from './util.js'
 import { buildTurns, exportMarkdown, findHits, glyphOf, pretty, visibleSteps, visibleTurns } from './turns.js'
+import { useRefetch } from './hooks/useTick.js'
 
 /**
  * Session reading view: the conversation as turns (your question → the steps Hermes took → its reply),
@@ -15,14 +16,9 @@ export default function Trace({ sessionId, tool }) {
   const [copied, setCopied] = useState(false)
   const [thinking, setThinking] = useState(() => { try { return localStorage.getItem('keryx.thinking') === '1' } catch { return false } })
   const toggleThinking = () => setThinking(v => { try { localStorage.setItem('keryx.thinking', v ? '0' : '1') } catch {} return !v })
-  useEffect(() => {
-    let dead = false
-    setData(null); setQ(''); setFilter('all')
-    const load = () => fetch(`/api/session/${encodeURIComponent(sessionId)}/trace?limit=300${tool ? `&tool=${encodeURIComponent(tool)}` : ''}`)
-      .then(r => r.json()).then(d => { if (!dead) setData(d) })
-    load(); const t = setInterval(load, 10000)
-    return () => { dead = true; clearInterval(t) }
-  }, [sessionId, tool])
+  useEffect(() => { setData(null); setQ(''); setFilter('all') }, [sessionId, tool])
+  useRefetch(dead => fetch(`/api/session/${encodeURIComponent(sessionId)}/trace?limit=300${tool ? `&tool=${encodeURIComponent(tool)}` : ''}`)
+    .then(r => r.json()).then(d => { if (!dead()) setData(d) }).catch(() => {}), [sessionId, tool])
   const turns = useMemo(() => (data && !tool ? buildTurns(data.steps) : []), [data, tool])
   const hits = useMemo(() => findHits(turns, q, thinking), [turns, q, thinking])
   if (!data) return <div className="small">loading trace…</div>
