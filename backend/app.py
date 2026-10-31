@@ -1995,10 +1995,15 @@ def build_trace(sid: str, tool: Optional[str], limit: int) -> dict:
         ls.update(segments=[sid], compactions=0, tip_id=sid, title=ls.get("title") or ls.get("display_name") or sid)
     s = ls
     segs = s["segments"]
-    has_kind = "display_kind" in table_columns(db, "messages")
+    mcols = table_columns(db, "messages")
+    has_kind = "display_kind" in mcols
     kind_col = ", display_kind" if has_kind else ", null as display_kind"
+    # the model's reasoning, when the provider returned it: Hermes stores it beside the assistant row
+    # (`reasoning` for most providers, `reasoning_content` for DeepSeek-style ones)
+    think_cols = [c for c in ("reasoning", "reasoning_content") if c in mcols]
+    think_col = "".join(f", {c}" for c in think_cols)
     q = ",".join("?" * len(segs))
-    rows = db.execute(f"select session_id, role, content, tool_name, tool_call_id, tool_calls, timestamp, finish_reason, token_count{kind_col} "
+    rows = db.execute(f"select session_id, role, content, tool_name, tool_call_id, tool_calls, timestamp, finish_reason, token_count{kind_col}{think_col} "
                       f"from messages where session_id in ({q}){live_rows_sql(db)}{hidden_rows_sql(db)} "
                       f"order by timestamp asc, id asc", segs).fetchall()
     steps: list[dict] = []
@@ -2020,6 +2025,10 @@ def build_trace(sid: str, tool: Optional[str], limit: int) -> dict:
         if role == "user":
             steps.append({"kind": "user", "ts": t, "text": short(r["content"], 800)})
         elif role == "assistant":
+            thought = next((r[c] for c in think_cols if r[c]), None)
+            if isinstance(thought, str) and thought.strip():
+                steps.append({"kind": "thinking", "ts": t, "text": short(thought.strip(), THINKING_CHARS),
+                              "chars": len(thought), "truncated": len(thought) > THINKING_CHARS})
             calls = []
             try:
                 calls = json.loads(r["tool_calls"]) if r["tool_calls"] else []
@@ -2055,13 +2064,17 @@ def build_trace(sid: str, tool: Optional[str], limit: int) -> dict:
     if tool:
         steps = [st for st in steps if st["kind"] == "tool_call" and st["name"] == tool]
     total = len(steps)
+    thinking = sum(1 for st in steps if st["kind"] == "thinking")
     usage = load_usage(db, segs)
     return {"session": {"id": s["id"], "title": s.get("title"), "source": s.get("source"),
                         "model": s.get("model"), "started": s["started_at"], "ended": s["ended_at"],
                         "end_reason": s.get("end_reason"), "messages": s.get("message_count"),
                         "segments": segs, "compactions": s["compactions"], "tip": s["tip_id"],
                         "cwd": s.get("cwd"), "git_branch": s.get("git_branch")},
-            "usage": list(usage.values()), "steps": steps[-limit:], "total": total, "truncated": total > limit}
+            "usage": list(usage.values()), "steps": steps[-limit:], "total": total, "truncated": total > limit, "thinking": thinking}
+
+
+THINKING_CHARS = 1500          # a reasoning trace can run to tens of KB; the reader shows the head
 
 
 # display_kind values Hermes stamps on rows it paints as events rather than as chat turns

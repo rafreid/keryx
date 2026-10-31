@@ -41,6 +41,7 @@ export function summarize(turn) {
   const last = turn.final?.ts ?? lastTool?.result_ts ?? lastTool?.ts ?? first
   return {
     compacted: turn.steps.some(s => s.kind === 'compaction'),
+    thinking: turn.steps.filter(s => s.kind === 'thinking').length,
     tools: tools.length,
     failed: tools.filter(s => s.failed).length,
     pending: tools.filter(s => s.result == null && !s.failed).length,
@@ -51,11 +52,12 @@ export function summarize(turn) {
   }
 }
 
-/** Steps of a turn under a reader filter: all · chat (question and reply only) · changes (file edits only). */
-export function visibleSteps(turn, filter) {
+/** Steps of a turn under a reader filter: all · chat (question and reply only) · changes (file edits only).
+ *  The model's reasoning (`thinking` steps) only shows when asked for: it is long, and the steps already say what was done. */
+export function visibleSteps(turn, filter, thinking = false) {
   if (filter === 'chat') return []
   if (filter === 'changes') return turn.steps.filter(s => s.diff)
-  return turn.steps
+  return thinking ? turn.steps : turn.steps.filter(s => s.kind !== 'thinking')
 }
 
 /** Turns that still have something to show under the filter. */
@@ -69,15 +71,17 @@ export function stepText(s) {
   return [s.name, s.text].filter(Boolean).join('\n')
 }
 
-/** Mark every turn with how many of its parts match `q` (case-insensitive); 0 hides nothing, it just dims. */
-export function findHits(turns, q) {
+/** Mark every turn with how many of its parts match `q` (case-insensitive); 0 hides nothing, it just dims.
+ *  Reasoning is searched only while it is shown, so a hidden match never dims a visible turn for no visible reason. */
+export function findHits(turns, q, thinking = false) {
   const needle = (q || '').trim().toLowerCase()
   if (!needle) return { total: 0, hit: () => false }
   const ids = new Set()
   let total = 0
   for (const t of turns) {
     for (const s of [t.question, ...t.steps, t.final]) {
-      if (s && stepText(s).toLowerCase().includes(needle)) { ids.add(s); total++ }
+      if (!s || (s.kind === 'thinking' && !thinking)) continue
+      if (stepText(s).toLowerCase().includes(needle)) { ids.add(s); total++ }
     }
   }
   return { total, hit: s => ids.has(s) }
@@ -86,8 +90,9 @@ export function findHits(turns, q) {
 const clock = t => (t ? new Date(t * 1000).toISOString().replace('T', ' ').slice(0, 19) + ' UTC' : '')
 const fence = (text, lang = '') => '```' + lang + '\n' + String(text || '').replace(/```/g, '`​``') + '\n```'
 
-/** The whole session as Markdown: header, then one section per turn. Previews only (what the trace carries). */
-export function exportMarkdown(trace, turns) {
+/** The whole session as Markdown: header, then one section per turn. Previews only (what the trace carries).
+ *  `thinking` includes the model's reasoning as quoted blocks. */
+export function exportMarkdown(trace, turns, { thinking = false } = {}) {
   const s = trace.session || {}
   const u = trace.usage?.[0]
   const out = [`# ${s.title || s.id}`, '']
@@ -106,7 +111,8 @@ export function exportMarkdown(trace, turns) {
     if (t.steps.length) {
       out.push(`<details><summary>Steps · ${t.tools} tool call${t.tools === 1 ? '' : 's'}${t.failed ? ` · ${t.failed} failed` : ''}${t.changes ? ` · ${t.changes} file edit${t.changes === 1 ? '' : 's'} (+${t.added} −${t.removed})` : ''}</summary>`, '')
       for (const st of t.steps) {
-        if (st.kind === 'tool_call') {
+        if (st.kind === 'thinking') { if (thinking) out.push(`- 💭 **thinking**${st.truncated ? ` (first ${st.text.length} of ${st.chars} chars)` : ''}:`, '', indent(quote(st.text)), '') }
+        else if (st.kind === 'tool_call') {
           const mark = st.failed ? '✕' : st.result != null ? '✓' : '…'
           out.push(`- ${mark} **${st.name}** ${st.title ? `\`${st.title.replace(/`/g, "'")}\`` : ''}${st.diff ? ` — ${st.diff.path} +${st.diff.added} −${st.diff.removed}` : ''}${st.duration != null ? ` (${Math.round(st.duration)}s)` : ''}${st.exit_code ? ` exit ${st.exit_code}` : ''}`)
           if (st.args) out.push('', '  arguments:', '', indent(fence(pretty(st.args), 'json')), '')
@@ -125,4 +131,5 @@ export function exportMarkdown(trace, turns) {
 }
 
 const indent = text => text.split('\n').map(l => '  ' + l).join('\n')
+const quote = text => String(text || '').split('\n').map(l => '> ' + l).join('\n')
 export const pretty = a => { try { return JSON.stringify(JSON.parse(a), null, 1) } catch { return a } }

@@ -36,7 +36,7 @@ create table messages (
     id integer primary key autoincrement, session_id text not null, role text not null, content text,
     tool_call_id text, tool_calls text, tool_name text, timestamp real not null, token_count integer,
     finish_reason text, active integer not null default 1, compacted integer not null default 0,
-    display_kind text, display_metadata text, message_uid text
+    display_kind text, display_metadata text, message_uid text, reasoning text, reasoning_content text
 )"""
 USAGE_DDL = """
 create table session_model_usage (
@@ -104,7 +104,8 @@ def write_state_db(path: Path) -> None:
     msg("s-running", "user", "keep the tests green", t0 + 2, display_metadata=json.dumps(json.dumps({"task_count": 1})))
     msg("s-running", "assistant", None, t0 + 10, tool_calls=call("terminal", {"command": "make"}, "c1"), finish_reason="tool_calls")
     msg("s-running", "tool", tool_result("built"), t0 + 20, tool_name="terminal", tool_call_id="c1")
-    msg("s-running", "assistant", None, t0 + 30, tool_calls=call("write_file", {"path": "src/x.py", "content": "x = 1\ny = 2\n"}, "c2"), finish_reason="tool_calls")
+    msg("s-running", "assistant", None, t0 + 30, tool_calls=call("write_file", {"path": "src/x.py", "content": "x = 1\ny = 2\n"}, "c2"), finish_reason="tool_calls",
+        reasoning="The build passed, so the failure must be in src/x.py. I will rewrite it.")
     msg("s-running", "tool", tool_result("", 1, "permission denied"), NOW - 30, tool_name="write_file", tool_call_id="c2")
     # the agent's plan: two todo_list revisions, the newer one wins
     plan = lambda a, b: json.dumps({"todos": [{"id": "1", "content": "run the build", "status": a},
@@ -146,7 +147,7 @@ def write_state_db(path: Path) -> None:
     msg("s-comp-tip", "assistant", None, NOW - 25 * 60, finish_reason="tool_calls",
         tool_calls=call("patch", {"path": "src/y.py", "old_string": "a = 1\nb = 2\nc = 3", "new_string": "a = 1\nb = 20\nc = 3\nd = 4"}, "c8"))
     msg("s-comp-tip", "tool", tool_result("patched"), NOW - 25 * 60 + 2, tool_name="patch", tool_call_id="c8")
-    msg("s-comp-tip", "assistant", "Still here.", NOW - 20 * 60, finish_reason="stop")
+    msg("s-comp-tip", "assistant", "Still here.", NOW - 20 * 60, finish_reason="stop", reasoning_content="  " + "x" * 2000)
     # a human-made branch of the tip: its own conversation, not a subagent and not a continuation
     session("s-branch", "telegram", NOW - 30 * 60, parent="s-comp-tip", cfg={"_branched_from": "s-comp-tip"}, title="long chat (branch)")
     msg("s-branch", "user", "try another approach", NOW - 30 * 60)
