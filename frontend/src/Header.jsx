@@ -1,9 +1,10 @@
 import React, { useState } from 'react'
 import { requestDesktopPermission } from './notify.js'
+import { playSound, unlockAudio } from './sounds.js'
 
 const WINDOWS = [[1, 'last hour'], [6, '6 hours'], [24, '24 hours'], [168, '7 days'], [0, 'all time']]
 
-export default function Header({ status, hours, setHours, view, setView, live, setLive, conn, cost, theme, setTheme, notify, setNotify }) {
+export default function Header({ status, hours, setHours, view, setView, live, setLive, conn, cost, theme, setTheme, notify, setNotify, sound, setSound }) {
   const level = status?.level || 'amber'
   // one chip per health check, except the platforms (telegram, whatsapp, webhook, api server…), which share a chip
   const checks = status?.checks || []
@@ -11,6 +12,10 @@ export default function Header({ status, hours, setHours, view, setView, live, s
   const others = checks.filter(c => c.kind !== 'platform')
   const hermes = status?.hermes
   const [qr, setQr] = useState(false)
+  const toggleSound = () => {
+    if (sound) { setSound(false); return }
+    if (unlockAudio()) { setSound(true); playSound('ok') }          // the gesture unlocks audio; the chime confirms it works
+  }
   const toggleNotify = async () => {
     if (notify) { setNotify(false); return }
     const ok = await requestDesktopPermission()
@@ -43,6 +48,7 @@ export default function Header({ status, hours, setHours, view, setView, live, s
         <button className={view === '3d' ? 'on' : ''} onClick={() => setView('3d')}>3D</button>
         <button className={view === '2d' ? 'on' : ''} onClick={() => setView('2d')}>2D</button>
         <button className={notify ? 'on' : ''} onClick={toggleNotify} title={notify ? 'desktop notifications on (replies, failures, cron)' : 'enable desktop notifications'}>{notify ? '🔔' : '🔕'}</button>
+        <button className={sound ? 'on' : ''} onClick={toggleSound} title={sound ? 'sounds on: a chime when Hermes replies, a knock for warnings, a falling tone for failures' : 'play a short sound with each notification'}>{sound ? '🔈' : '🔇'}</button>
         <span className="qrwrap">
           <button className={qr ? 'on' : ''} onClick={() => setQr(q => !q)} title="open Keryx on your phone">📱</button>
           {qr && <div className="popover qr">

@@ -362,9 +362,20 @@ def write_kanban(root: Path) -> None:
     (root / "kanban" / "current").write_text("default\n")
 
 
+def write_achievements(root: Path) -> None:
+    """Hermes' achievements plugin state (plugins/hermes-achievements): unlock id → first tier and time."""
+    d = root / "plugin-data" / "hermes-achievements"
+    d.mkdir(parents=True)
+    (d / "state.json").write_text(json.dumps({"unlocks": {
+        "claude_confidant": {"evidence": None, "first_tier": "Copper", "unlocked_at": int(NOW - 3 * 86400)},
+        "night-owl": {"evidence": {"session": "s-x"}, "first_tier": "Silver", "unlocked_at": int(NOW - 3600)},
+        "broken": "nope"}}))
+
+
 @pytest.fixture
 def hermes_data(tmp_path: Path):
     write_memory(tmp_path)
+    write_achievements(tmp_path)
     write_gateway_state(tmp_path)
     write_kanban(tmp_path)
     write_state_db(tmp_path / "state.db")

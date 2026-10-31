@@ -56,7 +56,9 @@ export default function App() {
   const { data, conn } = useLive(hours, live)
   const [notify, setNotify] = useState(() => { try { return localStorage.getItem('keryx.notify') === '1' && typeof Notification !== 'undefined' && Notification.permission === 'granted' } catch { return false } })
   useEffect(() => { try { localStorage.setItem('keryx.notify', notify ? '1' : '0') } catch {} }, [notify])
-  const { toasts, dismiss } = useNotifications(data, notify)
+  const [sound, setSound] = useState(() => { try { return localStorage.getItem('keryx.sound') === '1' } catch { return false } })
+  useEffect(() => { try { localStorage.setItem('keryx.sound', sound ? '1' : '0') } catch {} }, [sound])
+  const { toasts, dismiss } = useNotifications(data, notify, sound)
 
   // 3D is the default; the URL remembers only the window, so reopening the page always starts in 3D
   // (an explicit ?view=2d link still opens 2D).
@@ -89,7 +91,7 @@ export default function App() {
   return (
     <div className="app">
       <Header status={data?.status} hours={hours} setHours={setHours} view={view} setView={setView}
-              live={live} setLive={setLive} conn={conn} cost={data?.cost} theme={theme} setTheme={setTheme} notify={notify} setNotify={setNotify} />
+              live={live} setLive={setLive} conn={conn} cost={data?.cost} theme={theme} setTheme={setTheme} notify={notify} setNotify={setNotify} sound={sound} setSound={setSound} />
       <div className="body">
         <div className="main">
           <NowStrip now={data?.now} selected={resolved} onSelect={navigate} />

@@ -317,6 +317,14 @@ footer .wrap > div { display: flex; flex-wrap: wrap; gap: 16px; align-items: cen
         </ul>
       </div>
       <div class="card">
+        <h3>Attention and context</h3>
+        <ul>
+          <li>One ranked list of everything red or amber, from a failing cron job to a silent kanban worker or a pending gateway restart, each line leading to the node or the tab. The sessions waiting for you close the list.</li>
+          <li>The context gauge is sized from the window Hermes probed for the model (<code>context_length_cache.yaml</code>) or set in its config, and a breakdown under each session says what fills it: your messages, replies, tool-call arguments and tool output by tool.</li>
+          <li>Analytics gain insight sentences, sessions-per-day momentum, a cache-hit trend, provider mix, when Hermes works by hour of day and weekday, and achievement unlocks. Notifications can chime, synthesised in the browser, no audio files.</li>
+        </ul>
+      </div>
+      <div class="card">
         <h3>Kanban board, read-only</h3>
         <ul>
           <li>Hermes keeps a task queue in <code>kanban.db</code>: eight lanes from triage to done, workers that claim cards and heartbeat while they run. The board tab shows it in Hermes' own lane order, with a board switcher when there are several.</li>
@@ -341,7 +349,7 @@ footer .wrap > div { display: flex; flex-wrap: wrap; gap: 16px; align-items: cen
       <div class="card">
         <h3>Notifications</h3>
         <ul>
-          <li>In-app toasts, and desktop notifications if you allow them.</li>
+          <li>In-app toasts, desktop notifications if you allow them, and optional short sounds.</li>
           <li>Fires when Hermes replies and waits for you, a session fails or is orphaned by a restart, a session goes quiet, a delegation finishes or fails, a cron job fails or misses its trigger, or the error log turns red.</li>
           <li>Click a toast to jump to the node.</li>
         </ul>
@@ -436,7 +444,7 @@ cd keryx
       </tbody>
     </table></div>
     <h3>What Keryx reads</h3>
-    <p class="prose muted">From the Hermes data directory, read-only: <code>state.db</code> and its WAL (including Hermes' full-text index), <code>gateway_state.json</code>, <code>kanban.db</code> and <code>kanban/boards/*/kanban.db</code>, <code>cron/jobs.json</code>, <code>cron/executions.db</code>, <code>cron/incidents.db</code>, <code>cron/deliveries.db</code>, <code>cron/ticker_heartbeat</code>, <code>logs/*.log</code>, the skill ledger <code>skills/.usage.json</code> and, only when asked, <code>memories/</code> and the memory section of <code>config.yaml</code>. Files an older Hermes does not write are skipped and columns are feature-detected, so Keryx keeps working across Hermes versions. The volume is mounted read-write only because SQLite in WAL mode needs to create its <code>-shm</code> file; Keryx itself never writes.</p>
+    <p class="prose muted">From the Hermes data directory, read-only: <code>state.db</code> and its WAL (including Hermes' full-text index), <code>gateway_state.json</code>, <code>context_length_cache.yaml</code> and the model section of <code>config.yaml</code>, <code>kanban.db</code> and <code>kanban/boards/*/kanban.db</code>, <code>plugin-data/hermes-achievements/state.json</code>, <code>cron/jobs.json</code>, <code>cron/executions.db</code>, <code>cron/incidents.db</code>, <code>cron/deliveries.db</code>, <code>cron/ticker_heartbeat</code>, <code>logs/*.log</code>, the skill ledger <code>skills/.usage.json</code> and, only when asked, <code>memories/</code> and the memory section of <code>config.yaml</code>. Files an older Hermes does not write are skipped and columns are feature-detected, so Keryx keeps working across Hermes versions. The volume is mounted read-write only because SQLite in WAL mode needs to create its <code>-shm</code> file; Keryx itself never writes.</p>
   </div>
 </section>
 
@@ -452,15 +460,16 @@ cd keryx
       <tbody>
         <tr><td><code>GET /api/graph?hours=24[&amp;at=…]</code></td><td>nodes and links; <code>at</code> replays the graph as of that moment; <code>aliases</code> maps compacted segment ids to their node</td></tr>
         <tr><td><code>GET /api/now</code></td><td>running and waiting sessions digest</td></tr>
-        <tr><td><code>GET /api/status</code></td><td>health checks (one per platform), dashboard links, and the gateway's state and Hermes version</td></tr>
+        <tr><td><code>GET /api/status</code></td><td>health checks (one per platform), the ranked attention list, dashboard links, and the gateway's state and Hermes version</td></tr>
         <tr><td><code>GET /api/cost?hours=24</code></td><td>tokens and cost per model with a <code>cost_basis</code> (actual, estimated, included, unknown)</td></tr>
         <tr><td><code>GET /api/tasks</code></td><td>delegations, cron jobs with history and incidents, scheduler heartbeat, incidents, delivery queue, kanban counts</td></tr>
         <tr><td><code>GET /api/kanban?board=…</code></td><td>the kanban board as lanes; <code>/api/kanban/{task_id}</code> is one card with comments, runs and events</td></tr>
-        <tr><td><code>GET /api/analytics?days=30</code></td><td>daily trend with cost, a year heatmap, model share, skill ledger, totals</td></tr>
+        <tr><td><code>GET /api/analytics?days=30</code></td><td>daily trend with cost, a year heatmap, model share, skill ledger, totals, provider mix, hour-of-day clock, velocity, insights, achievements</td></tr>
         <tr><td><code>GET /api/search?q=…</code></td><td>sessions whose conversation mentions the text, with snippets (Hermes' FTS5 index)</td></tr>
         <tr><td><code>GET /api/memory</code></td><td>memory entries and budgets, only with <code>KERYX_SHOW_MEMORY=1</code></td></tr>
         <tr><td><code>GET /api/session/{id}/trace</code></td><td>ordered steps across every segment of a compacted conversation; tool calls carry kind, title, diff summary, exit code; thinking steps carry the model's reasoning</td></tr>
         <tr><td><code>GET /api/session/{id}/todo</code></td><td>the agent's current plan</td></tr>
+        <tr><td><code>GET /api/session/{id}/context</code></td><td>what fills the context: characters by part and by tool</td></tr>
         <tr><td><code>GET /api/logs?file=…&amp;level=…&amp;q=…</code></td><td>log entries with level, logger and session id</td></tr>
         <tr><td><code>GET /api/diagnostics</code></td><td>redacted snapshot for bug reports</td></tr>
         <tr><td><code>GET /api/stream?hours=24</code></td><td>server-sent events, one <code>update</code> per data change</td></tr>
