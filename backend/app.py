@@ -2119,8 +2119,113 @@ def build_analytics(days: int) -> dict:
     skills = load_skill_usage()
     tot["skills"] = len(skills)
     tot["skills_used"] = sum(1 for k in skills if (k["last_used"] or 0) >= start)
-    return {"generated_at": now, "window_days": days, "days": days_list, "models": models, "totals": tot,
-            "skills": skills[:40], "heatmap": build_heatmap(db, now)}
+    providers = provider_mix(db, ids)
+    clock = clock_profile(db, ids, start)
+    velocity = velocity_of(days_list, days)
+    out = {"generated_at": now, "window_days": days, "days": days_list, "models": models, "totals": tot,
+           "skills": skills[:40], "heatmap": build_heatmap(db, now), "providers": providers, "clock": clock, "velocity": velocity}
+    out["insights"] = insights_of(out, skills, start)
+    return out
+
+
+# ------------------------------------------------- analytics cards (after hermes-workspace's dashboard)
+WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+
+
+def provider_mix(db, ids: list[str]) -> list[dict]:
+    """Tokens and cost per billing provider (session_model_usage.billing_provider): which provider family
+    does the work. hermes-workspace guesses this from model-name prefixes; Hermes records it."""
+    if not ids:
+        return []
+    q = ",".join("?" * len(ids))
+    cols = table_columns(db, "session_model_usage")
+    act = "sum(coalesce(actual_cost_usd,0))" if "actual_cost_usd" in cols else "0"
+    try:
+        rows = db.execute(f"select coalesce(nullif(billing_provider,''),'unknown') p, sum(input_tokens) i, sum(output_tokens) o, "
+                          f"sum(cache_read_tokens) c, sum(api_call_count) n, sum(coalesce(estimated_cost_usd,0)) est, {act} act, "
+                          f"count(distinct session_id) s, count(distinct model) m from session_model_usage where session_id in ({q}) group by 1",
+                          ids).fetchall()
+    except sqlite3.OperationalError:
+        return []
+    out = [{"provider": r["p"], "tokens": (r["i"] or 0) + (r["o"] or 0), "input": r["i"] or 0, "output": r["o"] or 0,
+            "cache_read": r["c"] or 0, "calls": r["n"] or 0, "sessions": r["s"], "models": r["m"],
+            "cost_usd": round((r["act"] or 0) or (r["est"] or 0), 4)} for r in rows]
+    total = sum(x["tokens"] for x in out) or 1
+    for x in out:
+        x["share"] = round(x["tokens"] / total, 4)
+    return sorted(out, key=lambda x: -x["tokens"])
+
+
+def clock_profile(db, ids: list[str], start: float) -> dict:
+    """When Hermes works: sessions started per hour of day (1×24) and tool calls per weekday×hour (7×24), UTC.
+    hermes-workspace rebuilds the hour strip from session start times; the grid comes from the tool rows."""
+    hours = [{"hour": h, "sessions": 0, "tool_calls": 0} for h in range(24)]
+    grid = [[0] * 24 for _ in range(7)]
+    if ids:
+        q = ",".join("?" * len(ids))
+        for r in db.execute(f"select started_at from sessions where id in ({q})", ids):
+            t = ts(r["started_at"])
+            if t:
+                hours[datetime.fromtimestamp(t, timezone.utc).hour]["sessions"] += 1
+        for r in db.execute(f"select timestamp from messages where session_id in ({q}) and role = 'tool' and timestamp >= ?{live_rows_sql(db)}",
+                            (*ids, start)):
+            t = ts(r["timestamp"])
+            if t:
+                d = datetime.fromtimestamp(t, timezone.utc)
+                hours[d.hour]["tool_calls"] += 1
+                grid[d.weekday()][d.hour] += 1
+    peak = max(hours, key=lambda h: h["tool_calls"] + h["sessions"])
+    return {"hours": hours, "grid": grid, "weekdays": WEEKDAYS, "tz": "UTC",
+            "peak_hour": peak["hour"] if (peak["tool_calls"] + peak["sessions"]) else None, "max": max(max(row) for row in grid)}
+
+
+def velocity_of(days_list: list[dict], days: int) -> dict:
+    """Sessions per day, and how the second half of the window compares with the first (momentum)."""
+    if not days_list:
+        return {"per_day": 0.0, "prior_per_day": 0.0, "delta_pct": None, "spark": []}
+    rows = days_list[-days:] if days else days_list
+    half = len(rows) // 2
+    prior = sum(r["sessions"] for r in rows[:half]) / max(1, half)
+    recent = sum(r["sessions"] for r in rows[half:]) / max(1, len(rows) - half)
+    delta = round(100 * (recent - prior) / prior) if prior and half else None
+    return {"per_day": round(sum(r["sessions"] for r in rows) / max(1, len(rows)), 2), "prior_per_day": round(prior, 2),
+            "recent_per_day": round(recent, 2), "delta_pct": delta, "spark": [r["sessions"] for r in rows]}
+
+
+def insights_of(a: dict, skills: list[dict], start: float) -> list[dict]:
+    """Up to three plain sentences the numbers support (hermes-workspace's insight callouts): the peak day
+    and the model behind it, cache reads against the first half of the window, the top skill."""
+    out: list[dict] = []
+    days_list = a["days"]
+    busy = [d for d in days_list if d["tokens_in"] + d["tokens_out"] > 0]
+    if busy and len(days_list) >= 3:
+        peak = max(busy, key=lambda d: d["tokens_in"] + d["tokens_out"])
+        driver = a["models"][0]["model"] if a["models"] else None
+        out.append({"tone": "info", "text": f"Usage peaked on {peak['day']} ({_tok(peak['tokens_in'] + peak['tokens_out'])} tokens)"
+                    + (f", mostly {driver}." if driver else ".")})
+    if len(days_list) >= 14:
+        half = len(days_list) // 2
+        prior = sum(d["cache_read"] for d in days_list[:half])
+        recent = sum(d["cache_read"] for d in days_list[half:])
+        if prior > 0:
+            delta = 100 * (recent - prior) / prior
+            if abs(delta) >= 5:
+                out.append({"tone": "positive" if delta > 0 else "warn",
+                            "text": f"Cache reads {'up' if delta > 0 else 'down'} {abs(delta):.0f}% against the first half of the window."})
+    v = a.get("velocity") or {}
+    if v.get("delta_pct") is not None and abs(v["delta_pct"]) >= 25:
+        out.append({"tone": "info", "text": f"Sessions per day {'up' if v['delta_pct'] > 0 else 'down'} {abs(v['delta_pct'])}% in the second half of the window "
+                                            f"({v['recent_per_day']} vs {v['prior_per_day']})."})
+    used = [k for k in skills if (k["last_used"] or 0) >= start and k["uses"]]
+    if used:
+        top = max(used, key=lambda k: k["uses"])
+        share = 100 * top["uses"] / max(1, sum(k["uses"] for k in used))
+        out.append({"tone": "info", "text": f"Top skill: {top['name']} ({top['uses']} uses, {share:.0f}% of skill activity)."})
+    return out[:3]
+
+
+def _tok(n: float) -> str:
+    return f"{n / 1e6:.1f}M" if n >= 1e6 else f"{n / 1e3:.0f}k" if n >= 1e3 else str(int(n))
 
 
 def _result_text(content: Any) -> str:

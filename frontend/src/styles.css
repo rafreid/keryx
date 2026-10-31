@@ -280,3 +280,15 @@ tr.off td { opacity: .55; }
 .att .det { grid-column: 3; color: var(--muted); }
 .att.red .lbl { color: var(--red); } .att.amber .lbl { color: var(--amber); }
 .dot.blue { background: var(--blue); }
+
+/* analytics cards */
+.insights { display: flex; flex-direction: column; gap: 4px; margin: 6px 0; }
+.insight { font-size: 12px; padding: 5px 8px; border-radius: 6px; background: var(--panel2); border-left: 2px solid var(--accent); }
+.insight.positive { border-left-color: var(--green); } .insight.warn { border-left-color: var(--amber); }
+.spark { vertical-align: middle; margin-left: 4px; } .spark polyline { fill: none; stroke: var(--accent); stroke-width: 1.5; }
+.tile .s .ok { color: var(--green); } .tile .s .warn { color: var(--amber); }
+.provmix { display: flex; gap: 12px; align-items: center; margin: 6px 0; }
+.provmix .donut { width: 64px; height: 64px; border-radius: 50%; position: relative; flex: none; }
+.provmix .donut i { position: absolute; inset: 16px; border-radius: 50%; background: var(--panel); }
+.provmix .legend { min-width: 0; } .provmix .sw { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; }
+.clock svg { display: block; margin: 4px 0; } .clock .hours .bar { fill: var(--accent); opacity: .8; }

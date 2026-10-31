@@ -291,3 +291,31 @@ def test_context_limit_resolution_order():
     assert keryx.context_limit("mystery", None, cfg, cache) == (9000, "cache")
     assert keryx.context_limit("never-seen", None, cfg, cache) == (keryx.CONTEXT_LENGTH, "assumed")
     assert keryx.context_limit(None, None, {"default": None, "context_length": 123}, {}) == (123, "config")
+
+
+def test_analytics_cards(hermes_data):
+    a = keryx.build_analytics(30)
+    prov = {p["provider"]: p for p in a["providers"]}
+    assert prov["openai"]["tokens"] == 52000 and prov["openai"]["cost_usd"] == 0.10 and prov["openai"]["models"] == 1
+    assert prov["anthropic"]["share"] + prov["openai"]["share"] == 1.0 and a["providers"][0]["provider"] == "openai"
+    c = a["clock"]
+    assert len(c["hours"]) == 24 and sum(h["sessions"] for h in c["hours"]) == a["totals"]["sessions"]
+    assert sum(h["tool_calls"] for h in c["hours"]) == a["totals"]["tool_calls"] == sum(map(sum, c["grid"]))
+    assert c["tz"] == "UTC" and c["peak_hour"] is not None and c["max"] >= 1
+    v = a["velocity"]
+    assert len(v["spark"]) == 30 and v["per_day"] == a["totals"]["sessions_per_day"]
+    assert v["delta_pct"] is None or v["delta_pct"] > 0                                   # everything happened in the last two days
+    assert any(i["text"].startswith("Usage peaked on") and "gpt-5" in i["text"] for i in a["insights"])
+    assert any(i["text"].startswith("Top skill: git-workflow") for i in a["insights"])
+    assert len(a["insights"]) <= 3
+
+
+def test_velocity_and_insights_edge_cases():
+    assert keryx.velocity_of([], 7)["delta_pct"] is None
+    rows = [{"sessions": n} for n in (0, 0, 0, 0, 2, 2, 2, 2)]
+    v = keryx.velocity_of(rows, 8)
+    assert v["prior_per_day"] == 0 and v["recent_per_day"] == 2 and v["delta_pct"] is None   # no prior: no percentage
+    rows = [{"sessions": n} for n in (1, 1, 1, 1, 2, 2, 2, 2)]
+    assert keryx.velocity_of(rows, 8)["delta_pct"] == 100
+    quiet = {"days": [], "models": [], "velocity": {"delta_pct": None}}
+    assert keryx.insights_of(quiet, [], 0) == []
