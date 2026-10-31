@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { playSound } from './sounds.js'
 
 /**
  * Turns consecutive live bundles into events worth telling the user about
@@ -9,9 +10,10 @@ import { useEffect, useRef, useState } from 'react'
  *   - a delegation finished or failed
  *   - a cron job failed or missed its trigger
  *   - the error log turned red
- * Always shows in-app toasts; sends desktop notifications too when `desktop` is on and permission was granted.
+ * Always shows in-app toasts; sends desktop notifications too when `desktop` is on and permission was granted,
+ * and plays a short synthesised sound per event when `sound` is on (the worst level in the batch).
  */
-export function useNotifications(data, desktop) {
+export function useNotifications(data, desktop, sound = false) {
   const prev = useRef(null)
   const [toasts, setToasts] = useState([])
   useEffect(() => {
@@ -26,10 +28,11 @@ export function useNotifications(data, desktop) {
     setToasts(t => [...t, ...stamped].slice(-6))
     if (desktop && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
       for (const e of stamped) {
-        try { new Notification(`Keryx · ${e.title}`, { body: e.body || '', tag: e.id, silent: e.level === 'info' }) } catch {}
+        try { new Notification(`Keryx · ${e.title}`, { body: e.body || '', tag: e.id, silent: e.level === 'info' || sound }) } catch {}
       }
     }
-  }, [data, desktop])
+    if (sound) playSound(worstLevel(stamped.map(e => e.level)))
+  }, [data, desktop, sound])
   useEffect(() => {                                     // toasts fade after 9 s
     if (!toasts.length) return
     const t = setTimeout(() => setToasts(ts => ts.slice(1)), 9000)
@@ -38,6 +41,10 @@ export function useNotifications(data, desktop) {
   const dismiss = id => setToasts(ts => ts.filter(t => t.id !== id))
   return { toasts, dismiss }
 }
+
+const LEVEL_RANK = { err: 3, warn: 2, ok: 1, info: 0 }
+/** The level that should sound when several events arrive together. */
+export const worstLevel = levels => levels.reduce((w, l) => ((LEVEL_RANK[l] ?? 0) > (LEVEL_RANK[w] ?? 0) ? l : w), 'info')
 
 /** Events worth telling the user about, from two consecutive snapshots. Pure: unit-tested. */
 export function diffEvents(was, cur) {

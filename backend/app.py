@@ -73,7 +73,7 @@ USER_CLOSE_REASONS = {"cli_close", "tui_shutdown", "tui_close", "user_exit", "se
 # The session was compacted: Hermes ends it and continues the same conversation in a child session.
 COMPRESSION_REASON = "compression"
 
-app = FastAPI(title="Keryx", version="2.5")
+app = FastAPI(title="Keryx", version="2.6")
 
 
 def authorised(request: Request) -> bool:
@@ -190,7 +190,7 @@ def data_signature() -> tuple:
                     DATA / "logs" / "errors.log", DATA / "skills" / ".usage.json",
                     DATA / "memories" / "MEMORY.md", DATA / "memories" / "USER.md", DATA / "config.yaml",
                     DATA / "gateway_state.json", DATA / "kanban.db", DATA / "kanban.db-wal", DATA / "kanban" / "current",
-                    DATA / "context_length_cache.yaml")
+                    DATA / "context_length_cache.yaml", DATA / "plugin-data" / "hermes-achievements" / "state.json")
 
 
 # ----------------------------------------------------------------- loaders
@@ -2186,9 +2186,29 @@ def build_analytics(days: int) -> dict:
     clock = clock_profile(db, ids, start)
     velocity = velocity_of(days_list, days)
     out = {"generated_at": now, "window_days": days, "days": days_list, "models": models, "totals": tot,
-           "skills": skills[:40], "heatmap": build_heatmap(db, now), "providers": providers, "clock": clock, "velocity": velocity}
+           "skills": skills[:40], "heatmap": build_heatmap(db, now), "providers": providers, "clock": clock, "velocity": velocity,
+           "achievements": load_achievements()}
     out["insights"] = insights_of(out, skills, start)
     return out
+
+
+def load_achievements() -> Optional[dict]:
+    """Unlocks recorded by Hermes' achievements plugin (plugin-data/hermes-achievements/state.json). Names and
+    descriptions live in the plugin's catalogue, not on disk, so the id is shown in words with its tier and date."""
+    try:
+        d = json.loads((DATA / "plugin-data" / "hermes-achievements" / "state.json").read_text())
+    except (OSError, ValueError):
+        return None
+    unlocks = d.get("unlocks") if isinstance(d, dict) else None
+    if not isinstance(unlocks, dict):
+        return None
+    items = []
+    for key, v in unlocks.items():
+        if not isinstance(v, dict):
+            continue
+        items.append({"id": key, "name": key.replace("_", " ").replace("-", " "), "tier": v.get("first_tier"), "unlocked_at": ts(v.get("unlocked_at"))})
+    items.sort(key=lambda x: -(x["unlocked_at"] or 0))
+    return {"unlocked": len(items), "recent": items[:12]}
 
 
 # ------------------------------------------------- analytics cards (after hermes-workspace's dashboard)

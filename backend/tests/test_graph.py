@@ -1,3 +1,4 @@
+import json
 from conftest import keryx
 
 
@@ -337,3 +338,13 @@ def test_context_breakdown(hermes_data):
     assert c["segment"] == "s-comp-tip" and c["segments"] == ["s-comp-root", "s-comp-tip"]
     assert {p["kind"]: p for p in c["parts"]}["summary"]["count"] == 1
     assert keryx.build_context("nope")["rows"] == 0
+
+
+def test_achievements_from_the_plugin_state(hermes_data):
+    a = keryx.build_analytics(30)["achievements"]
+    assert a["unlocked"] == 2 and [x["id"] for x in a["recent"]] == ["night-owl", "claude_confidant"]
+    assert a["recent"][0] == {"id": "night-owl", "name": "night owl", "tier": "Silver", "unlocked_at": a["recent"][0]["unlocked_at"]}
+    assert "s-x" not in json.dumps(a)                                           # evidence stays on disk
+    (hermes_data / "plugin-data" / "hermes-achievements" / "state.json").write_text("{}")
+    keryx.configure(hermes_data)
+    assert keryx.build_analytics(30)["achievements"] is None

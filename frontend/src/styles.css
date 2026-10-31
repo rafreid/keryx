@@ -304,3 +304,5 @@ tr.off td { opacity: .55; }
 .mixtools { margin-top: 4px; } .mixtools .mt { display: grid; grid-template-columns: 1fr 90px 32px; gap: 6px; align-items: center; font-size: 12px; }
 .mixtools .n { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mixtools .b { height: 5px; background: var(--panel2); border-radius: 3px; } .mixtools .b i { display: block; height: 100%; background: var(--amber); border-radius: 3px; }
+
+.ach { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0; } .ach .tag { padding: 2px 8px; }

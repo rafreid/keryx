@@ -71,6 +71,11 @@ export default function Analytics() {
         </tbody></table></div>
         <div className="small">from Hermes' skill ledger (skills/.usage.json), which Hermes updates when a skill is viewed or used.</div>
       </>}
+      {data.achievements && <>
+        <h3>Achievements <span className="small" style={{ textTransform: 'none', letterSpacing: 0 }}>· {data.achievements.unlocked} unlocked</span></h3>
+        <div className="ach">{data.achievements.recent.map(x => <span key={x.id} className="tag" title={`unlocked ${ago(x.unlocked_at)}`}>🏅 {x.name}{x.tier ? <span className="small"> · {x.tier}</span> : null}</span>)}</div>
+        <div className="small">from Hermes' achievements plugin (plugin-data/hermes-achievements); names come from its catalogue, so only the id shows here.</div>
+      </>}
       <h3>Daily table</h3>
       <div className="scroll"><table className="cost"><thead><tr><td>day</td><td>sess</td><td>msgs</td><td>calls</td><td>fail</td><td>tok in</td><td>tok out</td><td>cost</td></tr></thead><tbody>
         {[...rows].reverse().filter(r => r.sessions || r.tool_calls || r.user_messages).map(r =>
