@@ -66,10 +66,35 @@ button:hover { border-color: var(--muted); }
 .cost td:nth-child(n+2) { text-align: right; font-variant-numeric: tabular-nums; }
 .err { color: var(--red); } .ok { color: var(--green); } .warn { color: var(--amber); }
 .small { font-size: 11px; color: var(--muted); }
+/* side gutters clear a phone's rounded corners and side bars */
+.header, .now, .side, .mobilebar { padding-left: max(14px, env(safe-area-inset-left, 0px)); padding-right: max(14px, env(safe-area-inset-right, 0px)); }
+.side { min-width: 0; }
+.mobilebar { display: flex; gap: 6px; align-items: center; padding-top: 6px; padding-bottom: 6px; border-bottom: 1px solid var(--line); background: var(--panel); }
+.mobilebar button { padding: 4px 12px; border-radius: 14px; max-width: 45vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mobilebar .small { margin-left: auto; white-space: nowrap; }
+/* phones: the graph and the panel take turns at full width (see App's mobile state) */
 @media (max-width: 800px) {
-  .side { position: absolute; right: 0; top: 0; bottom: 0; width: min(92vw, 340px); z-index: 6; }
+  .header { gap: 6px 10px; padding-top: 6px; padding-bottom: 6px; }
+  .header h1 { font-size: 20px; }
+  .header .check { display: none; }                 /* the title dot and the attention list carry health on a phone */
+  .right { width: 100%; margin-left: 0; flex-wrap: wrap; gap: 6px; }
+  .right select { flex: 1; min-width: 96px; } .right button { padding: 4px 7px; }
+  .body { flex-direction: column; }
+  .app.m-panel .main { display: none; }
+  .app.m-map .side { display: none; }
+  .side { width: 100%; border-left: none; flex: 1; min-height: 0; }
+  .now { min-height: 56px; padding-top: 8px; padding-bottom: 8px; }
   .card { flex-basis: 240px; }
-  .replay input[type=range] { width: 140px; }
+  .toolbar { left: 8px; right: 8px; top: 8px; gap: 6px; }
+  .toolbar input[type=search] { width: 100%; }
+  .replay { flex: 1; min-width: 0; } .replay input[type=range] { flex: 1; width: auto; min-width: 60px; } .replay .t { min-width: 0; }
+  .app.narrow .timeaxis { display: none; }          /* the ruler covers too much of a small graph */
+  .trail { top: 86px; }
+  .stats { left: 8px; right: 8px; bottom: 8px; text-align: center; font-size: 11px; }
+  .app.narrow .overlay { display: none; }
+  .toasts { right: 8px; left: 8px; bottom: 8px; max-width: none; }
+  .tiles { grid-template-columns: 1fr 1fr; }
+  .popover.qr { right: auto; left: 0; }
 }
 
 .legend label { cursor: pointer; display: inline-flex; align-items: center; gap: 2px; }

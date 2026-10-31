@@ -8,12 +8,17 @@ import { fetchGraphAt, submitToken, useDebounced, useLive } from './api.js'
 import { fmtTime } from './util.js'
 import { useNotifications } from './notify.js'
 import { useNavHistory } from './history.js'
+import { NARROW, useMedia } from './hooks/useMedia.js'
 
 const params = new URLSearchParams(location.search)
 
 export default function App() {
   const [hours, setHours] = useState(Number(params.get('hours') ?? 24))
-  const [view, setView] = useState(params.get('view') === '2d' ? '2d' : '3d')
+  // 3D needs room: screens under 1200px start in 2D unless the link asks for 3D
+  const [view, setView] = useState(params.get('view') === '2d' ? '2d' : params.get('view') === '3d' ? '3d' : window.innerWidth < 1200 ? '2d' : '3d')
+  // phone layout: the graph and the panel take turns at full width; picking something shows the panel
+  const narrow = useMedia(NARROW)
+  const [mobile, setMobile] = useState('panel')
   const [live, setLive] = useState(true)
   const [tab, setTab] = useState('overview')
   // selection lives in the navigation history: every pick is a browser history entry (back/forward restore
@@ -87,11 +92,17 @@ export default function App() {
   const resolved = (selected && graph?.aliases?.[selected]) || selected
   const selectedNode = useMemo(() => graph?.nodes.find(n => n.id === resolved) || null, [graph, resolved])
   const stats = graph?.stats || {}
+  useEffect(() => { if (narrow && selectedNode) setMobile('panel') }, [narrow, selectedNode])
 
   return (
-    <div className="app">
+    <div className={`app ${narrow ? `narrow m-${mobile}` : ''}`}>
       <Header status={data?.status} hours={hours} setHours={setHours} view={view} setView={setView}
               live={live} setLive={setLive} conn={conn} cost={data?.cost} theme={theme} setTheme={setTheme} notify={notify} setNotify={setNotify} sound={sound} setSound={setSound} />
+      {narrow && <div className="mobilebar" role="tablist" aria-label="phone layout">
+        <button role="tab" aria-selected={mobile === 'map'} className={mobile === 'map' ? 'on' : ''} onClick={() => setMobile('map')}>map</button>
+        <button role="tab" aria-selected={mobile === 'panel'} className={mobile === 'panel' ? 'on' : ''} onClick={() => setMobile('panel')}>{selectedNode ? selectedNode.label : tab}</button>
+        <span className="small">{stats.running ?? 0} running · {stats.sessions ?? 0} in window</span>
+      </div>}
       <div className="body">
         <div className="main">
           <NowStrip now={data?.now} selected={resolved} onSelect={navigate} />
@@ -134,7 +145,7 @@ export default function App() {
             </div>
           </div>
         </div>
-        <SidePanel node={selectedNode} cost={data?.cost} status={data?.status} graph={graph} tasks={data?.tasks} onClose={() => navigate(null)}
+        <SidePanel node={selectedNode} cost={data?.cost} status={data?.status} graph={graph} tasks={data?.tasks} onClose={() => { navigate(null); if (narrow) setMobile('map') }}
                    hidden={hidden} toggleHidden={toggleHidden} showAll={showAll} search={search} onSelect={navigate} tab={tab} setTab={setTab} />
       </div>
       {conn === 'auth' && <TokenGate />}
