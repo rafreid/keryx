@@ -145,3 +145,35 @@ def test_restart_pending_is_a_warning(hermes_data):
     g = checks()["gateway"]
     assert g["level"] == "amber" and g["detail"].startswith("restart pending") and g["restart_requested"] is True
     assert keryx.build_status()["hermes"]["restart_requested"] is True
+
+
+def test_attention_list_ranks_what_needs_a_look(hermes_data):
+    st = keryx.build_status()
+    att = st["attention"]
+    sev = [a["severity"] for a in att]
+    assert sev == sorted(sev, key={"red": 0, "amber": 1, "info": 2}.get)            # red first, info last
+    by = {a["id"]: a for a in att}
+    assert by["incident-inc1"]["node"] == "cron:job-bad" and by["incident-inc1"]["label"] == "cron job failing: flaky sync"
+    assert "missed-job-bad" not in by                                                 # one line per job: the incident already names it
+    assert by["platform-whatsapp"]["severity"] == "amber" and by["platform-whatsapp"]["label"] == "whatsapp retrying"
+    assert by["kanban-t-run-stale"]["severity"] == "red" and by["kanban-t-run-stale"]["tab"] == "board"
+    assert by["kanban-t-blocked"]["severity"] == "amber" and by["kanban-blocked"]["label"].startswith("1 kanban card")
+    assert by["deliveries"]["label"].startswith("1 cron result") and by["deliveries"]["tab"] == "tasks"
+    assert by["errors"]["severity"] == "amber" and by["errors"]["tab"] == "logs"
+    assert by["orphans"]["label"].startswith("2 session") and by["waiting"]["severity"] == "info"
+    assert "gateway" not in by and "restart" not in by                                # green gateway stays out
+    assert all(a["node"] or a["tab"] for a in att)                                     # every line leads somewhere
+
+
+def test_attention_includes_restart_and_gateway_trouble(hermes_data):
+    from conftest import write_gateway_state
+    write_gateway_state(hermes_data, restart_requested=True, gateway_state="degraded")
+    keryx.configure(hermes_data)
+    by = {a["id"]: a for a in keryx.build_status()["attention"]}
+    assert by["restart"]["severity"] == "amber" and by["gateway"]["label"].startswith("gateway: gateway degraded")
+
+
+def test_diagnostics_carry_attention(client):
+    d = client.get("/api/diagnostics").json()
+    assert any(a["source"] == "cron" and a["severity"] == "red" for a in d["attention"])
+    assert "node" not in d["attention"][0]

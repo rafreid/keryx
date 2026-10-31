@@ -41,7 +41,7 @@ export default function SidePanel({ node, cost, status, onClose, graph, tasks, h
         : tab === 'analytics' ? <Analytics />
         : tab === 'logs' ? <Logs onSelect={onSelect} links={status?.links} />
         : tab === 'memory' ? <Memory />
-        : <Overview cost={cost} status={status} graph={graph} hidden={hidden} toggleHidden={toggleHidden} showAll={showAll} onSelect={onSelect} />}
+        : <Overview cost={cost} status={status} graph={graph} hidden={hidden} toggleHidden={toggleHidden} showAll={showAll} onSelect={onSelect} setTab={setTab} />}
     </div>
   )
 }
@@ -162,7 +162,25 @@ function NodeDetail({ node, graph, onClose, onSelect, links }) {
   )
 }
 
-function Overview({ cost, status, graph, hidden, toggleHidden, showAll, onSelect }) {
+/** hermes-workspace's attention card: everything red or amber in one ranked list, each line leading to a node or a tab. */
+function Attention({ items, onSelect, setTab }) {
+  const go = a => { if (a.node) onSelect(a.node); else if (a.tab) setTab(a.tab) }
+  const worst = items.find(a => a.severity === 'red') ? 'err' : items.find(a => a.severity === 'amber') ? 'warn' : ''
+  const n = items.filter(a => a.severity !== 'info').length
+  return (
+    <Section id="attention" title="Attention" level={worst} summary={n ? <span className={worst}>{n} need{n === 1 ? 's' : ''} a look</span> : 'all clear'}>
+      {!items.length && <div className="small">nothing needs you right now.</div>}
+      {items.map(a => <div key={a.id} className={`att ${a.severity}`} onClick={() => go(a)} title={a.node ? 'select in the graph' : `open the ${a.tab} tab`}>
+        <span className={`dot ${a.severity === 'info' ? 'blue' : a.severity}`} />
+        <span className="src">{a.source}</span>
+        <span className="lbl">{a.label}</span>
+        {a.detail ? <div className="small det">{a.detail}</div> : null}
+      </div>)}
+    </Section>
+  )
+}
+
+function Overview({ cost, status, graph, hidden, toggleHidden, showAll, onSelect, setTab }) {
   const s = graph?.stats || {}
   const changes = (graph?.nodes || []).flatMap(n => (n.files || []).filter(f => f.op === 'write' || f.op === 'patch').map(f => ({ ...f, node: n.id, label: n.label })))
     .sort((a, b) => (b.ts || 0) - (a.ts || 0)).filter((f, i, a) => a.findIndex(g => g.path === f.path) === i).slice(0, 8)
@@ -177,6 +195,7 @@ function Overview({ cost, status, graph, hidden, toggleHidden, showAll, onSelect
         <tr><td>orphaned / failed</td><td>{s.orphaned ?? 0} / {s.failed ?? 0}</td></tr>
         <tr><td>cron</td><td>{s.cron_jobs ?? 0} jobs · {s.cron_runs ?? 0} runs</td></tr>
       </tbody></table>
+      {status?.attention && <Attention items={status.attention} onSelect={onSelect} setTab={setTab} />}
       <Section id="health" title="Health" summary={<span className={`dot ${status?.level || 'amber'}`} />}>
       <table><tbody>{(status?.checks || []).map(c => (
         <tr key={c.name}><td><span className={`dot ${c.level}`} />{c.name.replace(/_/g, ' ')}</td><td>{c.detail}{c.recent?.length ? <div className="small">{c.recent.map((l, i) => <div key={i}>{l}</div>)}</div> : null}</td></tr>

@@ -1289,9 +1289,72 @@ def build_status() -> dict:
               + (f" · {fmt_bytes(st['free'])} free" if st["free"] is not None else ""), **st)
 
     worst = "red" if any(c["level"] == "red" for c in checks) else "amber" if any(c["level"] == "amber" for c in checks) else "green"
-    return {"generated_at": now, "level": worst, "checks": checks, "links": dashboard_links(),
+    attention = attention_list(checks, details, open_inc, missed, deliveries, kb, orphans, waiting)
+    return {"generated_at": now, "level": worst, "checks": checks, "links": dashboard_links(), "attention": attention,
             "hermes": {k: gw[k] for k in ("state", "desired", "level", "version", "sha", "pid", "started", "updated", "age", "stale",
                                            "profiles", "restart_requested")} if gw else None}
+
+
+def attention_list(checks: list[dict], jobs: list[dict], open_inc: list[dict], missed: list[str], deliveries: dict,
+                   kb: dict, orphans: int, waiting: int) -> list[dict]:
+    """One ranked triage list out of everything that is red or amber (hermes-workspace's attention card):
+    each item names what is wrong, where it came from and where to look (a node to select or a tab to
+    open). Red first, then amber, then the one informational line: sessions waiting for you."""
+    items: list[dict] = []
+    by = {c["name"]: c for c in checks}
+
+    def add(id_: str, sev: str, source: str, label: str, detail: str = "", node: Optional[str] = None, tab: Optional[str] = None):
+        items.append({"id": id_, "severity": sev, "source": source, "label": label, "detail": detail or "", "node": node, "tab": tab})
+
+    g = by.get("gateway")
+    if g and g["level"] != "green":
+        if g.get("restart_requested"):
+            add("restart", "amber", "gateway", "restart pending", "the gateway flagged restart_requested; it restarts on its own schedule", tab="overview")
+        core = g["detail"].replace("restart pending · ", "")
+        if "heartbeat" in core and g["level"] == "red" or g["level"] == "red" or ("state file" in core or "gateway " in core):
+            add("gateway", g["level"], "gateway", f"gateway: {core}", tab="overview")
+    for c in checks:
+        if c.get("kind") == "platform" and c["level"] != "green":
+            add(f"platform-{c['name']}", c["level"], "platform", f"{c['name'].replace('_', ' ')} {c.get('state') or c['detail'].split(' ')[0]}",
+                c["detail"], tab="overview")
+    names = {j["id"]: j["name"] for j in jobs}
+    seen_jobs: set[str] = set()
+    for i in open_inc:
+        if i["job_id"] in seen_jobs:
+            continue
+        seen_jobs.add(i["job_id"])
+        add(f"incident-{i['id']}", "red", "cron", f"cron job failing: {names.get(i['job_id'], i['job_id'])}", short(i.get("error"), 160) or "",
+            node=f"cron:{i['job_id']}")
+    for j in jobs:
+        if j["missed"] and j["id"] not in seen_jobs:
+            add(f"missed-{j['id']}", "red", "cron", f"missed trigger: {j['name']}", f"{j.get('missed_count') or 1} slot(s) skipped", node=f"cron:{j['id']}")
+        elif j["state"] == "error" and j["id"] not in seen_jobs:
+            add(f"failed-{j['id']}", "amber", "cron", f"last run failed: {j['name']}", short(j.get("last_error"), 160) or "", node=f"cron:{j['id']}")
+    cr = by.get("cron")
+    if cr and cr["level"] == "red" and "scheduler silent" in cr["detail"]:
+        add("scheduler", "red", "cron", cr["detail"], "no ticker heartbeat: jobs will not fire", tab="tasks")
+    stuck = deliveries["pending"] + deliveries["delivering"] + deliveries["failed"]
+    if stuck:
+        add("deliveries", "amber", "cron", f"{stuck} cron result(s) not delivered", f"{deliveries['failed']} failed", tab="tasks")
+    if kb.get("board") is not None:
+        for a in kb["attention"]:
+            add(f"kanban-{a['id']}", "red" if a["why"] == "worker silent" else "amber", "kanban",
+                f"{a['title']}: {a['why']}", "", tab="board")
+        if kb["counts"].get("blocked"):
+            add("kanban-blocked", "amber", "kanban", f"{kb['counts']['blocked']} kanban card(s) blocked", "", tab="board")
+    e = by.get("errors")
+    if e and e["level"] != "green":
+        add("errors", e["level"], "log", e["detail"], (e.get("recent") or [""])[-1], tab="logs")
+    st = by.get("storage")
+    if st and st["level"] != "green":
+        add("storage", st["level"], "storage", st["detail"], "", tab="overview")
+    if orphans:
+        add("orphans", "amber", "session", f"{orphans} session(s) orphaned by a restart (24h)", "", tab="sessions")
+    if waiting:
+        add("waiting", "info", "session", f"{waiting} session(s) waiting for you", "Hermes replied and the next move is yours", tab="sessions")
+    rank = {"red": 0, "amber": 1, "info": 2}
+    items.sort(key=lambda x: rank.get(x["severity"], 3))
+    return items
 
 
 LEVEL_RANK = {"green": 0, "amber": 1, "red": 2}
@@ -1852,6 +1915,7 @@ def build_diagnostics() -> dict:
             out["schema_error"] = str(e)
     status = build_status()
     out["health"] = [{"name": c["name"], "level": c["level"], "detail": redact(c["detail"])} for c in status["checks"]]
+    out["attention"] = [{"severity": a["severity"], "source": a["source"], "label": redact(a["label"])} for a in status["attention"]]
     out["kanban"] = kanban_overview()
     gw = gateway_summary(load_gateway_state(), now)
     out["hermes"] = {k: gw[k] for k in ("state", "desired", "version", "sha", "age", "stale", "profiles", "restart_requested", "exit_reason")} | {
