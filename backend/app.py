@@ -61,6 +61,10 @@ MEMORY_DEFAULTS = {"memory_char_limit": 2200, "user_char_limit": 1375, "memory_e
 # header, a `keryx_token` cookie, or `?token=` (the page sets the cookie from the first).
 TOKEN = os.environ.get("KERYX_TOKEN", "").strip()
 
+# sessions Hermes runs for itself rather than for a conversation: one-shot CLI calls, tool-spawned
+# helpers, kanban workers (hermes-desktop keeps them out of its conversation list for the same reason)
+INTERNAL_SOURCES = {"oneshot", "tool", "kanban"}
+
 # Hermes `sessions.end_reason` values, grouped by what they mean for the picture.
 # Orphans: the gateway (or a websocket backend) came back and reaped a session it no longer owned.
 ORPHAN_REASONS = {"startup_orphan_reap", "ws_orphan_reap"}
@@ -69,7 +73,7 @@ USER_CLOSE_REASONS = {"cli_close", "tui_shutdown", "tui_close", "user_exit", "se
 # The session was compacted: Hermes ends it and continues the same conversation in a child session.
 COMPRESSION_REASON = "compression"
 
-app = FastAPI(title="Keryx", version="2.4")
+app = FastAPI(title="Keryx", version="2.5")
 
 
 def authorised(request: Request) -> bool:
@@ -922,6 +926,8 @@ def build_graph(hours: float, at: Optional[float]) -> dict:
             compacted_at=[t for t in s["compacted_at"] if t],
             cwd=s.get("cwd"), git_branch=s.get("git_branch"), profile=s.get("profile_name"),
             archived=bool(s.get("archived")), handoff=s.get("handoff_state"), user=s.get("user_id"),
+            # Hermes' own flags: pinned in its session picker, hidden from it (hosted rooms, hidden branches)
+            pinned=bool(s.get("pinned")), hidden=bool(s.get("hidden")), internal=(s.get("source") in INTERNAL_SOURCES),
             plan=plan_of(todos, s["segments"]),
             task=next((kb_index[x] for x in s["segments"] if x in kb_index), None),
             val=3 + math.log1p(s.get("message_count") or 0),
@@ -1732,6 +1738,9 @@ def build_diagnostics() -> dict:
             by_status[st] = by_status.get(st, 0) + 1
         out["sessions"] = {"count": len(sessions), "by_status": by_status,
                            "by_source": _count(s.get("source") for s in sessions),
+                           "flags": {"pinned": sum(1 for s in sessions if s.get("pinned")), "hidden": sum(1 for s in sessions if s.get("hidden")),
+                                     "archived": sum(1 for s in sessions if s.get("archived")),
+                                     "internal": sum(1 for s in sessions if s.get("source") in INTERNAL_SOURCES)},
                            "by_model": _count(s.get("model") for s in sessions),
                            "end_reasons": _count(s.get("end_reason") for s in sessions if s.get("end_reason")),
                            "open": [{"id": s["id"], "source": s.get("source"), "model": s.get("model"),

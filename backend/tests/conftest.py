@@ -29,7 +29,7 @@ create table sessions (
     cache_write_tokens integer default 0, reasoning_tokens integer default 0, cwd text, git_branch text,
     billing_provider text, estimated_cost_usd real, actual_cost_usd real, cost_status text, title text,
     last_activity_at real, last_activity_description text, api_call_count integer default 0,
-    profile_name text, archived integer not null default 0
+    profile_name text, archived integer not null default 0, pinned integer not null default 0, hidden integer not null default 0
 )"""
 MESSAGES_DDL = """
 create table messages (
@@ -152,6 +152,11 @@ def write_state_db(path: Path) -> None:
     session("s-branch", "telegram", NOW - 30 * 60, parent="s-comp-tip", cfg={"_branched_from": "s-comp-tip"}, title="long chat (branch)")
     msg("s-branch", "user", "try another approach", NOW - 30 * 60)
     msg("s-branch", "assistant", "Sure.", NOW - 29 * 60, finish_reason="stop")
+
+    # Hermes' own flags: a session pinned in its picker, one hidden from it (a hosted room), and a one-shot CLI call
+    session("s-pinned", "tui", NOW - 4 * H, NOW - 3 * H, "tui_close", pinned=1, title="keep this one")
+    session("s-hidden", "telegram", NOW - 4 * H, NOW - 3 * H, "done", hidden=1, title="hosted room")
+    session("s-oneshot", "oneshot", NOW - 50 * 60, NOW - 49 * 60, "done", title="hermes chat -q 'what is 2+2'")
 
     # a real subagent: delegate marker points at its parent
     session("s-sub", "telegram", NOW - 90 * 60, NOW - 80 * 60, "done", parent="s-running",

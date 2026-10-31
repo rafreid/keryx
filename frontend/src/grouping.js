@@ -42,21 +42,28 @@ export function displayTitle(node) {
   return label
 }
 
+/** Pinned here (this browser) or pinned in Hermes' own session picker (`sessions.pinned`). */
+export const isPinned = (n, pinned) => pinned.has(n.id) || !!n.pinned
+
 /**
- * Split sessions into ordered groups for the list. `pinned` ids come first as their own group, running
- * sessions next, then the chosen grouping. Returns [{key, label, rows}] with rows newest first.
+ * Split sessions into ordered groups for the list. Pinned sessions (here or in Hermes) come first as
+ * their own group, running sessions next, then the chosen grouping, and Hermes' internal sessions
+ * (one-shot CLI calls, tool helpers, kanban workers) last in a group of their own, as hermes-desktop
+ * keeps them out of its conversation list. Sessions Hermes hides from its own picker are left out
+ * unless `hidden` is true. Returns [{key, label, rows}] with rows newest first.
  */
-export function groupSessions(nodes, { mode = 'platform', pinned = new Set(), tag = null, now = Date.now() / 1000 } = {}) {
+export function groupSessions(nodes, { mode = 'platform', pinned = new Set(), tag = null, hidden = false, now = Date.now() / 1000 } = {}) {
   const sess = nodes.filter(n => n.type === 'session' || n.type === 'subagent')
+    .filter(n => hidden || !n.hidden)
     .filter(n => !tag || tagsOf(n.label).includes(tag))
     .sort((a, b) => (b.last || 0) - (a.last || 0))
   const groups = []
-  const pins = sess.filter(n => pinned.has(n.id))
+  const pins = sess.filter(n => isPinned(n, pinned))
   if (pins.length) groups.push({ key: 'pinned', label: 'pinned', rows: pins })
-  const rest = sess.filter(n => !pinned.has(n.id))
+  const rest = sess.filter(n => !isPinned(n, pinned))
   const running = rest.filter(n => n.status === 'running')
   if (running.length) groups.push({ key: 'running', label: 'running', rows: running })
-  const others = rest.filter(n => n.status !== 'running')
+  const others = rest.filter(n => n.status !== 'running' && !n.internal)
   const by = new Map()
   const keyOf = n => (mode === 'time' ? timeBucket(n.last || n.started, now) : mode === 'project' ? projectOf(n) : (n.source || 'unknown'))
   for (const n of others) { const k = keyOf(n); if (!by.has(k)) by.set(k, []); by.get(k).push(n) }
@@ -64,8 +71,13 @@ export function groupSessions(nodes, { mode = 'platform', pinned = new Set(), ta
   if (mode === 'time') keys.sort((a, b) => TIME_ORDER.indexOf(a) - TIME_ORDER.indexOf(b))
   else keys.sort((a, b) => by.get(b).length - by.get(a).length || a.localeCompare(b))
   for (const k of keys) groups.push({ key: `${mode}:${k}`, label: k, rows: by.get(k) })
+  const internal = rest.filter(n => n.status !== 'running' && n.internal)
+  if (internal.length) groups.push({ key: 'internal', label: 'internal', rows: internal })
   return groups
 }
+
+/** How many sessions in the window Hermes hides from its own picker (so the list can offer to show them). */
+export const hiddenCount = nodes => nodes.filter(n => (n.type === 'session' || n.type === 'subagent') && n.hidden).length
 
 /** Every tag in the window with its count, most used first. */
 export function allTags(nodes) {

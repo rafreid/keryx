@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { allTags, displayTitle, groupSessions, projectOf, resumeCommand, stripTags, tagsOf, timeBucket } from './grouping.js'
+import { allTags, displayTitle, groupSessions, hiddenCount, isPinned, projectOf, resumeCommand, stripTags, tagsOf, timeBucket } from './grouping.js'
 
 const now = new Date(2026, 9, 30, 15, 0, 0).getTime() / 1000     // local 15:00 on 30 Oct 2026
 const at = (daysAgo, hour = 10) => new Date(2026, 9, 30 - daysAgo, hour).getTime() / 1000
@@ -59,5 +59,32 @@ describe('groupSessions', () => {
   it('filters by tag and counts tags', () => {
     expect(groupSessions(nodes, { mode: 'time', tag: 'infra', now }).flatMap(x => x.rows.map(r => r.id))).toEqual(['session:b', 'session:d'])
     expect(allTags(nodes)).toEqual([{ tag: 'infra', count: 2 }, { tag: 'web', count: 1 }])
+  })
+})
+
+describe("Hermes' own session flags", () => {
+  const nodes = [
+    s('a', { source: 'telegram', last: at(0) }),
+    s('p', { source: 'telegram', last: at(2), pinned: true }),
+    s('h', { source: 'telegram', last: at(0), hidden: true }),
+    s('o', { source: 'oneshot', last: at(0), internal: true }),
+    s('k', { source: 'kanban', last: at(0), internal: true, status: 'running' }),
+  ]
+  it('pins from Hermes join the pinned group', () => {
+    expect(isPinned(nodes[1], new Set())).toBe(true)
+    const g = groupSessions(nodes, { mode: 'platform', now })
+    expect(g[0]).toMatchObject({ key: 'pinned' })
+    expect(g[0].rows.map(r => r.id)).toEqual(['session:p'])
+  })
+  it('leaves hidden sessions out unless asked', () => {
+    expect(groupSessions(nodes, { mode: 'platform', now }).flatMap(x => x.rows.map(r => r.id))).not.toContain('session:h')
+    expect(groupSessions(nodes, { mode: 'platform', hidden: true, now }).flatMap(x => x.rows.map(r => r.id))).toContain('session:h')
+    expect(hiddenCount(nodes)).toBe(1)
+  })
+  it('puts internal sessions last, except while they run', () => {
+    const g = groupSessions(nodes, { mode: 'time', now })
+    expect(g.map(x => x.key)).toEqual(['pinned', 'running', 'time:today', 'internal'])
+    expect(g[1].rows.map(r => r.id)).toEqual(['session:k'])
+    expect(g[3].rows.map(r => r.id)).toEqual(['session:o'])
   })
 })
