@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { ago, num } from './util.js'
 import Heatmap from './Heatmap.jsx'
+import { CacheTrend, Clock, Insights, Providers, Velocity } from './Cards.jsx'
 
 /** Usage analytics: daily trend (bars + table), model distribution, totals. */
 export default function Analytics() {
@@ -29,12 +30,16 @@ export default function Analytics() {
           {Object.entries(METRICS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
       </div>
+      <Insights items={data.insights} />
       <div className="tiles">
-        <Tile label="sessions" value={t.sessions} sub={`${t.sessions_per_day}/day · ${t.subagents} subagents`} />
+        <Tile label="sessions" value={t.sessions} sub={`${t.subagents} subagents · ${t.active_days} active day${t.active_days === 1 ? '' : 's'}`} />
         <Tile label="tool calls" value={num(t.tool_calls)} sub={t.tool_errors ? <span className="err">{t.tool_errors} failed</span> : 'no failures'} />
         <Tile label="tokens" value={`${num(t.tokens_in)} in`} sub={`${num(t.tokens_out)} out · ${t.api_calls} calls`} />
-        <Tile label="cache hit" value={`${((t.cache_hit || 0) * 100).toFixed(0)}%`} sub={t.cost_usd ? `${t.cost_basis === 'actual' ? '' : '~'}$${t.cost_usd}${t.cost_basis === 'actual' ? '' : ' est.'}` : t.cost_basis === 'included' ? 'subscription (included)' : 'no cost recorded'} />
+        <Tile label="spend" value={t.cost_usd ? `${t.cost_basis === 'actual' ? '' : '~'}$${t.cost_usd}` : '–'} sub={t.cost_usd ? (t.cost_basis === 'actual' ? 'provider-reported' : t.cost_basis === 'mixed' ? 'partly estimated' : 'estimated') : t.cost_basis === 'included' ? 'subscription (included)' : 'no cost recorded'} />
+        <Velocity v={data.velocity} />
+        <CacheTrend days={rows} totals={t} />
       </div>
+      {data.providers?.length > 0 && <><h3>Providers</h3><Providers list={data.providers} /></>}
       <h3>{METRICS[metric]} per day {t.busiest_day ? <span className="small">· busiest {t.busiest_day}</span> : null}</h3>
       <svg viewBox={`0 0 ${W} ${H + 14}`} className="bars" preserveAspectRatio="none">
         {rows.map((r, i) => {
@@ -49,6 +54,8 @@ export default function Analytics() {
         })}
       </svg>
       <Heatmap data={data.heatmap} />
+      <h3>When Hermes works</h3>
+      <Clock c={data.clock} />
       <h3>Models</h3>
       <table className="cost"><thead><tr><td>model</td><td>share</td><td>in</td><td>out</td><td>cache</td><td>calls</td></tr></thead><tbody>
         {(data.models || []).map(m => <tr key={m.model}>
