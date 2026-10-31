@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import Section from './Section.jsx'
 import { ago, dur, fmtT } from './util.js'
 import { getJSON } from './api.js'
+import { useRefetch } from './hooks/useTick.js'
 
 /**
  * Hermes' kanban queue, read-only (hermes-desktop's Kanban tab): the board as lanes in Hermes' own
@@ -13,12 +14,7 @@ export default function Board({ onSelect, links }) {
   const [archived, setArchived] = useState(false)
   const [data, setData] = useState(null)
   const [openId, setOpenId] = useState(null)
-  useEffect(() => {
-    let dead = false
-    const load = () => getJSON(`/api/kanban?board=${encodeURIComponent(board)}&archived=${archived ? 1 : 0}`).then(d => { if (!dead) setData(d) }).catch(() => {})
-    load(); const t = setInterval(load, 10000)
-    return () => { dead = true; clearInterval(t) }
-  }, [board, archived])
+  useRefetch(dead => getJSON(`/api/kanban?board=${encodeURIComponent(board)}&archived=${archived ? 1 : 0}`).then(d => { if (!dead()) setData(d) }).catch(() => {}), [board, archived])
   const pick = slug => { setBoard(slug); setOpenId(null); try { localStorage.setItem('keryx.board', slug) } catch {} }
   if (!data) return <div><h2>Board</h2><div className="small">loading board…</div></div>
   if (data.board === null) return (

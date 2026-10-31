@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react'
+import React, { useState } from 'react'
 import { ago } from './util.js'
+import { useRefetch } from './hooks/useTick.js'
 
 /**
  * Hermes' memory files, read-only: MEMORY.md (what the agent noted about the environment) and USER.md
@@ -9,12 +10,7 @@ import { ago } from './util.js'
 export default function Memory() {
   const [data, setData] = useState(null)
   const [which, setWhich] = useState('memory')
-  useEffect(() => {
-    let dead = false
-    const load = () => fetch('/api/memory').then(r => r.json()).then(d => { if (!dead) setData(d) }).catch(() => {})
-    load(); const t = setInterval(load, 15000)
-    return () => { dead = true; clearInterval(t) }
-  }, [])
+  useRefetch(dead => fetch('/api/memory').then(r => r.json()).then(d => { if (!dead()) setData(d) }).catch(() => {}), [])
   if (!data) return <div className="small">loading…</div>
   if (!data.enabled) return (
     <div>

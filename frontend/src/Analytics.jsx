@@ -1,19 +1,15 @@
-import React, { useEffect, useState } from 'react'
+import React, { useState } from 'react'
 import { ago, num, plural } from './util.js'
 import Heatmap from './Heatmap.jsx'
 import { CacheTrend, Clock, Insights, Providers, Velocity } from './Cards.jsx'
+import { useRefetch } from './hooks/useTick.js'
 
 /** Usage analytics: daily trend (bars + table), model distribution, totals. */
 export default function Analytics() {
   const [days, setDays] = useState(30)
   const [data, setData] = useState(null)
   const [metric, setMetric] = useState('tool_calls')
-  useEffect(() => {
-    let dead = false
-    const load = () => fetch(`/api/analytics?days=${days}`).then(r => r.json()).then(d => { if (!dead) setData(d) })
-    load(); const t = setInterval(load, 60000)
-    return () => { dead = true; clearInterval(t) }
-  }, [days])
+  useRefetch(dead => fetch(`/api/analytics?days=${days}`).then(r => r.json()).then(d => { if (!dead()) setData(d) }).catch(() => {}), [days], 120000)
   if (!data) return <div className="small">loading analytics…</div>
   const t = data.totals || {}
   const rows = data.days || []

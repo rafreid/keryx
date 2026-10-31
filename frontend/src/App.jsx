@@ -10,6 +10,9 @@ import { useNotifications } from './notify.js'
 import { useNavHistory } from './history.js'
 import { NARROW, useMedia } from './hooks/useMedia.js'
 import { TABS } from './tabs.js'
+import { TickContext, useClock } from './hooks/useTick.js'
+import FirstRun from './FirstRun.jsx'
+import { ago } from './util.js'
 
 const params = new URLSearchParams(location.search)
 
@@ -105,11 +108,17 @@ export default function App() {
   const selectedNode = useMemo(() => graph?.nodes.find(n => n.id === resolved) || null, [graph, resolved])
   const stats = graph?.stats || {}
   useEffect(() => { if (narrow && selectedNode) setMobile('panel') }, [narrow, selectedNode])
+  const [firstRun, setFirstRun] = useState(() => { try { return localStorage.getItem('keryx.seen') !== '1' } catch { return true } })
+  const closeFirstRun = () => { setFirstRun(false); try { localStorage.setItem('keryx.seen', '1') } catch {} }
+  const showLegend = () => { navigate(null, { tab: 'overview' }); try { localStorage.setItem('keryx.ov.legend', '1') } catch {}; setTimeout(() => document.getElementById('legend')?.scrollIntoView({ block: 'start' }), 50) }
+  const nowClock = useClock(5000)
+  const tick = data?.graph?.generated_at || 0
 
   return (
+    <TickContext.Provider value={tick}>
     <div className={`app ${narrow ? `narrow m-${mobile}` : ''}`}>
       <Header status={data?.status} hours={hours} setHours={setHours} view={view} setView={setView}
-              live={live} setLive={setLive} conn={conn} cost={data?.cost} theme={theme} setTheme={setTheme} notify={notify} setNotify={setNotify} sound={sound} setSound={setSound} />
+              live={live} setLive={setLive} conn={conn} cost={data?.cost} theme={theme} setTheme={setTheme} notify={notify} setNotify={setNotify} sound={sound} setSound={setSound} onHelp={() => setFirstRun(true)} />
       {narrow && <div className="mobilebar" role="tablist" aria-label="phone layout">
         <button role="tab" aria-selected={mobile === 'map'} className={mobile === 'map' ? 'on' : ''} onClick={() => setMobile('map')}>map</button>
         <button role="tab" aria-selected={mobile === 'panel'} className={mobile === 'panel' ? 'on' : ''} onClick={() => setMobile('panel')}>{selectedNode ? selectedNode.label : tab}</button>
@@ -153,8 +162,9 @@ export default function App() {
               {visible?.filtered ? <>showing </> : null}
               sessions <b>{visible?.filtered ? `${visible.sessions} of ${stats.sessions ?? '–'}` : (stats.sessions ?? '–')}</b> · running <b>{visible?.filtered ? visible.running : (stats.running ?? 0)}</b> · active <b>{visible?.filtered ? visible.active : (stats.active ?? 0)}</b> ·
               tool calls <b>{visible?.filtered ? visible.tool_calls : (stats.tool_calls ?? 0)}</b>{(visible?.filtered ? visible.errors : stats.errors) ? <> · <span className="err">{visible?.filtered ? visible.errors : stats.errors} failed</span></> : null} ·
-              {graph?.generated_at ? ` updated ${fmtTime(graph.as_of || graph.generated_at)}` : ' loading…'}
+              {graph?.generated_at ? (graph.replay ? ` as of ${fmtTime(graph.as_of)}` : ` updated ${ago(Math.min(graph.generated_at, nowClock))}`) : ' loading…'}
             </div>
+            {firstRun && <FirstRun onClose={closeFirstRun} onLegend={showLegend} />}
           </div>
         </div>
         <SidePanel node={selectedNode} cost={data?.cost} status={data?.status} graph={graph} tasks={data?.tasks} onClose={() => { navigate(null); if (narrow) setMobile('map') }}
@@ -167,6 +177,7 @@ export default function App() {
         </div>)}
       </div>
     </div>
+    </TickContext.Provider>
   )
 }
 

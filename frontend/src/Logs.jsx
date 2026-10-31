@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react'
+import React, { useState } from 'react'
 import { fmtTime } from './util.js'
+import { useRefetch } from './hooks/useTick.js'
 
 /** Tail of a Hermes log file, filterable by level and keyword, refreshed every 15 s. */
 export default function Logs({ onSelect, links }) {
@@ -7,12 +8,7 @@ export default function Logs({ onSelect, links }) {
   const [level, setLevel] = useState('WARNING')
   const [q, setQ] = useState('')
   const [data, setData] = useState(null)
-  useEffect(() => {
-    let dead = false
-    const load = () => fetch(`/api/logs?file=${file}&level=${level}&q=${encodeURIComponent(q)}&lines=150`).then(r => r.json()).then(d => { if (!dead) setData(d) })
-    load(); const t = setInterval(load, 15000)
-    return () => { dead = true; clearInterval(t) }
-  }, [file, level, q])
+  useRefetch(dead => fetch(`/api/logs?file=${file}&level=${level}&q=${encodeURIComponent(q)}&lines=150`).then(r => r.json()).then(d => { if (!dead()) setData(d) }).catch(() => {}), [file, level, q], 30000)
   return (
     <div>
       <div className="row">

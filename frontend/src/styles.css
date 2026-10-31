@@ -350,3 +350,10 @@ tr.off td { opacity: .55; }
 /* node detail: a short summary first, then sections */
 .nd-summary td:first-child { width: 32%; }
 .nd-summary .req { white-space: pre-wrap; word-break: break-word; }
+
+/* first-run card over the graph */
+.firstrun { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(520px, calc(100% - 32px)); z-index: 8;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; box-shadow: 0 12px 32px var(--shadow); font-size: 13px; }
+.firstrun h2 { margin: 0 0 8px; font-size: 16px; } .firstrun p { margin: 6px 0; line-height: 1.45; }
+.fr-row { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 6px 0; font-size: 12px; color: var(--muted); }
+.fr-row span { white-space: nowrap; }
