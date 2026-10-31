@@ -80,3 +80,33 @@ describe('exportMarkdown', () => {
     expect(md).not.toMatch(/\n```\nb/)
   })
 })
+
+describe('thinking steps', () => {
+  const think = (text, ts, extra = {}) => ({ kind: 'thinking', text, ts, chars: text.length, truncated: false, ...extra })
+  const withThought = [user('why is it slow', 100), think('The query has no index; check the plan.', 105), call('terminal', 110), asst('It needs an index.', 120)]
+  it('counts reasoning per turn and keeps the reply detection', () => {
+    const t = buildTurns(withThought)
+    expect(t[0].thinking).toBe(1)
+    expect(t[0].final.text).toBe('It needs an index.')
+    expect(t[0].tools).toBe(1)
+  })
+  it('hides reasoning unless asked for', () => {
+    const t = buildTurns(withThought)[0]
+    expect(visibleSteps(t, 'all').map(s => s.kind)).toEqual(['tool_call'])
+    expect(visibleSteps(t, 'all', true).map(s => s.kind)).toEqual(['thinking', 'tool_call'])
+    expect(visibleSteps(t, 'changes', true)).toEqual([])
+  })
+  it('searches reasoning only while it is shown', () => {
+    const t = buildTurns(withThought)
+    expect(findHits(t, 'no index').total).toBe(0)
+    expect(findHits(t, 'no index', true).total).toBe(1)
+  })
+  it('exports reasoning as a quote only when asked', () => {
+    const t = buildTurns(withThought)
+    const trace = { session: { id: 's', title: 'slow' }, steps: withThought }
+    expect(exportMarkdown(trace, t)).not.toContain('thinking')
+    const md = exportMarkdown(trace, t, { thinking: true })
+    expect(md).toContain('💭 **thinking**')
+    expect(md).toContain('  > The query has no index; check the plan.')
+  })
+})

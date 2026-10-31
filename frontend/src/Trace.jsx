@@ -13,6 +13,8 @@ export default function Trace({ sessionId, tool }) {
   const [filter, setFilter] = useState('all')
   const [q, setQ] = useState('')
   const [copied, setCopied] = useState(false)
+  const [thinking, setThinking] = useState(() => { try { return localStorage.getItem('keryx.thinking') === '1' } catch { return false } })
+  const toggleThinking = () => setThinking(v => { try { localStorage.setItem('keryx.thinking', v ? '0' : '1') } catch {} return !v })
   useEffect(() => {
     let dead = false
     setData(null); setQ(''); setFilter('all')
@@ -22,7 +24,7 @@ export default function Trace({ sessionId, tool }) {
     return () => { dead = true; clearInterval(t) }
   }, [sessionId, tool])
   const turns = useMemo(() => (data && !tool ? buildTurns(data.steps) : []), [data, tool])
-  const hits = useMemo(() => findHits(turns, q), [turns, q])
+  const hits = useMemo(() => findHits(turns, q, thinking), [turns, q, thinking])
   if (!data) return <div className="small">loading trace…</div>
   if (data.error) return <div className="small err">{data.error}</div>
   const u = data.usage?.[0]
@@ -35,7 +37,7 @@ export default function Trace({ sessionId, tool }) {
   )
   const shown = visibleTurns(turns, filter)
   const changes = turns.reduce((n, t) => n + t.changes, 0)
-  const md = () => exportMarkdown(data, turns)
+  const md = () => exportMarkdown(data, turns, { thinking })
   const copy = async () => {
     try { await navigator.clipboard.writeText(md()); setCopied(true); setTimeout(() => setCopied(false), 1500) } catch { download() }
   }
@@ -54,14 +56,15 @@ export default function Trace({ sessionId, tool }) {
             <button key={k} className={filter === k ? 'on' : ''} onClick={() => setFilter(k)} disabled={k === 'changes' && !changes}>{l}</button>)}
         </span>
         <input type="search" placeholder="find in session" value={q} onChange={e => setQ(e.target.value)} style={{ flex: 1, minWidth: 90 }} />
+        {data.thinking > 0 && <button className={thinking ? 'on' : ''} onClick={toggleThinking} title={thinking ? 'hide the model\'s reasoning' : `show the model's reasoning (${data.thinking} step${data.thinking === 1 ? '' : 's'})`}>💭</button>}
         <button onClick={() => setOpenAll(o => !o)} title="expand or collapse every step">{openAll ? '⊟' : '⊞'}</button>
         <button onClick={copy} title="copy the whole session as Markdown">{copied ? 'copied ✓' : '⎘ md'}</button>
         <button onClick={download} title="download the session as a Markdown file">⤓</button>
       </div>
-      <div className="small">{turns.length} turn{turns.length === 1 ? '' : 's'} · {data.total} step{data.total === 1 ? '' : 's'}{data.truncated ? ' (showing last 300)' : ''}{q.trim() ? <> · <b className={hits.total ? '' : 'err'}>{hits.total} match{hits.total === 1 ? '' : 'es'}</b></> : null}</div>
+      <div className="small">{turns.length} turn{turns.length === 1 ? '' : 's'} · {data.total} step{data.total === 1 ? '' : 's'}{data.truncated ? ' (showing last 300)' : ''}{data.thinking > 0 && !thinking ? ` · ${data.thinking} thinking hidden` : ''}{q.trim() ? <> · <b className={hits.total ? '' : 'err'}>{hits.total} match{hits.total === 1 ? '' : 'es'}</b></> : null}</div>
       {turns.length > 2 && <Outline turns={turns} shown={shown} />}
       <div className="trace">
-        {shown.map(t => <Turn key={turns.indexOf(t)} i={turns.indexOf(t)} t={t} filter={filter} openAll={openAll} hits={hits} dim={!!q.trim()} />)}
+        {shown.map(t => <Turn key={turns.indexOf(t)} i={turns.indexOf(t)} t={t} filter={filter} openAll={openAll} hits={hits} dim={!!q.trim()} thinking={thinking} />)}
         {!shown.length && <div className="small">nothing to show under this filter.</div>}
       </div>
     </div>
@@ -89,8 +92,8 @@ function Outline({ turns, shown }) {
   )
 }
 
-function Turn({ i, t, filter, openAll, hits, dim }) {
-  const steps = visibleSteps(t, filter)
+function Turn({ i, t, filter, openAll, hits, dim, thinking }) {
+  const steps = visibleSteps(t, filter, thinking)
   const [open, setOpen] = useState(null)      // null = default (collapsed when busy), true / false after a click
   const isOpen = openAll || (open ?? (steps.length <= 4 || t.failed > 0 || t.pending > 0))
   const cls = s => (dim ? (hits.hit(s) ? ' hit' : ' miss') : '')
@@ -101,7 +104,7 @@ function Turn({ i, t, filter, openAll, hits, dim }) {
         : <div className="step user auto"><span className="when">{fmtTime(t.ts)}</span><b>hermes</b> <span className="small">acted without a new question (wake-up, delegation result or cron)</span></div>}
       {steps.length > 0 && <>
         <div className="steps-head acc" onClick={() => setOpen(o => !(o ?? isOpen))}>
-          {isOpen ? '▾' : '▸'} steps · {t.tools} tool call{t.tools === 1 ? '' : 's'}
+          {isOpen ? '▾' : '▸'} steps · {t.tools} tool call{t.tools === 1 ? '' : 's'}{thinking && t.thinking ? ` · ${t.thinking} thinking` : ''}
           {t.failed ? <span className="err"> · {t.failed} failed</span> : null}
           {t.changes ? <span className="warn"> · {t.changes} edit{t.changes === 1 ? '' : 's'} +{t.added} −{t.removed}</span> : null}
           {t.pending ? <span className="info"> · running</span> : null}
@@ -122,6 +125,13 @@ function Step({ s, open, cls = '' }) {
   const isOpen = open || o
   if (s.kind === 'user') return <div className={`step user${cls}`}><span className="when">{fmtTime(s.ts)}</span><b>you</b><div className="txt">{s.text}</div></div>
   if (s.kind === 'assistant') return <div className={`step assistant note${cls}`}><span className="when">{fmtTime(s.ts)}</span><b>hermes</b><div className="txt">{s.text}</div></div>
+  if (s.kind === 'thinking') return (
+    <div className={`step thinking${cls}`} onClick={() => setO(v => !v)} title={isOpen ? 'collapse' : 'expand the reasoning'}>
+      <span className="when">{fmtTime(s.ts)}</span><b>💭 thinking</b>
+      <span className="small st"> {s.chars.toLocaleString()} chars{s.truncated ? ' · head only' : ''} {isOpen ? '▾' : '▸'}</span>
+      <div className={`txt ${isOpen ? '' : 'clamp'}`}>{s.text}</div>
+    </div>
+  )
   if (s.kind === 'compaction') return <div className={`step compaction${cls}`} title={`segment ${s.segment}`}><span className="when">{fmtTime(s.ts)}</span><b>⟲ compacted</b> <span className="small">{s.text}</span></div>
   if (s.kind === 'event') return <div className={`step event${cls}`}><span className="when">{fmtTime(s.ts)}</span><b>{s.name.replace(/_/g, ' ')}</b>{s.text && <> <span className="small">{s.text}</span></>}</div>
   return (

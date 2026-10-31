@@ -99,7 +99,7 @@ def test_trace_spans_lineage_with_markers(hermes_data):
         tr = keryx.build_trace(sid, None, 100)
         assert tr["session"]["id"] == "s-comp-root" and tr["session"]["segments"] == ["s-comp-root", "s-comp-tip"]
         kinds = [s["kind"] for s in tr["steps"]]
-        assert kinds == ["user", "tool_call", "compaction", "user", "event", "event", "tool_call", "assistant"]
+        assert kinds == ["user", "tool_call", "compaction", "user", "event", "event", "tool_call", "thinking", "assistant"]
         events = [s for s in tr["steps"] if s["kind"] == "event"]
         assert [e["name"] for e in events] == ["model_switch", "steer"]
         assert "hidden" not in " ".join(s.get("text", "") for s in tr["steps"])
@@ -231,3 +231,29 @@ def test_streak_counts_back_from_today():
     days[4]["sessions"] = 0
     assert keryx._streak(days, "d4") == 2                            # a quiet day so far does not break it
     assert keryx._streak(days, "nope") == 0
+
+
+def test_trace_carries_the_models_reasoning(hermes_data):
+    tr = keryx.build_trace("s-running", None, 100)
+    th = [s for s in tr["steps"] if s["kind"] == "thinking"]
+    assert len(th) == 1 and tr["thinking"] == 1
+    assert th[0]["text"].startswith("The build passed") and th[0]["truncated"] is False and th[0]["chars"] == 72
+    i = tr["steps"].index(th[0])
+    assert tr["steps"][i + 1]["kind"] == "tool_call" and tr["steps"][i + 1]["name"] == "write_file"    # before the call it led to
+    tr = keryx.build_trace("s-comp-root", None, 100)                 # reasoning_content, long: head only
+    th = [s for s in tr["steps"] if s["kind"] == "thinking"][0]
+    assert th["chars"] == 2002 and th["truncated"] is True and len(th["text"]) <= keryx.THINKING_CHARS + 1
+    assert not [s for s in keryx.build_trace("s-running", "write_file", 100)["steps"] if s["kind"] == "thinking"]   # the flat tool list stays flat
+
+
+def test_trace_without_reasoning_columns(tmp_path):
+    import sqlite3
+    db = sqlite3.connect(tmp_path / "state.db")
+    db.execute("create table sessions (id text primary key, source text, started_at real, ended_at real, end_reason text, title text, last_activity_at real, message_count integer)")
+    db.execute("create table messages (id integer primary key, session_id text, role text, content text, tool_call_id text, tool_calls text, tool_name text, timestamp real, token_count integer, finish_reason text)")
+    db.execute("insert into sessions values ('old', 'cli', 1, 2, 'done', 'old', 2, 2)")
+    db.execute("insert into messages (session_id, role, content, timestamp) values ('old', 'user', 'hi', 1), ('old', 'assistant', 'hello', 2)")
+    db.commit(); db.close()
+    keryx.configure(tmp_path)
+    tr = keryx.build_trace("old", None, 10)
+    assert [s["kind"] for s in tr["steps"]] == ["user", "assistant"] and tr["thinking"] == 0
