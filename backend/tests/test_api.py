@@ -127,3 +127,9 @@ def test_memory_config_scanner(tmp_path, monkeypatch):
     (tmp_path / "config.yaml").write_text("memory:\n  memory_char_limit: 3000\n  user_profile_enabled: no\n")
     c = keryx.memory_config()
     assert c["memory_char_limit"] == 3000 and c["user_profile_enabled"] is False and c["memory_enabled"] is True
+
+
+def test_version_is_in_health_and_status(client):
+    from conftest import keryx
+    assert client.get("/api/health").json()["version"] == keryx.app.version
+    assert client.get("/api/status").json()["keryx"] == keryx.app.version

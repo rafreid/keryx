@@ -8,7 +8,8 @@ html, body, #root { margin: 0; height: 100%; background: var(--bg); color: var(-
 .app { display: flex; flex-direction: column; height: 100%; }
 .header { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; padding: 8px 14px;
   border-bottom: 1px solid var(--line); background: var(--panel); }
-.header h1 { font-size: 16px; margin: 0; font-weight: 650; letter-spacing: .3px; }
+.header h1 { font-size: 24px; margin: 0; font-weight: 650; letter-spacing: .3px; }
+.header h1 .ver { font-size: 14px; font-weight: 500; color: var(--muted); margin-left: 6px; vertical-align: 2px; }
 .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 6px; vertical-align: middle; }
 .dot.green { background: var(--green); } .dot.amber { background: var(--amber); } .dot.red { background: var(--red); }
 .dot.pulse { box-shadow: 0 0 0 0 rgba(248,81,73,.6); animation: pulse 1.6s infinite; }
