@@ -4,7 +4,7 @@ import ForceGraph2D from 'react-force-graph-2d'
 import SpriteText from 'three-spritetext'
 import * as THREE from 'three'
 import { forceCollide, forceX, forceY, forceZ } from 'd3-force-3d'
-import { ACTIVE, STATUS, TYPE, ageAlpha, nodeBaseColor, withAlpha } from './util.js'
+import { ACTIVE, STATUS, TYPE, ageAlpha, nodeBaseColor, palette, withAlpha } from './util.js'
 import { layoutTargets, LAYOUT, setSpread } from './layout.js'
 import { useCameraPose } from './hooks/useCameraPose.js'
 import { useTimeAxis3d, useRings2d } from './hooks/useTimeAxis.js'
@@ -30,7 +30,7 @@ export const radiusOf = n => Math.cbrt(n.val || 3) * (n.type === 'hub' ? 3.8 : n
  *  - stable node objects across live updates, hover highlight, search dimming, platform collapse
  *  - a breathing pulse on running sessions
  */
-export default function GraphView({ graph, view, windowSec, selected, onSelect, search, collapsed, toggleCollapse, hidden, recenterSignal, band, onVisible, spread = 1, camRef, restore }) {
+export default function GraphView({ graph, view, windowSec, selected, onSelect, search, collapsed, toggleCollapse, hidden, recenterSignal, band, onVisible, spread = 1, camRef, restore, theme }) {
   const fgRef = useRef()
   const framedFor = useRef(new Set())       // selections whose ring has already been framed by the camera
   const camTarget = useRef(null)            // where the camera is flying to (history restore), while it flies
@@ -106,9 +106,9 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
     return { nodes: visible, links }
   }, [graph, collapsed, windowSec, view, hidden, band, spread])
 
-  useTimeAxis3d(fgRef, view, windowSec, band, spread)
+  useTimeAxis3d(fgRef, view, windowSec, band, spread, theme)
 
-  const paintRings = useRings2d(view, windowSec, band)
+  const paintRings = useRings2d(view, windowSec, band, theme)
 
   // report what is actually drawn (band / legend / collapse filters) for the stats bar
   useEffect(() => {
@@ -301,8 +301,8 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
       : n.type === 'cron' ? `${n.schedule || ''} · last ${n.last_status || 'never'}`
       : n.type === 'source' ? (n.collapsedCount ? `collapsed (${n.collapsedCount}) — click to expand` : 'click to collapse')
       : ''
-    return `<div style="background:#121a27;border:1px solid #223049;border-radius:6px;padding:6px 8px;max-width:320px;color:#e6edf7">
-      <b>${esc(n.label)}</b><br><span style="color:#8fa0b8">${esc(TYPE[n.type]?.label || n.type)}</span>${extra ? '<br>' + esc(extra) : ''}</div>`
+    return `<div style="background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:6px 8px;max-width:320px;color:var(--text)">
+      <b>${esc(n.label)}</b><br><span style="color:var(--muted)">${esc(TYPE[n.type]?.label || n.type)}</span>${extra ? '<br>' + esc(extra) : ''}</div>`
   }
 
   // ---- 3D objects: built once per node, restyled every frame -------------
@@ -317,7 +317,7 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
     group.add(mesh)
     let wire = null
     if (n.type === 'hub') {
-      wire = new THREE.Mesh(GEOMETRY.hub, new THREE.MeshBasicMaterial({ color: '#6ad1ff', wireframe: true, transparent: true, opacity: 0.35 }))
+      wire = new THREE.Mesh(GEOMETRY.hub, new THREE.MeshBasicMaterial({ color: palette().accent, wireframe: true, transparent: true, opacity: 0.35 }))
       wire.scale.setScalar(r * 1.35)
       group.add(wire)
     }
@@ -326,6 +326,7 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
       const text = n.collapsedCount ? `${n.label} (+${n.collapsedCount})` : n.type === 'tool' ? `${n.label}${n.errors ? ` ✕${n.errors}` : ''} ×${n.calls}` : n.label
       label = new SpriteText(text.length > 34 ? text.slice(0, 33) + '…' : text)
       label.textHeight = n.type === 'hub' ? 8 : n.type === 'source' ? 6 : n.type === 'tool' ? 2.8 : 3.4
+      label.backgroundColor = palette().halo; label.padding = 0.6; label.borderRadius = 1   // halo: readable over links and the floor in both themes
       label.position.y = -(r + (n.type === 'hub' ? 7 : 3.5))
       if (n.type === 'tool') label.visible = false
       group.add(label)
@@ -353,7 +354,10 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
         if (node.type !== 'source') mesh.rotation.y = node.type === 'tool' || node.type === 'subagent' ? t / 4000 : 0
         if (wire) { wire.rotation.y = t / 6000; wire.rotation.x = t / 9000 }
         if (label) {
-          label.color = withAlpha(node.type === 'hub' ? '#ffffff' : '#e6edf7', emphasised(node) ? 0.9 : 0.12)
+          const pal = palette()
+          label.color = withAlpha(pal.text, emphasised(node) ? 0.95 : 0.12)
+          if (label.backgroundColor !== pal.halo) label.backgroundColor = pal.halo
+          if (wire && wire.material.color.getStyle() !== pal.accent) wire.material.color.set(pal.accent)
           if (node.type === 'tool') label.visible = !!node.fanned || node.id === styleRef.current.hoverId
         }
       }
@@ -369,15 +373,18 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
     const col = colorOf(n)
     const breathe = n.status === 'running' ? 1 + 0.12 * Math.sin(performance.now() / 420) : 1
     drawShape(ctx, n.type, n.x, n.y, r * breathe, col)
-    if (n.id === selected) { ctx.lineWidth = 1.5 / scale; ctx.strokeStyle = '#fff'; ctx.stroke() }
+    if (n.id === selected) { ctx.lineWidth = 1.5 / scale; ctx.strokeStyle = palette().text; ctx.stroke() }
     const showToolLabel = n.type === 'tool' && (n.fanned || n.id === hover)
     if (showToolLabel || (LABELLED.has(n.type) && (scale > 1.4 || n.type === 'hub' || n.type === 'source'))) {
       const text = n.collapsedCount ? `${n.label} (+${n.collapsedCount})` : n.type === 'tool' ? `${n.label}${n.errors ? ` ✕${n.errors}` : ''} ×${n.calls}` : n.label
       ctx.font = `${Math.max(2.5, 10 / scale)}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'top'
-      ctx.fillStyle = withAlpha('#e6edf7', emphasised(n) ? 0.9 : 0.15)
-      ctx.fillText(text.length > 40 ? text.slice(0, 39) + '…' : text, n.x, n.y + r + 1.5)
+      const t = text.length > 40 ? text.slice(0, 39) + '…' : text
+      ctx.lineWidth = 3 / scale; ctx.lineJoin = 'round'; ctx.strokeStyle = withAlpha(palette().bg, emphasised(n) ? 0.85 : 0.15)
+      ctx.strokeText(t, n.x, n.y + r + 1.5)                                        // halo keeps labels legible over links in both themes
+      ctx.fillStyle = withAlpha(palette().text, emphasised(n) ? 0.95 : 0.15)
+      ctx.fillText(t, n.x, n.y + r + 1.5)
     }
-  }, [colorOf, emphasised, selected, hover])
+  }, [colorOf, emphasised, selected, hover, theme])
 
   const common = {
     ref: fgRef, graphData: data, width: size.w, height: size.h, nodeId: 'id',
@@ -390,7 +397,7 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
     cooldownTicks: 500, warmupTicks: 60, d3AlphaDecay: 0.012, d3VelocityDecay: 0.35, onEngineStop,
   }
 
-  const bg = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#0b0f17'
+  const bg = palette().bg
   return (
     <div className="canvas" ref={wrapRef}>
       {view === '3d'
@@ -407,7 +414,7 @@ export function drawShape(ctx, type, x, y, r, fill) {
   ctx.beginPath()
   switch (type) {
     case 'hub': ctx.arc(x, y, r, 0, 2 * Math.PI); ctx.fillStyle = fill; ctx.fill()
-      ctx.beginPath(); ctx.arc(x, y, r * 1.5, 0, 2 * Math.PI); ctx.lineWidth = r * 0.18; ctx.strokeStyle = withAlpha('#6ad1ff', 0.5); ctx.stroke()
+      ctx.beginPath(); ctx.arc(x, y, r * 1.5, 0, 2 * Math.PI); ctx.lineWidth = r * 0.18; ctx.strokeStyle = withAlpha(palette().accent, 0.5); ctx.stroke()
       ctx.beginPath(); ctx.arc(x, y, r, 0, 2 * Math.PI); return
     case 'source': ctx.arc(x, y, r, 0, 2 * Math.PI); ctx.lineWidth = r * 0.5; ctx.strokeStyle = fill; ctx.stroke(); return
     case 'subagent': ctx.moveTo(x, y - r * 1.2); ctx.lineTo(x + r, y); ctx.lineTo(x, y + r * 1.2); ctx.lineTo(x - r, y); ctx.closePath(); break

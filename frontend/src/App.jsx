@@ -5,7 +5,7 @@ import GraphView from './GraphView.jsx'
 import SidePanel from './SidePanel.jsx'
 import TimeAxis from './TimeAxis.jsx'
 import { fetchGraphAt, submitToken, useDebounced, useLive } from './api.js'
-import { fmtTime } from './util.js'
+import { PALETTE, fmtTime, readPalette } from './util.js'
 import { useNotifications } from './notify.js'
 import { useNavHistory } from './history.js'
 import { NARROW, useMedia } from './hooks/useMedia.js'
@@ -38,7 +38,12 @@ export default function App() {
   useEffect(() => { try { localStorage.setItem('keryx.spread', String(spread)) } catch {} }, [spread])
   useEffect(() => { setBand(null) }, [hours])
   const [theme, setTheme] = useState(() => { try { return localStorage.getItem('keryx.theme') || 'dark' } catch { return 'dark' } })
-  useEffect(() => { document.documentElement.dataset.theme = theme; try { localStorage.setItem('keryx.theme', theme) } catch {} }, [theme])
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme
+    PALETTE.current = readPalette()
+    document.querySelector('meta[name=theme-color]')?.setAttribute('content', PALETTE.current.bg)
+    try { localStorage.setItem('keryx.theme', theme) } catch {}
+  }, [theme])
   // ⌘K / Ctrl+K focuses the search box and opens the sessions tab
   useEffect(() => {
     const onKey = e => {
@@ -109,7 +114,7 @@ export default function App() {
           <div className="graphwrap">
             <GraphView graph={graph} view={view} windowSec={windowSec} selected={resolved} onSelect={navigate}
                        search={search} collapsed={collapsed} toggleCollapse={toggleCollapse} hidden={hidden} recenterSignal={recenterSignal} band={band} onVisible={setVisible} spread={spread}
-                       camRef={camRef} restore={restore} />
+                       camRef={camRef} restore={restore} theme={theme} />
             <TimeAxis windowSec={windowSec} band={band} setBand={setBand} />
             <div className="toolbar">
               <input id="search" type="search" placeholder="search sessions, requests, tools…  (⌘K)" value={search} onChange={e => setSearch(e.target.value)} />

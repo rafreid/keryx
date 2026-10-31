@@ -248,7 +248,7 @@ function Overview({ cost, status, graph, hidden, toggleHidden, showAll, onSelect
       <table className="legend"><tbody>
         <tr><td colSpan="2" className="small">shape = what it is</td></tr>
         {Object.entries(TYPE).map(([k, v]) => <LegendRow key={k} id={`type:${k}`} hidden={hidden} toggle={toggleHidden}
-          glyph={<><Shape type={k} color={v.color} />{v.alt && <Shape type={k} color={v.alt} />}</>} name={k} desc={v.label} />)}
+          glyph={<><Shape type={k} color={k === 'hub' ? 'var(--text)' : v.color} />{v.alt && <Shape type={k} color={v.alt} />}</>} name={k} desc={v.label} />)}
         <tr><td colSpan="2" className="small">colour = how a session is doing</td></tr>
         {Object.entries(STATUS).map(([k, v]) => <LegendRow key={k} id={`status:${k}`} hidden={hidden} toggle={toggleHidden}
           glyph={<><Shape type="session" color={v.color} /><Shape type="subagent" color={v.color} /></>} name={k.replace(/_/g, ' ')} desc={v.label} />)}

@@ -1,6 +1,7 @@
 :root {
   --bg: #0b0f17; --panel: #121a27; --panel2: #182234; --line: #223049; --text: #e6edf7; --muted: #8fa0b8;
-  --accent: #6ad1ff; --green: #3fb950; --amber: #d29922; --red: #f85149; --blue: #58a6ff;
+  --accent: #6ad1ff; --green: #3fb950; --amber: #d29922; --red: #f85149; --blue: #58a6ff; --shadow: rgba(0,0,0,.35);
+  --label-halo: rgba(11,15,23,.75);   /* behind graph labels so they read on busy backgrounds */
 }
 * { box-sizing: border-box; }
 html, body, #root { margin: 0; height: 100%; background: var(--bg); color: var(--text);
@@ -12,8 +13,8 @@ html, body, #root { margin: 0; height: 100%; background: var(--bg); color: var(-
 .header h1 .ver { font-size: 14px; font-weight: 500; color: var(--muted); margin-left: 6px; vertical-align: 2px; }
 .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 6px; vertical-align: middle; }
 .dot.green { background: var(--green); } .dot.amber { background: var(--amber); } .dot.red { background: var(--red); }
-.dot.pulse { box-shadow: 0 0 0 0 rgba(248,81,73,.6); animation: pulse 1.6s infinite; }
-@keyframes pulse { 70% { box-shadow: 0 0 0 8px rgba(248,81,73,0); } 100% { box-shadow: 0 0 0 0 rgba(248,81,73,0); } }
+.dot.pulse { box-shadow: 0 0 0 0 color-mix(in srgb, var(--red) 60%, transparent); animation: pulse 1.6s infinite; }
+@keyframes pulse { 70% { box-shadow: 0 0 0 8px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
 .check { color: var(--muted); font-size: 13px; cursor: default; }
 .check b { color: var(--text); font-weight: 600; text-transform: capitalize; }
 .check .plat { margin-left: 6px; white-space: nowrap; } .check .plat .dot { margin-right: 3px; }
@@ -42,18 +43,18 @@ button:hover { border-color: var(--muted); }
 .tag.done { color: var(--muted); } .tag.paused { color: var(--amber); border-color: var(--amber); }
 .graphwrap { flex: 1; position: relative; min-height: 0; }
 .graphwrap > .canvas { position: absolute; inset: 0; }
-.overlay { position: absolute; left: 12px; bottom: 12px; background: rgba(18,26,39,.92); border: 1px solid var(--line);
+.overlay { position: absolute; left: 12px; bottom: 12px; background: color-mix(in srgb, var(--panel) 92%, transparent); border: 1px solid var(--line);
   border-radius: 8px; padding: 8px 10px; font-size: 12px; z-index: 3; }
 .overlay div { display: flex; align-items: center; gap: 8px; margin: 2px 0; }
 .overlay i { width: 11px; height: 11px; border-radius: 50%; display: inline-block; }
 .stats { position: absolute; right: 12px; bottom: 12px; color: var(--muted); font-size: 12px; z-index: 3;
-  background: rgba(11,15,23,.7); padding: 4px 8px; border-radius: 6px; }
+  background: color-mix(in srgb, var(--panel) 80%, transparent); border: 1px solid var(--line); padding: 4px 8px; border-radius: 6px; }
 .stats b { color: var(--text); }
 .toolbar { position: absolute; top: 10px; left: 12px; right: 12px; display: flex; gap: 8px; align-items: center;
   flex-wrap: wrap; z-index: 3; pointer-events: none; }
 .toolbar > * { pointer-events: auto; }
 .toolbar input[type=search] { width: 220px; }
-.replay { display: flex; align-items: center; gap: 8px; background: rgba(18,26,39,.92); border: 1px solid var(--line);
+.replay { display: flex; align-items: center; gap: 8px; background: color-mix(in srgb, var(--panel) 92%, transparent); border: 1px solid var(--line);
   border-radius: 8px; padding: 4px 10px; }
 .replay input[type=range] { width: 260px; }
 .replay .t { color: var(--muted); font-size: 12px; min-width: 150px; }
@@ -104,7 +105,9 @@ button:hover { border-color: var(--muted); }
 .side a { color: var(--accent); text-decoration: none; }
 
 /* light theme */
-:root[data-theme="light"] { --bg: #f4f6fa; --panel: #ffffff; --panel2: #eef2f7; --line: #d6dde8; --text: #14202e; --muted: #5b6b80; --accent: #0b74c4; }
+:root[data-theme="light"] { --bg: #f4f6fa; --panel: #ffffff; --panel2: #eef2f7; --line: #d6dde8; --text: #14202e; --muted: #5b6b80; --accent: #0b74c4;
+  --green: #1a7f37; --amber: #9a6700; --red: #cf222e; --blue: #0969da; --shadow: rgba(20,32,46,.18); --label-halo: rgba(244,246,250,.8); }
+:root[data-theme="light"] .popover.qr img { border: 1px solid var(--line); }
 /* side panel tabs */
 .tabs { display: flex; flex-wrap: wrap; gap: 2px; margin: -4px 0 10px; border-bottom: 1px solid var(--line); }
 .tabs button { border: none; border-radius: 6px 6px 0 0; background: transparent; color: var(--muted); padding: 6px 10px; text-transform: capitalize; }
@@ -160,8 +163,7 @@ kbd { background: var(--panel2); border: 1px solid var(--line); border-radius: 4
 
 /* clickable time axis */
 .timeaxis { position: absolute; left: 12px; top: 64px; display: flex; flex-direction: column; gap: 2px; z-index: 3;
-  background: rgba(18,26,39,.85); border: 1px solid var(--line); border-radius: 8px; padding: 6px 6px 6px 4px; }
-:root[data-theme="light"] .timeaxis { background: rgba(255,255,255,.9); }
+  background: color-mix(in srgb, var(--panel) 88%, transparent); border: 1px solid var(--line); border-radius: 8px; padding: 6px 6px 6px 4px; }
 .ta-title { font-size: 10px; color: var(--accent); text-transform: uppercase; letter-spacing: .6px; padding: 0 6px 2px; }
 .ta-tick { display: flex; align-items: center; gap: 6px; background: transparent; border: 1px solid transparent; color: var(--muted);
   padding: 2px 8px 2px 4px; font-size: 12px; text-align: left; border-radius: 5px; }
@@ -175,7 +177,7 @@ kbd { background: var(--panel2); border: 1px solid var(--line); border-radius: 4
 
 /* spacing control */
 .spacing { position: relative; }
-.popover { position: absolute; top: 34px; left: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px; width: 280px; z-index: 5; box-shadow: 0 8px 24px rgba(0,0,0,.35); }
+.popover { position: absolute; top: 34px; left: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px; width: 280px; z-index: 5; box-shadow: 0 8px 24px var(--shadow); }
 .popover input[type=range] { width: 100%; margin: 6px 0 2px; }
 
 /* --- AionUi-inspired additions: badges, tasks board, context gauge, files, toasts, QR --- */
@@ -203,7 +205,7 @@ kbd { background: var(--panel2); border: 1px solid var(--line); border-radius: 4
 .dl { float: right; font-weight: 400; }
 .toasts { position: fixed; right: 16px; bottom: 16px; display: flex; flex-direction: column; gap: 8px; z-index: 20; max-width: 340px; }
 .toast { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--muted); border-radius: 8px; padding: 8px 12px;
-  font-size: 12.5px; cursor: pointer; box-shadow: 0 8px 24px rgba(0,0,0,.35); animation: slidein .25s ease-out; }
+  font-size: 12.5px; cursor: pointer; box-shadow: 0 8px 24px var(--shadow); animation: slidein .25s ease-out; }
 .toast.ok { border-left-color: var(--green); } .toast.err { border-left-color: var(--red); } .toast.warn { border-left-color: var(--amber); } .toast.info { border-left-color: var(--blue); }
 @keyframes slidein { from { transform: translateY(12px); opacity: 0; } to { transform: none; opacity: 1; } }
 .qrwrap { position: relative; }
