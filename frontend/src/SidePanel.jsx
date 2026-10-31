@@ -9,9 +9,10 @@ import Logs from './Logs.jsx'
 import Trace from './Trace.jsx'
 import Tasks from './Tasks.jsx'
 import Memory from './Memory.jsx'
+import Board from './Board.jsx'
 import { resumeCommand } from './grouping.js'
 
-const TABS = ['overview', 'sessions', 'tasks', 'analytics', 'logs', 'memory']
+const TABS = ['overview', 'sessions', 'tasks', 'board', 'analytics', 'logs', 'memory']
 
 export default function SidePanel({ node, cost, status, onClose, graph, tasks, hidden, toggleHidden, showAll, search, onSelect, tab, setTab }) {
   // tab badges (AionUi shows pending-approval counts on its sidebar): things that want attention
@@ -22,8 +23,10 @@ export default function SidePanel({ node, cost, status, onClose, graph, tasks, h
     tasks: (tasks?.delegations || []).filter(d => !/complet|fail|error|cancel/.test(d.state || '')).length
          + (tasks?.jobs || []).filter(j => j.state === 'error' || j.state === 'missed').length,
     logs: errs?.errors || 0,
+    board: tasks?.kanban ? (tasks.kanban.counts.running || 0) + (tasks.kanban.counts.blocked || 0) + (tasks.kanban.counts.review || 0) : 0,
   }
-  const badgeLevel = { sessions: 'ok', tasks: (tasks?.jobs || []).some(j => j.state === 'error' || j.state === 'missed') ? 'err' : 'ok', logs: 'err' }
+  const badgeLevel = { sessions: 'ok', tasks: (tasks?.jobs || []).some(j => j.state === 'error' || j.state === 'missed') ? 'err' : 'ok', logs: 'err',
+    board: tasks?.kanban?.attention ? 'err' : 'ok' }
   return (
     <div className="side">
       <div className="tabs">
@@ -34,6 +37,7 @@ export default function SidePanel({ node, cost, status, onClose, graph, tasks, h
       {node ? <NodeDetail node={node} graph={graph} onClose={onClose} onSelect={onSelect} links={status?.links} />
         : tab === 'sessions' ? <Sessions graph={graph} selected={null} onSelect={onSelect} search={search} />
         : tab === 'tasks' ? <Tasks tasks={tasks} onSelect={onSelect} links={status?.links} />
+        : tab === 'board' ? <Board onSelect={onSelect} links={status?.links} />
         : tab === 'analytics' ? <Analytics />
         : tab === 'logs' ? <Logs onSelect={onSelect} links={status?.links} />
         : tab === 'memory' ? <Memory />
@@ -122,6 +126,7 @@ function NodeDetail({ node, graph, onClose, onSelect, links }) {
   if (isSession && node.usage?.reasoning) rows.push(['reasoning tokens', num(node.usage.reasoning)])
   if (isSession && (node.cwd || node.git_branch)) rows.push(['working dir', <span title={node.cwd || ''}>{node.cwd || '–'}{node.git_branch ? <span className="small"> · ⎇ {node.git_branch}</span> : null}</span>])
   if (isSession && node.profile) rows.push(['profile', node.profile])
+  if (isSession && node.task) rows.push(['kanban card', <span title={`board ${node.task.board} · ${node.task.id}`}>{node.task.title} <span className="small">· {node.task.status}</span></span>])
   if (isSession && node.handoff) rows.push(['handoff', node.handoff])
   if (isSession && node.archived) rows.push(['archived', 'yes'])
   if (isSession && node.parent) rows.push([node.fork === 'branch' ? 'branched from' : 'parent', <a href="#" onClick={e => { e.preventDefault(); onSelect(`session:${node.parent}`) }}>{graph?.nodes.find(n => n.id === `session:${node.parent}`)?.label || node.parent}</a>])
