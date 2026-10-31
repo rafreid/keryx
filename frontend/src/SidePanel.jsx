@@ -50,8 +50,10 @@ export default function SidePanel({ node, cost, status, onClose, graph, tasks, h
 function ContextGauge({ c }) {
   if (!c) return <span className="small">unknown</span>
   const lvl = contextLevel(c.pct)
+  const src = { config: "window from model.context_length in Hermes' config.yaml", cache: "window Hermes probed for this model (context_length_cache.yaml)",
+    table: "window from Keryx's built-in table", assumed: 'assumed window; set CONTEXT_LENGTH or let Hermes probe the model' }[c.source] || ''
   return (
-    <div className="gauge" title={`${c.prompt_tokens.toLocaleString()} prompt tokens of ${c.limit.toLocaleString()}${c.assumed ? ' (assumed window; set CONTEXT_LENGTH)' : ''}`}>
+    <div className="gauge" title={`${c.prompt_tokens.toLocaleString()} prompt tokens of ${c.limit.toLocaleString()}${src ? ` · ${src}` : ''}`}>
       <div className="bar"><i className={lvl} style={{ width: `${Math.min(100, c.pct)}%` }} /></div>
       <span className={lvl}>{c.pct.toFixed(0)}%</span> <span className="small">{num(c.prompt_tokens)} / {num(c.limit)}{c.assumed ? ' ~' : ''}</span>
     </div>

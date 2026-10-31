@@ -267,3 +267,27 @@ def test_hermes_session_flags_reach_the_nodes(hermes_data):
     assert n["session:s-running"]["pinned"] is False
     d = keryx.build_diagnostics()
     assert d["sessions"]["flags"] == {"pinned": 1, "hidden": 1, "archived": 0, "internal": 1}
+
+
+def test_context_window_comes_from_hermes_when_it_can(hermes_data):
+    n = nodes_by_id(keryx.build_graph(24, None))
+    g = n["session:s-running"]["context"]                      # gpt-5: not cached, not in config → built-in table
+    assert g["limit"] == 400000 and g["source"] == "table" and g["assumed"] is False
+    g = n["session:s-waiting"]["context"]                      # claude-sonnet@anthropic: Hermes' probed window wins over the table
+    assert g["limit"] == 250000 and g["source"] == "cache" and g["pct"] == 20.0
+    cache = keryx.load_context_cache()
+    assert cache == {"claude-sonnet@https://api.anthropic.com/v1": 250000, "local/qwen@http://127.0.0.1:12434/v1": 64000}
+    assert keryx.model_config_section() == {"default": "gpt-5", "provider": "openai", "base_url": None, "context_length": None}
+
+
+def test_context_limit_resolution_order():
+    cfg = {"default": "gpt-5", "provider": "openai", "base_url": None, "context_length": 300000}
+    cache = {"gpt-5@https://api.openai.com/v1": 272000, "mystery@https://x": 9000}
+    assert keryx.context_limit("gpt-5", None, cfg, cache) == (300000, "config")          # explicit config beats everything
+    assert keryx.context_limit("claude-opus", None, cfg, cache) == (200000, "table")      # config applies to the default model only
+    cfg["context_length"] = None
+    assert keryx.context_limit("gpt-5", "https://api.openai.com/v1/", cfg, cache) == (272000, "cache")   # trailing slash tolerated
+    assert keryx.context_limit("gpt-5", None, cfg, cache) == (272000, "cache")            # any base_url for that model
+    assert keryx.context_limit("mystery", None, cfg, cache) == (9000, "cache")
+    assert keryx.context_limit("never-seen", None, cfg, cache) == (keryx.CONTEXT_LENGTH, "assumed")
+    assert keryx.context_limit(None, None, {"default": None, "context_length": 123}, {}) == (123, "config")

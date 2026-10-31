@@ -189,7 +189,8 @@ def data_signature() -> tuple:
                     DATA / "cron" / "executions.db", DATA / "cron" / "incidents.db", DATA / "cron" / "deliveries.db",
                     DATA / "logs" / "errors.log", DATA / "skills" / ".usage.json",
                     DATA / "memories" / "MEMORY.md", DATA / "memories" / "USER.md", DATA / "config.yaml",
-                    DATA / "gateway_state.json", DATA / "kanban.db", DATA / "kanban.db-wal", DATA / "kanban" / "current")
+                    DATA / "gateway_state.json", DATA / "kanban.db", DATA / "kanban.db-wal", DATA / "kanban" / "current",
+                    DATA / "context_length_cache.yaml")
 
 
 # ----------------------------------------------------------------- loaders
@@ -211,6 +212,8 @@ def live_rows_sql(db, alias: str = "") -> str:
 
 def load_sessions(db) -> list[dict]:
     cols = table_columns(db, "sessions")
+    model_cfg = model_config_section()
+    cache = load_context_cache()
     rows = db.execute(
         "select * from sessions order by coalesce(last_activity_at, started_at) desc limit ?", (MAX_SESSIONS,)
     ).fetchall()
@@ -226,6 +229,7 @@ def load_sessions(db) -> list[dict]:
         try:
             cfg = json.loads(s.get("model_config") or "{}") or {}
             s["prompt_tokens"] = (cfg.get("_usage_anchor") or {}).get("prompt_tokens")
+            s["base_url"] = cfg.get("base_url") if isinstance(cfg.get("base_url"), str) else None
             # Hermes copies model_config onto a compression continuation, so a marker only counts
             # when it points at this row's own parent (same rule as hermes_state_messages).
             parent = s.get("parent_session_id")
@@ -237,7 +241,7 @@ def load_sessions(db) -> list[dict]:
             pass
         if s.get("source") == "tool":
             s["fork"] = "delegate"
-        s["context_limit"] = context_limit(s.get("model"))
+        s["context_limit"], s["context_source"] = context_limit(s.get("model"), s.get("base_url"), model_cfg, cache)
         out.append(s)
     return out
 
@@ -317,12 +321,96 @@ def is_subagent(ls: dict, known: set[str]) -> bool:
     return bool(ls.get("parent_session_id")) and ls["parent_session_id"] in known
 
 
-def context_limit(model: Optional[str]) -> int:
-    m = (model or "").lower()
+def context_limit(model: Optional[str], base_url: Optional[str] = None, model_cfg: Optional[dict] = None,
+                  cache: Optional[dict] = None) -> tuple[int, str]:
+    """The model's context window and where the number came from, in the order Hermes itself resolves it:
+    an explicit `model.context_length` in config.yaml (for the configured default model), the window
+    Hermes probed and cached in context_length_cache.yaml (keyed model@base_url), Keryx's small
+    built-in table, and finally CONTEXT_LENGTH as a stated assumption."""
+    model_cfg = model_config_section() if model_cfg is None else model_cfg
+    cache = load_context_cache() if cache is None else cache
+    m = (model or "").strip()
+    explicit = model_cfg.get("context_length")
+    if explicit and (not model_cfg.get("default") or not m or m == model_cfg["default"]):
+        return explicit, "config"
+    if m and cache:
+        if base_url:
+            for key in (f"{m}@{base_url.rstrip('/')}", f"{m}@{base_url}"):
+                if cache.get(key):
+                    return cache[key], "cache"
+        hits = [v for k, v in cache.items() if k.startswith(m + "@") and v]
+        if hits:
+            return max(hits), "cache"
+    ml = m.lower()
     for key, lim in CONTEXT_LIMITS.items():
-        if key in m:
-            return lim
-    return CONTEXT_LENGTH
+        if key in ml:
+            return lim, "table"
+    return CONTEXT_LENGTH, "assumed"
+
+
+def load_context_cache() -> dict[str, int]:
+    """Hermes' context_length_cache.yaml (agent/model_metadata_cache.py): `context_lengths:` with one
+    `model@base_url: tokens` line per probed model. Read with a line scanner, no YAML dependency."""
+    out: dict[str, int] = {}
+    try:
+        lines = (DATA / "context_length_cache.yaml").read_text().splitlines()
+    except OSError:
+        return out
+    inside = False
+    for line in lines:
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        if not line[0].isspace():
+            inside = line.split(":")[0].strip() == "context_lengths"
+            continue
+        if not inside or ":" not in line:
+            continue
+        key, _, val = line.strip().rpartition(":")
+        key = key.strip().strip("'\"")
+        try:
+            n = int(val.split("#")[0].strip())
+        except ValueError:
+            continue
+        if key and n > 0:
+            out[key] = n
+    return out
+
+
+def model_config_section() -> dict:
+    """`model:` in config.yaml: the default model, provider, base_url and an explicit context_length."""
+    raw = config_section("model", {"default", "model", "provider", "base_url", "context_length"})
+    out: dict[str, Any] = {"default": raw.get("default") or raw.get("model"), "provider": raw.get("provider"), "base_url": raw.get("base_url"),
+                           "context_length": None}
+    try:
+        n = int(raw.get("context_length") or 0)
+        out["context_length"] = n if n > 0 else None
+    except ValueError:
+        pass
+    return out
+
+
+def config_section(name: str, keys: set[str]) -> dict[str, str]:
+    """Flat `key: value` pairs of one top-level section of config.yaml, read with a line scanner so
+    Keryx needs no YAML dependency. Values come back as bare strings (quotes and comments stripped)."""
+    out: dict[str, str] = {}
+    try:
+        lines = (DATA / "config.yaml").read_text().splitlines()
+    except OSError:
+        return out
+    inside = False
+    for line in lines:
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        if not line[0].isspace():
+            inside = line.split(":")[0].strip() == name
+            continue
+        if not inside or ":" not in line:
+            continue
+        key, _, val = line.strip().partition(":")
+        key = key.strip()
+        if key in keys and key not in out:
+            out[key] = val.split("#")[0].strip().strip("'\"")
+    return out
 
 
 def tool_call_files(tool_calls_json: Any) -> list[dict]:
@@ -812,7 +900,8 @@ def context_gauge(s: dict) -> Optional[dict]:
     if not pt:
         return None
     lim = s.get("context_limit") or CONTEXT_LENGTH
-    return {"prompt_tokens": pt, "limit": lim, "pct": round(100 * pt / lim, 1), "assumed": lim == CONTEXT_LENGTH}
+    src = s.get("context_source") or ("assumed" if lim == CONTEXT_LENGTH else "table")
+    return {"prompt_tokens": pt, "limit": lim, "pct": round(100 * pt / lim, 1), "assumed": src == "assumed", "source": src}
 
 
 # ----------------------------------------------------------------- builders
@@ -1076,6 +1165,10 @@ def build_status() -> dict:
         elif gw["level"] == "amber":
             level = worst_of(level, "amber")
             detail = f"gateway {gw['state']} · " + detail
+        if gw["restart_requested"]:
+            level = worst_of(level, "amber")
+            detail = "restart pending · " + detail
+            extra["restart_requested"] = True
         if gw["version"]:
             detail += f" · Hermes {gw['version']}"
     check("gateway", level, detail, **extra)
@@ -2160,28 +2253,13 @@ def memory_config() -> dict:
     """The `memory:` section of Hermes' config.yaml (limits and on/off switches), read with a small
     line scanner so Keryx needs no YAML dependency: the section is flat `key: value` pairs."""
     out = dict(MEMORY_DEFAULTS)
-    try:
-        lines = (DATA / "config.yaml").read_text().splitlines()
-    except OSError:
-        return out
-    inside = False
-    for line in lines:
-        if not line.strip() or line.lstrip().startswith("#"):
-            continue
-        if not line[0].isspace():
-            inside = line.split(":")[0].strip() == "memory"
-            continue
-        if not inside or ":" not in line:
-            continue
-        key, _, val = line.strip().partition(":")
-        val = val.split("#")[0].strip().strip("'\"")
-        key = key.strip()
+    for key, val in config_section("memory", {"memory_char_limit", "user_char_limit", "memory_enabled", "user_profile_enabled"}).items():
         if key in ("memory_char_limit", "user_char_limit"):
             try:
                 out[key] = int(val)
             except ValueError:
                 pass
-        elif key in ("memory_enabled", "user_profile_enabled"):
+        else:
             out[key] = val.lower() in ("1", "true", "yes", "on")
     return out
 
