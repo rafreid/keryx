@@ -11,6 +11,7 @@ import Tasks from './Tasks.jsx'
 import Memory from './Memory.jsx'
 import Board from './Board.jsx'
 import { resumeCommand } from './grouping.js'
+import { glyphOf } from './turns.js'
 
 const TABS = ['overview', 'sessions', 'tasks', 'board', 'analytics', 'logs', 'memory']
 
@@ -57,6 +58,34 @@ function ContextGauge({ c }) {
       <div className="bar"><i className={lvl} style={{ width: `${Math.min(100, c.pct)}%` }} /></div>
       <span className={lvl}>{c.pct.toFixed(0)}%</span> <span className="small">{num(c.prompt_tokens)} / {num(c.limit)}{c.assumed ? ' ~' : ''}</span>
     </div>
+  )
+}
+
+/** What fills the context window (hermes-workspace's context-bloat analysis, per session): parts, then tools. */
+function ContextMix({ sessionId }) {
+  const [c, setC] = useState(null)
+  React.useEffect(() => {
+    let dead = false
+    const load = () => fetch(`/api/session/${encodeURIComponent(sessionId)}/context`).then(r => r.json()).then(d => { if (!dead) setC(d) }).catch(() => {})
+    load(); const t = setInterval(load, 15000)
+    return () => { dead = true; clearInterval(t) }
+  }, [sessionId])
+  if (!c || c.error || !c.total_chars) return null
+  const parts = c.parts.filter(p => p.chars > 0)
+  return (
+    <>
+      <h3>What fills the context <span className="small" style={{ textTransform: 'none', letterSpacing: 0 }}>· {num(c.total_chars)} chars ≈ {num(c.est_tokens)} tokens{c.segments.length > 1 ? ' · current segment' : ''}</span></h3>
+      <div className="mix" title={parts.map(p => `${p.label}: ${(p.share * 100).toFixed(0)}%`).join(' · ')}>
+        {parts.map(p => <i key={p.kind} className={p.kind} style={{ width: `${p.share * 100}%` }} />)}
+      </div>
+      <div className="small mixl">{parts.map(p => <span key={p.kind}><i className={p.kind} />{p.label} {(p.share * 100).toFixed(0)}%</span>)}</div>
+      {c.tools.length > 0 && <div className="mixtools">
+        {c.tools.slice(0, 6).map(t => <div key={t.name} className="mt" title={`${t.calls} call${t.calls === 1 ? '' : 's'} · ${t.chars.toLocaleString()} chars`}>
+          <span className="n">{glyphOf(t)} {t.name}</span><span className="b"><i style={{ width: `${Math.max(1, t.share * 100)}%` }} /></span><span className="small">{(t.share * 100).toFixed(0)}%</span>
+        </div>)}
+      </div>}
+      {c.biggest[0] && c.biggest[0].chars > 2000 && <div className="small">largest output: {c.biggest[0].name}{c.biggest[0].title ? ` ${c.biggest[0].title}` : ''} · {num(c.biggest[0].chars)} chars · {ago(c.biggest[0].ts)}</div>}
+    </>
   )
 }
 
@@ -155,6 +184,7 @@ function NodeDetail({ node, graph, onClose, onSelect, links }) {
       {isSession && <Resume node={node} />}
       {node.type === 'cron' && links?.cron && <div className="small" style={{ marginTop: 6 }}><a href={links.cron} target="_blank" rel="noreferrer">manage in the Hermes dashboard ↗</a></div>}
       {isSession && <Plan sessionId={node.id.replace('session:', '')} />}
+      {isSession && <ContextMix sessionId={node.id.replace('session:', '')} />}
       {isSession && node.files?.length > 0 && <><h3>Files touched <span className="small" style={{ textTransform: 'none', letterSpacing: 0 }}>· ✎ write ✚ patch 👁 read ⌕ search</span></h3><Files files={node.files} /></>}
       {isSession && <><h3>Trace</h3><Trace sessionId={node.id.replace('session:', '')} /></>}
       {node.type === 'tool' && <><h3>Calls</h3><Trace sessionId={node.session} tool={node.label} /></>}

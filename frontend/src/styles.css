@@ -292,3 +292,15 @@ tr.off td { opacity: .55; }
 .provmix .donut i { position: absolute; inset: 16px; border-radius: 50%; background: var(--panel); }
 .provmix .legend { min-width: 0; } .provmix .sw { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; }
 .clock svg { display: block; margin: 4px 0; } .clock .hours .bar { fill: var(--accent); opacity: .8; }
+
+/* what fills the context */
+.mix { display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: var(--panel2); margin: 4px 0; }
+.mix i, .mixl i { display: inline-block; height: 100%; }
+.mixl i { width: 8px; height: 8px; border-radius: 2px; margin: 0 4px 0 0; vertical-align: middle; }
+.mixl span { margin-right: 8px; white-space: nowrap; }
+.mix .user, .mixl .user { background: var(--accent); } .mix .assistant, .mixl .assistant { background: var(--green); }
+.mix .calls, .mixl .calls { background: var(--blue); } .mix .tools, .mixl .tools { background: var(--amber); }
+.mix .summary, .mixl .summary { background: var(--muted); }
+.mixtools { margin-top: 4px; } .mixtools .mt { display: grid; grid-template-columns: 1fr 90px 32px; gap: 6px; align-items: center; font-size: 12px; }
+.mixtools .n { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mixtools .b { height: 5px; background: var(--panel2); border-radius: 3px; } .mixtools .b i { display: block; height: 100%; background: var(--amber); border-radius: 3px; }
