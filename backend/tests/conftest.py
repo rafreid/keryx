@@ -120,8 +120,9 @@ def write_state_db(path: Path) -> None:
     msg("s-running", "tool", tool_result("built"), t0 + 20, tool_name="terminal", tool_call_id="c1", active=0, compacted=1)
     msg("s-running", "tool", tool_result("", 1, "permission denied"), NOW - 30, tool_name="write_file", tool_call_id="c2", active=0, compacted=1)
 
-    # s-waiting: open, Hermes replied with no tool calls → waiting for the human
-    session("s-waiting", "telegram", NOW - 3 * H, last=NOW - 10 * 60)
+    # s-waiting: open, Hermes replied with no tool calls → waiting for the human; its model's window is in Hermes' cache
+    session("s-waiting", "telegram", NOW - 3 * H, last=NOW - 10 * 60, model="claude-sonnet",
+            cfg={"_usage_anchor": {"prompt_tokens": 50000}, "base_url": "https://api.anthropic.com/v1/"})
     msg("s-waiting", "user", "what time is it", NOW - 3 * H)
     msg("s-waiting", "assistant", "It is late.", NOW - 10 * 60, finish_reason="stop")
 
@@ -258,7 +259,9 @@ def write_memory(root: Path) -> None:
     (root / "memories" / "MEMORY.md").write_text("The repo uses pytest.\n§\nDeploys go through docker compose on the Proxmox host.\n§\n"
                                                  "[BLOCKED: MEMORY.md entry contained threat pattern(s): x]")
     (root / "memories" / "USER.md").write_text("Prefers short answers.")
-    (root / "config.yaml").write_text("model:\n  default: gpt-5\n\nmemory:\n  # notes\n  memory_enabled: true\n"
+    (root / "context_length_cache.yaml").write_text("context_lengths:\n  claude-sonnet@https://api.anthropic.com/v1: 250000\n"
+                                                    "  'local/qwen@http://127.0.0.1:12434/v1': 64000\n  broken@x: abc\n")
+    (root / "config.yaml").write_text("model:\n  default: gpt-5\n  provider: openai\n\nmemory:\n  # notes\n  memory_enabled: true\n"
                                       "  user_profile_enabled: false\n  memory_char_limit: 100   # tiny, for the test\n"
                                       "  user_char_limit: 'abc'\n\nother:\n  memory_char_limit: 5\n")
 

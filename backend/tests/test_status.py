@@ -136,3 +136,12 @@ def test_diagnostics_carry_hermes_state(client):
     plats = {p["name"]: p for p in d["hermes"]["platforms"]}
     assert plats["whatsapp"]["state"] == "retrying" and "abc123" not in plats["whatsapp"]["error"]
     assert "argv" not in json.dumps(d["hermes"]) and "SECRET-ARGV" not in client.get("/api/diagnostics").text
+
+
+def test_restart_pending_is_a_warning(hermes_data):
+    from conftest import write_gateway_state
+    write_gateway_state(hermes_data, restart_requested=True)
+    keryx.configure(hermes_data)
+    g = checks()["gateway"]
+    assert g["level"] == "amber" and g["detail"].startswith("restart pending") and g["restart_requested"] is True
+    assert keryx.build_status()["hermes"]["restart_requested"] is True
