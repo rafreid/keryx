@@ -283,10 +283,81 @@ def write_gateway_state(root: Path, **over) -> None:
     (root / "gateway_state.json").write_text(json.dumps(state))
 
 
+KANBAN_DDL = """
+create table tasks (id text primary key, title text not null, body text, assignee text, status text not null, priority integer default 0,
+    created_by text, created_at integer not null, started_at integer, completed_at integer, workspace_kind text not null default 'scratch',
+    workspace_path text, branch_name text, project_id text, claim_lock text, claim_expires integer, tenant text, result text,
+    idempotency_key text, consecutive_failures integer not null default 0, worker_pid integer, worker_started_at integer,
+    last_failure_error text, max_runtime_seconds integer, last_heartbeat_at integer, current_run_id integer, workflow_template_id text,
+    current_step_key text, skills text, model_override text, provider_override text, reasoning_effort text, max_retries integer,
+    goal_mode integer, goal_max_turns integer, session_id text, block_kind text);
+create table task_links (parent_id text not null, child_id text not null, primary key (parent_id, child_id));
+create table task_comments (id integer primary key autoincrement, task_id text not null, author text not null, body text not null, created_at integer not null);
+create table task_events (id integer primary key autoincrement, task_id text not null, run_id integer, kind text not null, payload text, created_at integer not null);
+create table task_runs (id integer primary key autoincrement, task_id text not null, profile text, step_key text, status text not null,
+    claim_lock text, claim_expires integer, worker_pid integer, worker_started_at integer, max_runtime_seconds integer, last_heartbeat_at integer,
+    started_at integer not null, ended_at integer, outcome text, summary text, metadata text, error text);
+create table task_attachments (id integer primary key autoincrement, task_id text not null, filename text, content_type text, created_at integer not null);
+"""
+
+
+def write_kanban(root: Path) -> None:
+    """Hermes' kanban queue (hermes_cli/kanban_db.py): the default board at kanban.db, a second board under
+    kanban/boards/<slug>/, the `current` pointer. Epoch seconds as integers, the way Hermes stores them."""
+    n = int(NOW)
+    db = sqlite3.connect(root / "kanban.db")
+    db.executescript(KANBAN_DDL)
+
+    def task(tid, title, status, **kw):
+        cols = dict(id=tid, title=title, status=status, created_at=kw.pop("created_at", n - 6 * H), **kw)
+        db.execute(f"insert into tasks ({','.join(cols)}) values ({','.join('?' * len(cols))})", list(cols.values()))
+
+    task("t-triage", "Decide on the caching layer", "triage", body="Options: redis or sqlite.", created_by="rafael")
+    task("t-todo", "Write the migration #infra", "todo", priority=2, body="Add the sessions.pinned column.")
+    task("t-ready", "Run the benchmark", "ready", assignee="bench")
+    task("t-run-ok", "Fix the build on main", "running", assignee="builder", started_at=n - 1200, last_heartbeat_at=n - 20,
+         worker_pid=4242, current_run_id=1, session_id="s-running", workspace_kind="worktree", workspace_path="/work/repo", branch_name="kanban/t-run-ok",
+         skills=json.dumps(["git-workflow"]), max_runtime_seconds=7200)
+    task("t-run-stale", "Index the docs", "running", assignee="indexer", started_at=n - 2 * H, last_heartbeat_at=n - 2 * H + 30,
+         worker_pid=4343, current_run_id=2, consecutive_failures=1)
+    task("t-blocked", "Deploy the migration", "blocked", block_kind="parents_not_done", consecutive_failures=3,
+         last_failure_error="deploy failed: token=sk-abcdefghijkl rejected")
+    task("t-review", "Draft the release notes", "review", assignee="writer", result="Notes drafted in docs/RELEASE.md", started_at=n - 3 * H)
+    task("t-done", "Rotate the API keys", "done", assignee="ops", started_at=n - 30 * H, completed_at=n - 29 * H, result="Keys rotated.")
+    task("t-arch", "Old idea", "archived", created_at=n - 40 * 86400)
+    db.execute("insert into task_links values ('t-todo', 't-blocked')")
+    db.execute("insert into task_comments (task_id, author, body, created_at) values ('t-run-ok', 'rafael', 'Please keep the tests green.', ?)", (n - 1100,))
+    db.execute("insert into task_comments (task_id, author, body, created_at) values ('t-run-ok', 'builder', 'On it: build fixed, running tests.', ?)", (n - 600,))
+    db.execute("insert into task_events (task_id, run_id, kind, payload, created_at) values ('t-run-ok', NULL, 'created', ?, ?)",
+               (json.dumps({"by": "rafael", "secret": "sk-abcdefghijklmnop"}), n - 6 * H))
+    db.execute("insert into task_events (task_id, run_id, kind, payload, created_at) values ('t-run-ok', 1, 'claimed', ?, ?)",
+               (json.dumps({"by": "builder"}), n - 1200))
+    db.execute("insert into task_events (task_id, run_id, kind, payload, created_at) values ('t-run-ok', NULL, 'commented', ?, ?)",
+               (json.dumps({"author": "rafael"}), n - 1100))
+    db.execute("insert into task_runs (task_id, profile, status, worker_pid, last_heartbeat_at, started_at, outcome, summary) "
+               "values ('t-run-ok', 'builder', 'running', 4242, ?, ?, NULL, NULL)", (n - 20, n - 1200))
+    db.execute("insert into task_runs (task_id, profile, status, worker_pid, last_heartbeat_at, started_at) "
+               "values ('t-run-stale', 'indexer', 'running', 4343, ?, ?)", (n - 2 * H + 30, n - 2 * H))
+    db.execute("insert into task_runs (task_id, profile, status, started_at, ended_at, outcome, summary) "
+               "values ('t-done', 'ops', 'completed', ?, ?, 'completed', 'Rotated 3 keys.')", (n - 30 * H, n - 29 * H))
+    db.execute("insert into task_runs (task_id, profile, status, started_at, ended_at, outcome, error) "
+               "values ('t-blocked', 'ops', 'failed', ?, ?, 'failed', 'deploy failed: token=sk-abcdefghijkl rejected')", (n - 5 * H, n - 5 * H + 60))
+    db.commit(); db.close()
+    research = root / "kanban" / "boards" / "research"
+    research.mkdir(parents=True)
+    (research / "board.json").write_text(json.dumps({"name": "Research", "slug": "research"}))
+    db = sqlite3.connect(research / "kanban.db")
+    db.executescript(KANBAN_DDL)
+    db.execute("insert into tasks (id, title, status, created_at) values ('r-1', 'Read the paper', 'todo', ?)", (n - H,))
+    db.commit(); db.close()
+    (root / "kanban" / "current").write_text("default\n")
+
+
 @pytest.fixture
 def hermes_data(tmp_path: Path):
     write_memory(tmp_path)
     write_gateway_state(tmp_path)
+    write_kanban(tmp_path)
     write_state_db(tmp_path / "state.db")
     write_cron(tmp_path / "cron")
     write_logs(tmp_path / "logs")

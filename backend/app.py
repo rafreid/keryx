@@ -175,6 +175,7 @@ def configure(data_dir: Path) -> None:
     CRON_EXEC = Snapshot(DATA / "cron" / "executions.db")
     CRON_INCIDENTS = Snapshot(DATA / "cron" / "incidents.db")
     CRON_DELIVERIES = Snapshot(DATA / "cron" / "deliveries.db")
+    _KANBAN.clear()
     with _cache_lock:
         _cache.clear()
 
@@ -184,7 +185,7 @@ def data_signature() -> tuple:
                     DATA / "cron" / "executions.db", DATA / "cron" / "incidents.db", DATA / "cron" / "deliveries.db",
                     DATA / "logs" / "errors.log", DATA / "skills" / ".usage.json",
                     DATA / "memories" / "MEMORY.md", DATA / "memories" / "USER.md", DATA / "config.yaml",
-                    DATA / "gateway_state.json")
+                    DATA / "gateway_state.json", DATA / "kanban.db", DATA / "kanban.db-wal", DATA / "kanban" / "current")
 
 
 # ----------------------------------------------------------------- loaders
@@ -885,6 +886,7 @@ def build_graph(hours: float, at: Optional[float]) -> dict:
         p = s.get("parent_session_id")
         if p in id_set:
             children[p] = children.get(p, 0) + 1
+    kb_index = kanban_session_index()       # worker sessions carry the kanban card they work on
 
     for s in sel:
         sid = s["id"]
@@ -921,6 +923,7 @@ def build_graph(hours: float, at: Optional[float]) -> dict:
             cwd=s.get("cwd"), git_branch=s.get("git_branch"), profile=s.get("profile_name"),
             archived=bool(s.get("archived")), handoff=s.get("handoff_state"), user=s.get("user_id"),
             plan=plan_of(todos, s["segments"]),
+            task=next((kb_index[x] for x in s["segments"] if x in kb_index), None),
             val=3 + math.log1p(s.get("message_count") or 0),
         )
         parent = s.get("parent_session_id")
@@ -1152,6 +1155,25 @@ def build_status() -> dict:
                 stale += 1
     check("sessions", "amber" if orphans else "green",
           f"{running} running, {waiting} waiting for you, {stale} stale, {orphans} orphaned (24h)")
+
+    # kanban: only when the board has tasks (an empty board is the normal state on most installs)
+    kb = build_kanban()
+    if kb["board"] is not None and kb["total"]:
+        c = kb["counts"]
+        open_ = kb["total"] - c.get("done", 0)
+        silent = [a for a in kb["attention"] if a["why"] == "worker silent"]
+        if silent:
+            check("kanban", "red", f"{len(silent)} running task(s) with a silent worker: " + ", ".join(a["title"] for a in silent[:3]),
+                  board=kb["board"], counts=c)
+        elif kb["attention"]:
+            check("kanban", "amber", f"{len(kb['attention'])} task(s) failing repeatedly: " + ", ".join(a["title"] for a in kb["attention"][:3]),
+                  board=kb["board"], counts=c)
+        elif c.get("blocked"):
+            check("kanban", "amber", f"{c['blocked']} blocked · {c.get('running', 0)} running · {c.get('review', 0)} in review · {open_} open",
+                  board=kb["board"], counts=c)
+        else:
+            check("kanban", "green", f"{c.get('running', 0)} running · {c.get('review', 0)} in review · {open_} open · {c.get('done', 0)} done",
+                  board=kb["board"], counts=c)
 
     # storage: how big Hermes' data has grown and whether the disk under it has room (hermes-webui's
     # system panel shows disk use; the WAL size matters on its own: a WAL that keeps growing means
@@ -1424,6 +1446,216 @@ def cron_jobs_detail(jobs: list[dict], execs: list[dict], now: float, incidents:
     return out
 
 
+# ----------------------------------------------------------------- kanban (Hermes' task queue)
+# Lane order and glyphs are hermes_cli.kanban_workflow.DEFAULT_WORKFLOW; `archived` is appended on request.
+KANBAN_LANES = [("triage", "Triage", "◇"), ("todo", "Todo", "◻"), ("scheduled", "Scheduled", "⏱"), ("ready", "Ready", "▶"),
+                ("running", "Running", "●"), ("blocked", "Blocked", "⊘"), ("review", "Review", "◎"), ("done", "Done", "✓")]
+KANBAN_ARCHIVED = "archived"
+KANBAN_STALE_HEARTBEAT = 600            # a running worker heartbeats every tick; silence this long means it died
+_KANBAN: dict[str, Snapshot] = {}       # one in-memory copy per board database
+
+
+def kanban_boards() -> list[dict]:
+    """Every board Hermes keeps: `default` at <data>/kanban.db (hermes_cli.kanban_db keeps it there for
+    back-compat), the others at <data>/kanban/boards/<slug>/kanban.db with a board.json beside them.
+    `<data>/kanban/current` names the board the CLI acts on; absent means default."""
+    current = "default"
+    try:
+        current = (DATA / "kanban" / "current").read_text().strip() or "default"
+    except OSError:
+        pass
+    boards: list[dict] = []
+
+    def meta(slug: str) -> dict:
+        try:
+            d = json.loads((DATA / "kanban" / "boards" / slug / "board.json").read_text())
+            return d if isinstance(d, dict) else {}
+        except (OSError, ValueError):
+            return {}
+
+    if (DATA / "kanban.db").exists():
+        m = meta("default")
+        boards.append({"slug": "default", "name": m.get("name") or m.get("display_name") or "default", "path": str(DATA / "kanban.db"),
+                       "archived": bool(m.get("archived"))})
+    try:
+        dirs = sorted(d for d in (DATA / "kanban" / "boards").iterdir() if d.is_dir() and d.name != "default")
+    except OSError:
+        dirs = []
+    for d in dirs:
+        if (d / "kanban.db").exists():
+            m = meta(d.name)
+            boards.append({"slug": d.name, "name": m.get("name") or m.get("display_name") or d.name, "path": str(d / "kanban.db"),
+                           "archived": bool(m.get("archived"))})
+    for b in boards:
+        b["current"] = b["slug"] == current
+    return boards
+
+
+def kanban_db(board: Optional[str]):
+    """Snapshot connection for a board (the current one when `board` is empty); None if there is no such board."""
+    boards = kanban_boards()
+    pick = next((b for b in boards if b["slug"] == board), None) if board else next((b for b in boards if b["current"]), None) or (boards[0] if boards else None)
+    if not pick:
+        return None, None
+    snap = _KANBAN.get(pick["path"])
+    if snap is None:
+        snap = _KANBAN[pick["path"]] = Snapshot(Path(pick["path"]))
+    return snap.get(), pick
+
+
+def _kanban_task(r, cols: set[str], now: float, links_up: dict, links_down: dict, comments: dict, runs: dict) -> dict:
+    g = lambda k: r[k] if k in cols else None
+    status = g("status") or "triage"
+    hb = ts(g("last_heartbeat_at"))
+    started = ts(g("started_at"))
+    max_rt = g("max_runtime_seconds")
+    stale = status == "running" and ((hb is not None and now - hb > KANBAN_STALE_HEARTBEAT)
+                                     or (hb is None and started is not None and now - started > KANBAN_STALE_HEARTBEAT)
+                                     or (max_rt and started and now - started > max_rt))
+    skills = g("skills")
+    try:
+        skills = json.loads(skills) if isinstance(skills, str) else skills
+    except ValueError:
+        skills = None
+    last = runs.get(r["id"])
+    return {
+        "id": r["id"], "title": short(g("title"), 140) or r["id"], "body": short(g("body"), 400), "assignee": g("assignee"),
+        "status": status, "priority": g("priority") or 0, "created_by": g("created_by"), "created_at": ts(g("created_at")),
+        "started_at": started, "completed_at": ts(g("completed_at")), "workspace_kind": g("workspace_kind"),
+        "workspace_path": g("workspace_path"), "branch": g("branch_name"), "project": g("project_id"), "session_id": g("session_id"),
+        "result": short(g("result"), 400), "failures": g("consecutive_failures") or 0, "last_error": redact(short(g("last_failure_error"), 200) or "") or None,
+        "heartbeat": hb, "worker_pid": g("worker_pid"), "run_id": g("current_run_id"), "block_kind": g("block_kind"),
+        "skills": skills if isinstance(skills, list) else None, "model": g("model_override"), "step": g("current_step_key"),
+        "parents": links_up.get(r["id"], []), "children": links_down.get(r["id"], []), "comments": comments.get(r["id"], 0),
+        "runs": last["n"] if last else 0, "last_run": last["row"] if last else None, "stale": bool(stale),
+        "age": now - (ts(g("created_at")) or now),
+    }
+
+
+def _kanban_run(r, cols: set[str]) -> dict:
+    g = lambda k: r[k] if k in cols else None
+    return {"id": r["id"], "profile": g("profile"), "step": g("step_key"), "status": g("status"), "outcome": g("outcome"),
+            "summary": short(g("summary"), 300), "error": redact(short(g("error"), 200) or "") or None,
+            "started_at": ts(g("started_at")), "ended_at": ts(g("ended_at")), "heartbeat": ts(g("last_heartbeat_at")),
+            "worker_pid": g("worker_pid"), "duration": ((ts(g("ended_at")) or time.time()) - ts(g("started_at"))) if ts(g("started_at")) else None}
+
+
+def build_kanban(board: Optional[str] = None, include_archived: bool = False) -> dict:
+    """The board as lanes (hermes-desktop's Kanban tab, read-only): every task with its links, comment
+    count and latest run, plus which running workers have gone quiet."""
+    now = time.time()
+    db, pick = kanban_db(board)
+    boards = [{k: b[k] for k in ("slug", "name", "archived", "current")} for b in kanban_boards()]
+    if db is None:
+        return {"generated_at": now, "board": None, "boards": boards, "lanes": [], "counts": {}, "attention": [], "total": 0}
+    try:
+        cols = table_columns(db, "tasks")
+        rows = db.execute("select * from tasks order by priority desc, created_at asc").fetchall()
+        links = db.execute("select parent_id, child_id from task_links").fetchall() if "task_links" in _tables(db) else []
+        comments = dict(db.execute("select task_id, count(*) from task_comments group by task_id").fetchall()) if "task_comments" in _tables(db) else {}
+        run_rows = db.execute("select * from task_runs order by started_at desc, id desc limit 2000").fetchall() if "task_runs" in _tables(db) else []
+    except sqlite3.OperationalError as e:
+        return {"generated_at": now, "board": pick["slug"], "boards": boards, "lanes": [], "counts": {}, "attention": [], "total": 0, "error": str(e)}
+    up: dict[str, list] = {}
+    down: dict[str, list] = {}
+    for parent, child in links:
+        up.setdefault(child, []).append(parent)
+        down.setdefault(parent, []).append(child)
+    run_cols = table_columns(db, "task_runs") if run_rows else set()
+    runs: dict[str, dict] = {}
+    for rr in run_rows:
+        cur = runs.setdefault(rr["task_id"], {"n": 0, "row": _kanban_run(rr, run_cols)})
+        cur["n"] += 1
+    tasks = [_kanban_task(r, cols, now, up, down, comments, runs) for r in rows]
+    by_status: dict[str, list] = {}
+    for t in tasks:
+        by_status.setdefault(t["status"], []).append(t)
+    lanes = [{"key": k, "label": label, "glyph": glyph, "tasks": by_status.pop(k, [])} for k, label, glyph in KANBAN_LANES]
+    archived = by_status.pop(KANBAN_ARCHIVED, [])
+    for k, extra in by_status.items():          # a custom workflow column Keryx does not know: still shown
+        lanes.append({"key": k, "label": k, "glyph": "·", "tasks": extra})
+    if include_archived:
+        lanes.append({"key": KANBAN_ARCHIVED, "label": "Archived", "glyph": "▪", "tasks": archived})
+    counts = {l["key"]: len(l["tasks"]) for l in lanes}
+    counts["archived"] = len(archived)
+    attention = ([{"id": t["id"], "title": t["title"], "why": "worker silent"} for t in tasks if t["stale"]]
+                 + [{"id": t["id"], "title": t["title"], "why": f"{t['failures']} failures in a row"} for t in tasks
+                    if t["failures"] >= 2 and t["status"] not in ("done", KANBAN_ARCHIVED)])
+    return {"generated_at": now, "board": pick["slug"], "board_name": pick["name"], "boards": boards, "lanes": lanes, "counts": counts,
+            "attention": attention, "total": len(tasks) - len(archived), "stale_after": KANBAN_STALE_HEARTBEAT}
+
+
+def build_kanban_task(task_id: str, board: Optional[str] = None) -> dict:
+    """One card in full: comments, the event timeline and the run history (hermes-desktop's detail drawer)."""
+    now = time.time()
+    db, pick = kanban_db(board)
+    if db is None:
+        return {"error": "no kanban board"}
+    r = db.execute("select * from tasks where id = ?", (task_id,)).fetchone()
+    if not r:
+        return {"error": "task not found"}
+    cols = table_columns(db, "tasks")
+    tables = _tables(db)
+    up = {task_id: [x[0] for x in db.execute("select parent_id from task_links where child_id = ?", (task_id,))]} if "task_links" in tables else {}
+    down = {task_id: [x[0] for x in db.execute("select child_id from task_links where parent_id = ?", (task_id,))]} if "task_links" in tables else {}
+    comments = []
+    if "task_comments" in tables:
+        comments = [{"id": c["id"], "author": c["author"], "body": short(c["body"], 600), "created_at": ts(c["created_at"])}
+                    for c in db.execute("select * from task_comments where task_id = ? order by created_at asc, id asc limit 50", (task_id,))]
+    runs = []
+    if "task_runs" in tables:
+        rc = table_columns(db, "task_runs")
+        runs = [_kanban_run(x, rc) for x in db.execute("select * from task_runs where task_id = ? order by started_at desc, id desc limit 20", (task_id,))]
+    events = []
+    if "task_events" in tables:
+        for e in db.execute("select * from task_events where task_id = ? order by created_at desc, id desc limit 60", (task_id,)):
+            payload = e["payload"]
+            try:
+                payload = json.loads(payload) if isinstance(payload, str) else payload
+            except ValueError:
+                pass
+            if isinstance(payload, dict):
+                payload = {k: v for k, v in payload.items() if k in ("by", "actor", "author", "reason", "parent", "child", "priority", "filename", "fields", "outcome", "status", "from", "to")}
+            text = ", ".join(f"{k} {v}" for k, v in payload.items()) if isinstance(payload, dict) else payload
+            events.append({"id": e["id"], "kind": e["kind"], "run_id": e["run_id"], "created_at": ts(e["created_at"]),
+                           "detail": redact(short(text if isinstance(text, str) else json.dumps(text), 200) or "") or None})
+        events.reverse()
+    attachments = 0
+    if "task_attachments" in tables:
+        attachments = db.execute("select count(*) from task_attachments where task_id = ?", (task_id,)).fetchone()[0]
+    task = _kanban_task(r, cols, now, up, down, {task_id: len(comments)}, {task_id: {"n": len(runs), "row": runs[0]}} if runs else {})
+    task["body"] = short(r["body"] if "body" in cols else None, 4000) or None
+    task["result"] = short(r["result"] if "result" in cols else None, 4000) or None
+    return {"generated_at": now, "board": pick["slug"], "task": task, "comments": comments, "runs": runs, "events": events, "attachments": attachments}
+
+
+def _tables(db) -> set[str]:
+    return {r[0] for r in db.execute("select name from sqlite_master where type = 'table'")}
+
+
+def kanban_session_index() -> dict[str, dict]:
+    """session id → the kanban task a worker session belongs to (tasks.session_id), across every board."""
+    out: dict[str, dict] = {}
+    for b in kanban_boards():
+        db, pick = kanban_db(b["slug"])
+        if db is None or "session_id" not in table_columns(db, "tasks"):
+            continue
+        try:
+            for r in db.execute("select id, title, status, session_id from tasks where session_id is not null and session_id <> ''"):
+                out[r["session_id"]] = {"id": r["id"], "title": short(r["title"], 80), "status": r["status"], "board": pick["slug"]}
+        except sqlite3.OperationalError:
+            pass
+    return out
+
+
+def kanban_overview() -> Optional[dict]:
+    """Counts only, for tab badges and the diagnostics bundle; None when Hermes has no board."""
+    k = build_kanban()
+    if k["board"] is None:
+        return None
+    return {"board": k["board"], "boards": len(k["boards"]), "counts": k["counts"], "attention": len(k["attention"]), "total": k["total"]}
+
+
 def build_tasks() -> dict:
     """AionUi-style task board: async delegations (what subagents were asked to do) + scheduled jobs."""
     now = time.time()
@@ -1474,7 +1706,7 @@ def build_tasks() -> dict:
     for i in incidents:
         i["job"] = names.get(i["job_id"], i["job_id"])
     return {"generated_at": now, "delegations": delegations, "jobs": cron_jobs_detail(jobs, execs, now, incidents),
-            "scheduler": scheduler_state(now), "incidents": incidents[:50], "deliveries": load_deliveries()}
+            "scheduler": scheduler_state(now), "incidents": incidents[:50], "deliveries": load_deliveries(), "kanban": kanban_overview()}
 
 
 SECRET_RE = re.compile(r"(sk-[A-Za-z0-9_\-]{8,}|plf_[A-Za-z0-9]{6,}|\d{6,}:[A-Za-z0-9_\-]{20,}|bearer\s+\S+|token=\S+)", re.I)
@@ -1518,6 +1750,7 @@ def build_diagnostics() -> dict:
             out["schema_error"] = str(e)
     status = build_status()
     out["health"] = [{"name": c["name"], "level": c["level"], "detail": redact(c["detail"])} for c in status["checks"]]
+    out["kanban"] = kanban_overview()
     gw = gateway_summary(load_gateway_state(), now)
     out["hermes"] = {k: gw[k] for k in ("state", "desired", "version", "sha", "age", "stale", "profiles", "restart_requested", "exit_reason")} | {
         "platforms": [{k: p[k] for k in ("name", "state", "level", "error_code", "needs_attention")} | {"error": redact(p["error"] or "")} for p in gw["platforms"]]} if gw else None
@@ -2103,6 +2336,17 @@ def api_search(q: str = Query("", max_length=200), limit: int = Query(30, ge=1, 
 @app.get("/api/tasks")
 def api_tasks():
     return cached("tasks", build_tasks)
+
+
+@app.get("/api/kanban")
+def api_kanban(board: Optional[str] = None, archived: bool = False):
+    """Hermes' kanban board as lanes; `board` picks a board slug (default: the current one)."""
+    return cached("kanban", build_kanban, board or None, archived)
+
+
+@app.get("/api/kanban/{task_id}")
+def api_kanban_task(task_id: str, board: Optional[str] = None):
+    return cached("kanban-task", build_kanban_task, task_id, board or None)
 
 
 @app.get("/api/diagnostics")
