@@ -1,6 +1,6 @@
 :root {
   --bg: #0b0f17; --panel: #121a27; --panel2: #182234; --line: #223049; --text: #e6edf7; --muted: #8fa0b8;
-  --accent: #6ad1ff; --green: #3fb950; --amber: #d29922; --red: #f85149; --blue: #58a6ff; --shadow: rgba(0,0,0,.35);
+  --accent: #6ad1ff; --green: #3fb950; --amber: #e3b341; --red: #f85149; --blue: #58a6ff; --shadow: rgba(0,0,0,.35);
   --label-halo: rgba(11,15,23,.75);   /* behind graph labels so they read on busy backgrounds */
 }
 * { box-sizing: border-box; }
@@ -11,6 +11,7 @@ html, body, #root { margin: 0; height: 100%; background: var(--bg); color: var(-
   border-bottom: 1px solid var(--line); background: var(--panel); }
 .header h1 { font-size: 24px; margin: 0; font-weight: 650; letter-spacing: .3px; }
 .header h1 .ver { font-size: 14px; font-weight: 500; color: var(--muted); margin-left: 6px; vertical-align: 2px; }
+.header h1 .tz { font-weight: 400; letter-spacing: 0; cursor: help; vertical-align: 2px; }
 .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 6px; vertical-align: middle; }
 .dot.green { background: var(--green); } .dot.amber { background: var(--amber); } .dot.red { background: var(--red); }
 .dot.pulse { box-shadow: 0 0 0 0 color-mix(in srgb, var(--red) 60%, transparent); animation: pulse 1.6s infinite; }
@@ -30,6 +31,8 @@ select, button, input { background: var(--panel2); color: var(--text); border: 1
   border-radius: 6px; padding: 5px 8px; font: inherit; }
 button.on { border-color: var(--accent); color: var(--accent); }
 button:hover { border-color: var(--muted); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.srow:focus-visible, .att:focus-visible, .kcard:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .body { flex: 1; display: flex; min-height: 0; }
 .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .now { display: flex; gap: 10px; overflow-x: auto; padding: 10px 14px; border-bottom: 1px solid var(--line);

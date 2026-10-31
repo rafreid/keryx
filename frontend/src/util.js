@@ -9,6 +9,9 @@ export const dur = s => {
   return `${(s / 86400) | 0}d ${((s % 86400) / 3600) | 0}h`
 }
 export const ago = t => (t ? dur(Date.now() / 1000 - t) + ' ago' : '–')
+/** '1 call', '2 calls': plain plurals for user-facing text. */
+export const plural = (n, word, pl) => `${n ?? 0} ${(n ?? 0) === 1 ? word : (pl || word + 's')}`
+export const tz = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone } catch { return 'local time' } }
 export const num = n => (n == null ? '–' : n >= 1e6 ? (n / 1e6).toFixed(2) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'k' : String(n))
 
 export const TYPE = {
@@ -22,9 +25,9 @@ export const TYPE = {
 }
 export const STATUS = {
   running:       { color: '#3fb950', label: 'running' },
-  waiting:       { color: '#58a6ff', label: 'waiting for you (turn finished, chat open)' },
-  stale:         { color: '#d29922', label: 'stale (idle > 30 min)' },
-  ended:         { color: '#4f8f6a', label: 'ended cleanly' },
+  waiting:       { color: '#58a6ff', label: 'waiting for you' },
+  stale:         { color: '#d29922', label: 'stale, idle over 30 min' },
+  ended:         { color: '#4f8f6a', label: 'ended' },
   ended_by_user: { color: '#6b7a8c', label: 'closed by user' },
   orphaned:      { color: '#f85149', label: 'orphaned by a restart' },
   failed:        { color: '#f85149', label: 'ended with tool errors' },

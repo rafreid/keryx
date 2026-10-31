@@ -56,10 +56,10 @@ export default function Trace({ sessionId, tool }) {
             <button key={k} className={filter === k ? 'on' : ''} onClick={() => setFilter(k)} disabled={k === 'changes' && !changes}>{l}</button>)}
         </span>
         <input type="search" placeholder="find in session" value={q} onChange={e => setQ(e.target.value)} style={{ flex: 1, minWidth: 90 }} />
-        {data.thinking > 0 && <button className={thinking ? 'on' : ''} onClick={toggleThinking} title={thinking ? 'hide the model\'s reasoning' : `show the model's reasoning (${data.thinking} step${data.thinking === 1 ? '' : 's'})`}>💭</button>}
-        <button onClick={() => setOpenAll(o => !o)} title="expand or collapse every step">{openAll ? '⊟' : '⊞'}</button>
-        <button onClick={copy} title="copy the whole session as Markdown">{copied ? 'copied ✓' : '⎘ md'}</button>
-        <button onClick={download} title="download the session as a Markdown file">⤓</button>
+        {data.thinking > 0 && <button className={thinking ? 'on' : ''} onClick={toggleThinking} aria-pressed={thinking} aria-label="show the model's reasoning" title={thinking ? 'hide the model\'s reasoning' : `show the model's reasoning (${data.thinking} step${data.thinking === 1 ? '' : 's'})`}>💭</button>}
+        <button onClick={() => setOpenAll(o => !o)} aria-pressed={openAll} aria-label="expand or collapse every step" title="expand or collapse every step">{openAll ? '⊟' : '⊞'}</button>
+        <button onClick={copy} aria-label="copy the session as Markdown" title="copy the whole session as Markdown">{copied ? 'copied ✓' : '⎘ md'}</button>
+        <button onClick={download} aria-label="download the session as Markdown" title="download the session as a Markdown file">⤓</button>
       </div>
       <div className="small">{turns.length} turn{turns.length === 1 ? '' : 's'} · {data.total} step{data.total === 1 ? '' : 's'}{data.truncated ? ' (showing last 300)' : ''}{data.thinking > 0 && !thinking ? ` · ${data.thinking} thinking hidden` : ''}{q.trim() ? <> · <b className={hits.total ? '' : 'err'}>{hits.total} match{hits.total === 1 ? '' : 'es'}</b></> : null}</div>
       {turns.length > 2 && <Outline turns={turns} shown={shown} />}

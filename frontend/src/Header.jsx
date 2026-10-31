@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { requestDesktopPermission } from './notify.js'
 import { playSound, unlockAudio } from './sounds.js'
+import { tz } from './util.js'
 
 const WINDOWS = [[1, 'last hour'], [6, '6 hours'], [24, '24 hours'], [168, '7 days'], [0, 'all time']]
 
@@ -25,7 +26,7 @@ export default function Header({ status, hours, setHours, view, setView, live, s
   }
   return (
     <div className="header">
-      <h1 title={(status?.attention || []).filter(a => a.severity !== 'info').map(a => `${a.severity === 'red' ? '●' : '○'} ${a.label}`).join('\n') || 'all clear'}><span className={`dot ${level} ${level === 'red' ? 'pulse' : ''}`} />Keryx{status?.keryx ? <span className="ver">{status.keryx}</span> : null} <span className="small" style={{ fontWeight: 400 }} title={hermes ? `gateway ${hermes.state}${hermes.desired && hermes.desired !== hermes.state ? ` (wanted ${hermes.desired})` : ''} · pid ${hermes.pid ?? '?'} · ${hermes.sha || ''}` : ''}>· Hermes activity{hermes?.version ? ` · Hermes ${hermes.version}` : ''}</span></h1>
+      <h1 title={(status?.attention || []).filter(a => a.severity !== 'info').map(a => `${a.severity === 'red' ? '●' : '○'} ${a.label}`).join('\n') || 'all clear'}><span className={`dot ${level} ${level === 'red' ? 'pulse' : ''}`} />Keryx{status?.keryx ? <span className="ver">{status.keryx}</span> : null} <span className="small" style={{ fontWeight: 400 }} title={hermes ? `gateway ${hermes.state}${hermes.desired && hermes.desired !== hermes.state ? ` (wanted ${hermes.desired})` : ''} · pid ${hermes.pid ?? '?'} · ${hermes.sha || ''}` : ''}>· Hermes activity{hermes?.version ? ` · Hermes ${hermes.version}` : ''}</span> <span className="small tz" title="times are shown in this browser's zone; analytics days are counted in UTC">{tz()}</span></h1>
       <span className="healthwrap">
         <button className={`pill ${health ? 'on' : ''}`} onClick={() => setHealth(h => !h)} aria-expanded={health} aria-label="health checks"
                 title={trouble.length ? trouble.map(c => `${c.name}: ${c.detail}`).join('\n') : 'every check is green'}>
@@ -50,23 +51,23 @@ export default function Header({ status, hours, setHours, view, setView, live, s
         </span>
       )}
       <div className="right">
-        <select value={hours} onChange={e => setHours(Number(e.target.value))}>
+        <select value={hours} onChange={e => setHours(Number(e.target.value))} aria-label="time window">
           {WINDOWS.map(([h, l]) => <option key={h} value={h}>{l}</option>)}
         </select>
-        <button className={view === '3d' ? 'on' : ''} onClick={() => setView('3d')}>3D</button>
-        <button className={view === '2d' ? 'on' : ''} onClick={() => setView('2d')}>2D</button>
-        <button className={notify ? 'on' : ''} onClick={toggleNotify} title={notify ? 'desktop notifications on (replies, failures, cron)' : 'enable desktop notifications'}>{notify ? '🔔' : '🔕'}</button>
-        <button className={sound ? 'on' : ''} onClick={toggleSound} title={sound ? 'sounds on: a chime when Hermes replies, a knock for warnings, a falling tone for failures' : 'play a short sound with each notification'}>{sound ? '🔈' : '🔇'}</button>
+        <button className={view === '3d' ? 'on' : ''} onClick={() => setView('3d')} aria-pressed={view === '3d'} aria-label="3D view">3D</button>
+        <button className={view === '2d' ? 'on' : ''} onClick={() => setView('2d')} aria-pressed={view === '2d'} aria-label="2D view">2D</button>
+        <button className={notify ? 'on' : ''} onClick={toggleNotify} aria-pressed={notify} aria-label="desktop notifications" title={notify ? 'desktop notifications on (replies, failures, cron)' : 'enable desktop notifications'}>{notify ? '🔔' : '🔕'}</button>
+        <button className={sound ? 'on' : ''} onClick={toggleSound} aria-pressed={sound} aria-label="notification sounds" title={sound ? 'sounds on: a chime when Hermes replies, a knock for warnings, a falling tone for failures' : 'play a short sound with each notification'}>{sound ? '🔈' : '🔇'}</button>
         <span className="qrwrap">
-          <button className={qr ? 'on' : ''} onClick={() => setQr(q => !q)} title="open Keryx on your phone">📱</button>
+          <button className={qr ? 'on' : ''} onClick={() => setQr(q => !q)} aria-expanded={qr} aria-label="open on your phone" title="open Keryx on your phone">📱</button>
           {qr && <div className="popover qr">
             <img src={`/api/qr?text=${encodeURIComponent(location.href)}`} alt="QR code of this page" width="168" height="168" />
             <div className="small" style={{ wordBreak: 'break-all' }}>{location.href}</div>
             <div className="small">scan from a phone on the same LAN or Tailscale network · then "add to home screen" to keep it as an app</div>
           </div>}
         </span>
-        <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} title="toggle theme">{theme === 'dark' ? '☾' : '☀'}</button>
-        <button className={live ? 'on' : ''} onClick={() => setLive(!live)} title={`connection: ${conn}`}>
+        <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label={theme === 'dark' ? 'switch to the light theme' : 'switch to the dark theme'} title="toggle theme">{theme === 'dark' ? '☾' : '☀'}</button>
+        <button className={live ? 'on' : ''} onClick={() => setLive(!live)} aria-pressed={live} aria-label={live ? 'pause live updates' : 'resume live updates'} title={`connection: ${conn}`}>
           {live ? (conn === 'live' ? '● live' : `● ${conn}`) : '○ paused'}
         </button>
       </div>

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { ago, num } from './util.js'
+import { ago, num, plural } from './util.js'
 import Heatmap from './Heatmap.jsx'
 import { CacheTrend, Clock, Insights, Providers, Velocity } from './Cards.jsx'
 
@@ -32,7 +32,7 @@ export default function Analytics() {
       </div>
       <Insights items={data.insights} />
       <div className="tiles">
-        <Tile label="sessions" value={t.sessions} sub={`${t.subagents} subagents · ${t.active_days} active day${t.active_days === 1 ? '' : 's'}`} />
+        <Tile label="sessions" value={t.sessions} sub={`${plural(t.subagents, 'subagent')} · ${plural(t.active_days, 'active day')}`} />
         <Tile label="tool calls" value={num(t.tool_calls)} sub={t.tool_errors ? <span className="err">{t.tool_errors} failed</span> : 'no failures'} />
         <Tile label="tokens" value={`${num(t.tokens_in)} in`} sub={`${num(t.tokens_out)} out · ${t.api_calls} calls`} />
         <Tile label="spend" value={t.cost_usd ? `${t.cost_basis === 'actual' ? '' : '~'}$${t.cost_usd}` : '–'} sub={t.cost_usd ? (t.cost_basis === 'actual' ? 'provider-reported' : t.cost_basis === 'mixed' ? 'partly estimated' : 'estimated') : t.cost_basis === 'included' ? 'subscription (included)' : 'no cost recorded'} />
@@ -40,7 +40,7 @@ export default function Analytics() {
         <CacheTrend days={rows} totals={t} />
       </div>
       {data.providers?.length > 0 && <><h3>Providers</h3><Providers list={data.providers} /></>}
-      <h3>{METRICS[metric]} per day {t.busiest_day ? <span className="small">· busiest {t.busiest_day}</span> : null}</h3>
+      <h3>{METRICS[metric]} per day <span className="small">· last {days} days · UTC{t.busiest_day ? ` · busiest ${t.busiest_day}` : ''}</span></h3>
       <svg viewBox={`0 0 ${W} ${H + 14}`} className="bars" preserveAspectRatio="none">
         {rows.map((r, i) => {
           const v = r[metric] || 0, h = (v / max) * H
@@ -81,7 +81,7 @@ export default function Analytics() {
         {[...rows].reverse().filter(r => r.sessions || r.tool_calls || r.user_messages).map(r =>
           <tr key={r.day}><td>{r.day.slice(5)}</td><td>{r.sessions}</td><td>{r.user_messages}</td><td>{r.tool_calls}</td><td className={r.tool_errors ? 'err' : ''}>{r.tool_errors || ''}</td><td>{num(r.tokens_in)}</td><td>{num(r.tokens_out)}</td><td>{r.cost_usd ? `$${r.cost_usd.toFixed(2)}` : ''}</td></tr>)}
       </tbody></table></div>
-      <div className="small">days are UTC; tokens and cost are attributed to the day a session started.</div>
+      <div className="small">days are UTC. Tokens and cost belong to the day a session started.</div>
     </div>
   )
 }

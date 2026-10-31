@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import Section from './Section.jsx'
-import { ACTIVE, STATUS, TYPE, ago, contextLevel, dur, fmtT, num } from './util.js'
+import { ACTIVE, STATUS, TYPE, ago, contextLevel, dur, fmtT, num, plural } from './util.js'
 import Shape from './Shapes.jsx'
 import { nodeBaseColor } from './util.js'
 import Analytics from './Analytics.jsx'
@@ -13,7 +13,7 @@ import Board from './Board.jsx'
 import { resumeCommand } from './grouping.js'
 import { glyphOf } from './turns.js'
 
-const TABS = ['overview', 'sessions', 'tasks', 'board', 'analytics', 'logs', 'memory']
+import { TABS } from './tabs.js'
 
 export default function SidePanel({ node, cost, status, onClose, graph, tasks, hidden, toggleHidden, showAll, search, onSelect, tab, setTab }) {
   // tab badges (AionUi shows pending-approval counts on its sidebar): things that want attention
@@ -30,8 +30,8 @@ export default function SidePanel({ node, cost, status, onClose, graph, tasks, h
     board: tasks?.kanban?.attention ? 'err' : 'ok' }
   return (
     <div className="side">
-      <div className="tabs">
-        {TABS.map(t => <button key={t} className={tab === t && !node ? 'on' : ''} onClick={e => { onClose(); setTab(t); e.currentTarget.scrollIntoView({ inline: 'nearest', block: 'nearest' }) }}>
+      <div className="tabs" role="tablist" aria-label="side panel">
+        {TABS.map(t => <button key={t} role="tab" aria-selected={tab === t && !node} className={tab === t && !node ? 'on' : ''} onClick={e => { onClose(); setTab(t); e.currentTarget.scrollIntoView({ inline: 'nearest', block: 'nearest' }) }}>
           {t}{badges[t] ? <span className={`badge ${badgeLevel[t]}`}>{badges[t]}</span> : null}
         </button>)}
       </div>
@@ -153,7 +153,7 @@ function NodeDetail({ node, graph, onClose, onSelect, links }) {
     node.usage.reasoning ? ['reasoning tokens', num(node.usage.reasoning)] : null,
     ['tool calls', <span>{node.tool_calls}{node.tool_errors ? <span className="err"> · {node.tool_errors} failed</span> : null}</span>],
     ['messages', `${node.messages} total · ${node.user_messages} from you`],
-    ['rate', `${node.calls_per_min || 0} calls per minute`],
+    ['rate', `${plural(node.calls_per_min || 0, 'call')} per minute`],
   ].filter(Boolean) : isSession ? [
     ['tool calls', <span>{node.tool_calls}{node.tool_errors ? <span className="err"> · {node.tool_errors} failed</span> : null}</span>],
     ['messages', `${node.messages} total · ${node.user_messages} from you`],
@@ -230,14 +230,14 @@ function Overview({ cost, status, graph, hidden, toggleHidden, showAll, onSelect
     .sort((a, b) => (b.ts || 0) - (a.ts || 0)).filter((f, i, a) => a.findIndex(g => g.path === f.path) === i).slice(0, 8)
   return (
     <div>
-      <h2>Overview <a className="small dl" href="/api/diagnostics" download title="privacy-safe JSON snapshot for bug reports: counts, states, ids, redacted errors — no prompts, no keys">⤓ diagnostics</a></h2>
+      <h2>Overview <a className="small dl" href="/api/diagnostics" download aria-label="download diagnostics" title="privacy-safe JSON snapshot for bug reports: counts, states, ids, redacted errors, no prompts, no keys">⤓ diagnostics</a></h2>
       <table><tbody>
-        <tr><td>sessions in window</td><td>{s.sessions ?? '–'} ({s.subagents ?? 0} subagents)</td></tr>
+        <tr><td>sessions in window</td><td>{s.sessions ?? '–'} · {plural(s.subagents ?? 0, 'subagent')}</td></tr>
         <tr><td>running / waiting / stale</td><td>{s.running ?? 0} / {s.waiting ?? 0} / {s.stale ?? 0}</td></tr>
         <tr><td>active last 5 min</td><td>{s.active ?? 0}</td></tr>
         <tr><td>tool calls</td><td>{s.tool_calls ?? 0}{s.errors ? <span className="err"> · {s.errors} failed</span> : null}</td></tr>
         <tr><td>orphaned / failed</td><td>{s.orphaned ?? 0} / {s.failed ?? 0}</td></tr>
-        <tr><td>cron</td><td>{s.cron_jobs ?? 0} jobs · {s.cron_runs ?? 0} runs</td></tr>
+        <tr><td>cron</td><td>{plural(s.cron_jobs ?? 0, 'job')} · {plural(s.cron_runs ?? 0, 'run')}</td></tr>
       </tbody></table>
       {status?.attention && <Attention items={status.attention} onSelect={onSelect} setTab={setTab} />}
       <Section id="health" title="Health" summary={<span className={`dot ${status?.level || 'amber'}`} />}>
