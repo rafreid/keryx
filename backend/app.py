@@ -1545,6 +1545,69 @@ def build_todo(sid: str) -> dict:
     return {"session": alias.get(sid, sid), "segments": segs, "todo": best}
 
 
+CONTEXT_PARTS = {"user": "your messages", "assistant": "Hermes' replies", "calls": "tool call arguments",
+                 "tools": "tool output", "summary": "compaction summaries"}
+
+
+def build_context(sid: str) -> dict:
+    """What fills a session's context (hermes-workspace's context-bloat analysis, per session): the live rows of
+    the current segment split into your messages, Hermes' replies, tool-call arguments, tool output by tool,
+    and compaction summaries, in characters. Tool output is usually most of it; this says which tools."""
+    db = STATE.get()
+    if db is None:
+        return {"error": "no state db"}
+    sessions = load_sessions(db)
+    logical, alias = logical_sessions(sessions)
+    ls = next((x for x in logical if x["id"] == alias.get(sid, sid)), None)
+    segs = ls["segments"] if ls else [sid]
+    tip = segs[-1]
+    row = next((x for x in sessions if x["id"] == tip), None)
+    mcols = table_columns(db, "messages")
+    kind_col = ", display_kind" if "display_kind" in mcols else ", null as display_kind"
+    rows = db.execute(f"select role, content, tool_calls, tool_name, timestamp{kind_col} from messages where session_id = ?"
+                      f"{live_rows_sql(db)} order by timestamp asc, id asc", (tip,)).fetchall()
+    parts = {k: {"kind": k, "label": v, "chars": 0, "count": 0} for k, v in CONTEXT_PARTS.items()}
+    tools: dict[str, dict] = {}
+    biggest: list[dict] = []
+    titles: dict[str, str] = {}
+    for r in rows:
+        role, content = r["role"], r["content"] or ""
+        if role == "user":
+            k = "summary" if r["display_kind"] == "hidden" else "user"
+            parts[k]["chars"] += len(content); parts[k]["count"] += 1
+        elif role == "assistant":
+            if content:
+                parts["assistant"]["chars"] += len(content); parts["assistant"]["count"] += 1
+            if r["tool_calls"]:
+                parts["calls"]["chars"] += len(r["tool_calls"]); parts["calls"]["count"] += 1
+                try:
+                    for c in json.loads(r["tool_calls"]) or []:
+                        fn = c.get("function", {}) if isinstance(c, dict) else {}
+                        cid = c.get("call_id") or c.get("id")
+                        if cid:
+                            titles[cid] = step_title(fn.get("name") or "", parse_args(fn.get("arguments") or ""))
+                except Exception:
+                    pass
+        elif role == "tool":
+            name = r["tool_name"] or "tool"
+            n = len(content)
+            parts["tools"]["chars"] += n; parts["tools"]["count"] += 1
+            t = tools.setdefault(name, {"name": name, "kind": tool_kind(name), "chars": 0, "calls": 0})
+            t["chars"] += n; t["calls"] += 1
+            biggest.append({"name": name, "chars": n, "ts": ts(r["timestamp"]), "title": titles.get(r["tool_call_id"] if "tool_call_id" in r.keys() else "", "")})
+    total = sum(p["chars"] for p in parts.values())
+    for p_ in parts.values():
+        p_["share"] = round(p_["chars"] / total, 4) if total else 0.0
+    tool_list = sorted(tools.values(), key=lambda t: -t["chars"])
+    for t in tool_list:
+        t["share"] = round(t["chars"] / total, 4) if total else 0.0
+    biggest.sort(key=lambda b: -b["chars"])
+    gauge = context_gauge(row) if row else None
+    return {"session": alias.get(sid, sid), "segment": tip, "segments": segs, "rows": len(rows), "total_chars": total,
+            "est_tokens": int(total / 4), "gauge": gauge, "parts": sorted(parts.values(), key=lambda p: -p["chars"]),
+            "tools": tool_list[:12], "biggest": biggest[:5]}
+
+
 def scheduler_state(now: float) -> dict:
     """Hermes' cron ticker writes '<epoch> <pid>' to cron/ticker_heartbeat every tick."""
     hb = None
@@ -2590,6 +2653,12 @@ def api_trace(sid: str, tool: Optional[str] = Query(None), limit: int = Query(30
 @app.get("/api/session/{sid}/todo")
 def api_todo(sid: str):
     return cached("todo", build_todo, sid)
+
+
+@app.get("/api/session/{sid}/context")
+def api_context(sid: str):
+    """What fills the session's context window, by part and by tool (characters)."""
+    return cached("context", build_context, sid)
 
 
 @app.get("/api/memory")

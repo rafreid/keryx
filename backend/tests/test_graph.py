@@ -319,3 +319,21 @@ def test_velocity_and_insights_edge_cases():
     assert keryx.velocity_of(rows, 8)["delta_pct"] == 100
     quiet = {"days": [], "models": [], "velocity": {"delta_pct": None}}
     assert keryx.insights_of(quiet, [], 0) == []
+
+
+def test_context_breakdown(hermes_data):
+    c = keryx.build_context("s-running")
+    assert c["segment"] == "s-running" and c["rows"] == 11                       # live rows only: archived copies are not counted
+    parts = {p["kind"]: p for p in c["parts"]}
+    # the model-only merge row is hidden from readers but is in the model's context, so it counts here
+    assert parts["tools"]["count"] == 4 and parts["calls"]["count"] == 4 and parts["user"]["count"] == 3 and parts["summary"]["chars"] == 0
+    assert abs(sum(p["share"] for p in c["parts"]) - 1.0) < 0.01 and c["est_tokens"] == c["total_chars"] // 4
+    tools = {t["name"]: t for t in c["tools"]}
+    assert tools["todo_list"]["calls"] == 2 and tools["todo_list"]["kind"] == "todo" and c["tools"][0]["name"] == "todo_list"
+    assert c["biggest"][0]["name"] == "todo_list" and c["biggest"][0]["chars"] > 0
+    assert c["gauge"]["pct"] == 30.0
+    # a compacted lineage reports its current segment, and its summary row counts as context
+    c = keryx.build_context("s-comp-root")
+    assert c["segment"] == "s-comp-tip" and c["segments"] == ["s-comp-root", "s-comp-tip"]
+    assert {p["kind"]: p for p in c["parts"]}["summary"]["count"] == 1
+    assert keryx.build_context("nope")["rows"] == 0
