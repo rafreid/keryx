@@ -1290,7 +1290,7 @@ def build_status() -> dict:
 
     worst = "red" if any(c["level"] == "red" for c in checks) else "amber" if any(c["level"] == "amber" for c in checks) else "green"
     attention = attention_list(checks, details, open_inc, missed, deliveries, kb, orphans, waiting)
-    return {"generated_at": now, "level": worst, "checks": checks, "links": dashboard_links(), "attention": attention,
+    return {"generated_at": now, "level": worst, "checks": checks, "links": dashboard_links(), "attention": attention, "keryx": app.version,
             "hermes": {k: gw[k] for k in ("state", "desired", "level", "version", "sha", "pid", "started", "updated", "age", "stale",
                                            "profiles", "restart_requested")} if gw else None}
 
@@ -2634,7 +2634,7 @@ def cached(kind: str, builder, *args):
 
 @app.get("/api/health")
 def api_health(request: Request):
-    out = {"ok": True, "time": time.time(), "state_db": (DATA / "state.db").exists()}
+    out = {"ok": True, "time": time.time(), "state_db": (DATA / "state.db").exists(), "version": app.version}
     if authorised(request):
         out["data"] = str(DATA)
     return out
