@@ -161,8 +161,8 @@ footer .wrap > div { display: flex; flex-wrap: wrap; gap: 16px; align-items: cen
       </div>
     </div>
     <figure class="shot" style="margin:0">
-      <img src="img/graph.png" width="1440" height="900" alt="The Keryx dashboard: a health header, a strip of running sessions, the 3D graph with Hermes at the centre and platforms, sessions, tools and cron jobs around it, and the overview side panel">
-      <figcaption>A Hermes install with two live sessions, a compacted Telegram chat, a subagent, two cron jobs and one open incident (sample data).</figcaption>
+      <img src="img/graph.png" width="1440" height="900" alt="The Keryx dashboard: a health pill, a strip of running sessions, the 3D graph with Hermes at the centre and platforms, sessions, tools and cron jobs around it, and the overview panel with its attention list">
+      <figcaption>A Hermes install with two live sessions, a compacted Telegram chat, a subagent, two cron jobs, a kanban board and one open incident (sample data). The attention list on the right says what needs a look.</figcaption>
     </figure>
   </div>
 </header>
@@ -221,7 +221,7 @@ footer .wrap > div { display: flex; flex-wrap: wrap; gap: 16px; align-items: cen
       </div>
       <div class="card">
         <h3>Position is when it started</h3>
-        <p>Each platform (Telegram, TUI, CLI, cron…) owns a wedge around the hub and its sessions sit inside it, ordered by start time. A labelled time axis runs down the side: in 3D the rings step downward from "now", in 2D they grow outward. Opacity fades with age. Subagents orbit the session that spawned them; tools cluster around the session that called them; models sit on a shelf above; cron jobs fan out below.</p>
+        <p>Each platform (Telegram, TUI, CLI, cron…) owns a wedge around the hub and its sessions sit inside it, ordered by start time. In 3D the rings step downward from "now", in 2D they grow outward, and a clickable ruler along the bottom of the graph filters by when a session started. Opacity fades with age; labels scale with distance. Subagents orbit the session that spawned them; tools cluster around the session that called them; models sit on a shelf above; cron jobs fan out below.</p>
       </div>
     </div>
   </div>
@@ -236,13 +236,14 @@ footer .wrap > div { display: flex; flex-wrap: wrap; gap: 16px; align-items: cen
 
     <div class="two">
       <figure class="shot" style="margin:0">
-        <img src="img/session.png" width="1440" height="900" alt="A session selected in Keryx: its tools fanned out in a ring, and the side panel showing status, request, plan progress, context gauge, cost, working directory, the agent's todo checklist, files touched and the turn-by-turn trace">
-        <figcaption>A selected session: tools fan out in a ring facing you; the panel shows its plan, context gauge, cost and trace.</figcaption>
+        <img src="img/session.png" width="1440" height="900" alt="A session selected in Keryx: its tools fanned out in a ring, and the side panel showing status, request, latest step, the context gauge, the resume command and the turn-by-turn trace">
+        <figcaption>A selected session: tools fan out in a ring facing you; the panel opens with four lines and the trace, then the plan, what fills the context and files touched.</figcaption>
       </figure>
       <div class="grid" style="grid-template-columns:1fr">
         <div class="card">
           <h3>Health header</h3>
           <ul>
+            <li>The title dot shows the worst check; a <strong>health</strong> pill counts the red and amber ones and opens every check; only checks that are not green stay inline.</li>
             <li><strong>Gateway</strong> heartbeat and Hermes' own process state and version from <code>gateway_state.json</code>, one check per <strong>messaging platform</strong> as the gateway reports it (with the error it recorded when one is retrying), <strong>cron</strong> scheduler, the <strong>error log</strong>, session states, and the kanban board when it has tasks, each green / amber / red; the worst one drives the title dot.</li>
             <li>The cron check reads Hermes' own incident ledger and delivery queue: an open incident is red, undelivered results are amber.</li>
             <li>Token totals for the window with the spend, prefixed <code>~</code> when it is an estimate rather than a provider-reported figure.</li>
@@ -274,7 +275,8 @@ footer .wrap > div { display: flex; flex-wrap: wrap; gap: 16px; align-items: cen
         <ul>
           <li>Window selector from the last hour to all time.</li>
           <li><strong>Replay</strong>: drag the bar to re-query the graph as of any moment in the window and watch sessions appear, run and end.</li>
-          <li>Click a label on the time axis to keep only the sessions that started in that span.</li>
+          <li>Click a label on the ruler under the graph to keep only the sessions that started in that span.</li>
+          <li>Times are shown in your browser's zone, named in the header; analytics days are counted in UTC.</li>
         </ul>
       </div>
       <div class="card">
@@ -288,14 +290,13 @@ footer .wrap > div { display: flex; flex-wrap: wrap; gap: 16px; align-items: cen
       <div class="card">
         <h3>Session detail</h3>
         <ul>
-          <li>Status, request, latest step, platform, model, timings, message and tool counts, call rate, subagents, end reason.</li>
-          <li>Tokens in / out, cache reads and hit rate, reasoning tokens, API calls, and the cost with its basis (provider-reported or estimated).</li>
-          <li>Working directory and git branch, profile, handoff state.</li>
+          <li>Opens with four lines, status, request, latest step and the context gauge, and the command that resumes the conversation in a terminal; the trace comes next.</li>
+          <li><strong>Cost and usage</strong> (tokens in / out, cache reads and hit rate, reasoning tokens, API calls, the cost with its basis) and <strong>lineage and environment</strong> (platform, model, timings, working directory and branch, profile, parent, compactions, Hermes' own flags) sit in collapsed sections.</li>
+          <li><strong>What fills the context</strong>: your messages, replies, tool-call arguments and tool output by tool, in characters, with the largest output.</li>
           <li>The agent's <strong>plan</strong> as a checklist (done, in progress, pending, cancelled).</li>
           <li><strong>Files touched</strong>: writes, patches, reads and searches, most recent first, with lines added and removed.</li>
           <li>The <strong>reading view</strong>: the conversation as turns (your question → a collapsible "steps · N" block → Hermes' reply), an <strong>outline</strong> of every question to jump to, an <strong>all / chat / changes</strong> filter, <strong>find in session</strong>, and <strong>copy or download as Markdown</strong>.</li>
           <li>Every tool call with a kind glyph, a one-line title (the command, path, query or goal), duration, exit code, output size and <code>+added −removed</code> for file edits; Hermes' own events (model switch, steer, auto-continue, delegation results) in place.</li>
-          <li>The command that resumes the conversation in a terminal (<code>hermes -r …</code>), one click to copy.</li>
         </ul>
       </div>
       <div class="card">
@@ -360,7 +361,7 @@ footer .wrap > div { display: flex; flex-wrap: wrap; gap: 16px; align-items: cen
           <li>Every selection is a browser history entry that remembers the selection, the tab and the camera pose. <kbd>Backspace</kbd> goes back, <kbd>Shift</kbd>+<kbd>Backspace</kbd> forward; <kbd>Alt</kbd>+<kbd>←</kbd> and trackpad swipes work too. <kbd>[</kbd> and <kbd>]</kbd> change tab, <kbd>↑</kbd> <kbd>↓</kbd> walk the session list, <kbd>?</kbd> in the header reopens the first-run card.</li>
           <li>On a phone the graph and the panel take turns at full width behind a map / panel toggle; light and dark themes are both designed, not inverted.</li>
           <li>The URL hash (<code>#session:…</code>, <code>#cron:…</code>) is a deep link you can share, or scan from the QR popover to open on your phone, where "add to home screen" keeps Keryx as an app.</li>
-          <li>Dark and light themes.</li>
+          <li>Every icon button is labelled for screen readers; focus rings are visible; a first-run card explains the picture and <kbd>?</kbd> brings it back.</li>
         </ul>
       </div>
       <div class="card">
@@ -374,12 +375,35 @@ footer .wrap > div { display: flex; flex-wrap: wrap; gap: 16px; align-items: cen
 
     <div class="two">
       <figure class="shot" style="margin:0">
+        <img src="img/board.png" width="1440" height="900" alt="The board tab: Hermes' kanban lanes with a running card opened to its comments, run history and event timeline">
+        <figcaption>Board: Hermes' kanban queue in its own lanes, read-only, with a card open.</figcaption>
+      </figure>
+      <figure class="shot" style="margin:0">
+        <img src="img/analytics.png" width="1440" height="900" alt="The analytics tab: insight sentences, session and token tiles, sessions-per-day momentum, cache hit, provider mix donut">
+        <figcaption>Analytics: insights, momentum, cache trend, provider mix, when Hermes works.</figcaption>
+      </figure>
+    </div>
+    <div class="two">
+      <figure class="shot" style="margin:0">
         <img src="img/tasks.png" width="1440" height="900" alt="The tasks tab: a completed delegation, two scheduled jobs with run history, an open incident and its lifecycle">
         <figcaption>Tasks: delegations, scheduled jobs, Hermes' incident ledger.</figcaption>
       </figure>
       <figure class="shot" style="margin:0">
         <img src="img/logs.png" width="1440" height="900" alt="The logs tab: error-level lines from errors.log, one of them tagged with the session that logged it">
         <figcaption>Logs: every file Hermes writes, filtered by level; session-tagged lines link to their session.</figcaption>
+      </figure>
+    </div>
+    <div class="two">
+      <figure class="shot" style="margin:0">
+        <img src="img/light.png" width="1440" height="900" alt="The light theme in 2D: the same graph with labels, rings and overlays in the light palette">
+        <figcaption>The light theme, 2D view: every overlay and graph colour follows the theme.</figcaption>
+      </figure>
+      <figure class="shot phones" style="margin:0;background:transparent;border:0;box-shadow:none">
+        <div style="display:flex;gap:12px;justify-content:center">
+          <img src="img/phone-panel.png" width="400" height="800" alt="Keryx on a phone: the overview panel at full width with the attention list" style="width:48%;border:1px solid var(--line);border-radius:12px">
+          <img src="img/phone-map.png" width="400" height="800" alt="Keryx on a phone: the map view, with session cards above the 2D graph" style="width:48%;border:1px solid var(--line);border-radius:12px">
+        </div>
+        <figcaption>On a phone the panel and the map take turns at full width.</figcaption>
       </figure>
     </div>
   </div>
@@ -441,7 +465,7 @@ cd keryx
         <tr><td><code>KERYX_SHOW_MEMORY</code></td><td>unset</td><td><code>1</code> adds the read-only memory tab (Hermes' <code>MEMORY.md</code> and <code>USER.md</code>); off by default because these are personal notes</td></tr>
         <tr><td><code>ACTIVE_WINDOW</code></td><td><code>300</code></td><td>seconds; a session touched this recently is "active" and its links carry particles</td></tr>
         <tr><td><code>STALE_AFTER</code></td><td><code>1800</code></td><td>seconds; a session mid-turn but idle for this long is shown as stale</td></tr>
-        <tr><td><code>CONTEXT_LENGTH</code></td><td><code>400000</code></td><td>assumed context window for the gauge when the model family is not recognised (Hermes does not record it; such gauges are marked <code>~</code>)</td></tr>
+        <tr><td><code>CONTEXT_LENGTH</code></td><td><code>400000</code></td><td>last-resort context window for the gauge; Keryx first uses <code>model.context_length</code> from Hermes' config, then the window Hermes probed into <code>context_length_cache.yaml</code>, then a built-in table</td></tr>
       </tbody>
     </table></div>
     <h3>What Keryx reads</h3>
