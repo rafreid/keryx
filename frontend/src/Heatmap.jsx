@@ -27,7 +27,7 @@ export default function Heatmap({ data }) {
   return (
     <div className="heat">
       <div className="row">
-        <h3 style={{ margin: 0 }}>Last year</h3>
+        <h3 style={{ margin: 0 }}>Last year <span className="small" style={{ textTransform: 'none', letterSpacing: 0 }}>· UTC</span></h3>
         <select value={metric} onChange={e => setMetric(e.target.value)}>{Object.entries(METRICS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
         <span className="small">{data.active_days} active day{data.active_days === 1 ? '' : 's'}{data.streak ? ` · ${data.streak}-day streak` : ''}</span>
       </div>

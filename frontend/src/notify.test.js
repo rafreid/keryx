@@ -32,3 +32,14 @@ describe('diffEvents', () => {
     expect(diffEvents(was, cur)[0].node).toBe('session:a')
   })
 })
+
+import { plural } from './util.js'
+describe('plural', () => {
+  it('writes real words', () => {
+    expect(plural(1, 'call')).toBe('1 call')
+    expect(plural(2, 'call')).toBe('2 calls')
+    expect(plural(0, 'subagent')).toBe('0 subagents')
+    expect(plural(undefined, 'job')).toBe('0 jobs')
+    expect(plural(3, 'entry', 'entries')).toBe('3 entries')
+  })
+})

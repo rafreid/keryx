@@ -1,9 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import Shape from './Shapes.jsx'
-import { STATUS, ago, fmtTime, nodeBaseColor } from './util.js'
+import { STATUS, ago, fmtTime, nodeBaseColor, plural } from './util.js'
 import { getJSON, useDebounced } from './api.js'
 import { GROUPINGS, allTags, displayTitle, groupSessions, hiddenCount, isPinned, tagsOf } from './grouping.js'
 
+/** Arrow keys walk the list: focus the next or previous row anywhere in the panel. */
+const moveFocus = (el, dir) => {
+  const rows = [...(el.closest('.side') || document.body).querySelectorAll('.srow[tabindex]')]
+  rows[rows.indexOf(el) + dir]?.focus()
+}
 const loadSet = k => { try { return new Set(JSON.parse(localStorage.getItem(k) || '[]')) } catch { return new Set() } }
 const saveSet = (k, s) => { try { localStorage.setItem(k, JSON.stringify([...s])) } catch {} }
 
@@ -46,11 +51,12 @@ export default function Sessions({ graph, selected, onSelect, search }) {
   const Row = ({ n }) => {
     const t = tagsOf(n.label)
     return (
-      <div className={`srow ${selected === n.id ? 'sel' : ''}`} onClick={() => onSelect(n.id)}>
+      <div className={`srow ${selected === n.id ? 'sel' : ''}`} onClick={() => onSelect(n.id)} tabIndex={0} role="button" aria-label={displayTitle(n)}
+           onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(n.id) } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); moveFocus(e.currentTarget, e.key === 'ArrowDown' ? 1 : -1) } }}>
         <Shape type={n.type} color={nodeBaseColor(n)} />
         <div className="t">
           <div className="title">{displayTitle(n)}{t.map(x => <a key={x} href="#" className={`tagchip ${tag === x ? 'on' : ''}`} onClick={e => { e.preventDefault(); e.stopPropagation(); setTag(tag === x ? null : x) }}>#{x}</a>)}</div>
-          <div className="small">{STATUS[n.status]?.label || n.status} · {ago(n.last)} · {n.tool_calls} calls{n.tool_errors ? <span className="err"> · {n.tool_errors} failed</span> : null}{n.children ? ` · ${n.children} subagents` : ''}{mode !== 'platform' || n.internal ? ` · ${n.source}` : ''}{n.hidden ? <span className="warn"> · hidden in Hermes</span> : null}</div>
+          <div className="small">{STATUS[n.status]?.label || n.status} · {ago(n.last)} · {plural(n.tool_calls, 'call')}{n.tool_errors ? <span className="err"> · {n.tool_errors} failed</span> : null}{n.children ? ` · ${plural(n.children, 'subagent')}` : ''}{mode !== 'platform' || n.internal ? ` · ${n.source}` : ''}{n.hidden ? <span className="warn"> · hidden in Hermes</span> : null}</div>
         </div>
         {n.pinned
           ? <span className="pin on hermes" title="pinned in Hermes' own session list">★</span>
@@ -91,7 +97,7 @@ export default function Sessions({ graph, selected, onSelect, search }) {
         {content.sessions.length > 0 && !contentOnly.length && <div className="small">all of them are already listed above.</div>}
         {content.sessions.some(h => !nodes.find(n => n.id === `session:${h.id}`)) && <div className="small">sessions outside the current window open in the panel but are not drawn in the graph; widen the window to see them.</div>}
       </>}
-      <div className="small" style={{ marginTop: 8 }}>press <kbd>⌘K</kbd> / <kbd>Ctrl K</kbd> to search · click a row to select it in the graph · ☆ pins a session to the top · ★ is pinned in Hermes</div>
+      <div className="small" style={{ marginTop: 8 }}><kbd>⌘K</kbd> search · <kbd>↑</kbd> <kbd>↓</kbd> walk the list, <kbd>Enter</kbd> selects · <kbd>[</kbd> <kbd>]</kbd> change tab · <kbd>Esc</kbd> deselects · ☆ pins a session here, ★ is pinned in Hermes</div>
     </div>
   )
 }

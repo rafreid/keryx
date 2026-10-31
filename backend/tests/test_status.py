@@ -177,3 +177,10 @@ def test_diagnostics_carry_attention(client):
     d = client.get("/api/diagnostics").json()
     assert any(a["source"] == "cron" and a["severity"] == "red" for a in d["attention"])
     assert "node" not in d["attention"][0]
+
+
+def test_plurals_are_real_words():
+    assert keryx.plural(1, "job") == "1 job" and keryx.plural(2, "job") == "2 jobs" and keryx.plural(0, "result") == "0 results"
+    assert keryx.plural(None, "incident") == "0 incidents" and keryx.plural(3, "entry", "entries") == "3 entries"
+    import json
+    assert "(s)" not in json.dumps(keryx.build_status())                  # nothing user-facing says "job(s)" any more

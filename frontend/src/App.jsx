@@ -9,6 +9,7 @@ import { PALETTE, fmtTime, readPalette } from './util.js'
 import { useNotifications } from './notify.js'
 import { useNavHistory } from './history.js'
 import { NARROW, useMedia } from './hooks/useMedia.js'
+import { TABS } from './tabs.js'
 
 const params = new URLSearchParams(location.search)
 
@@ -49,6 +50,12 @@ export default function App() {
     const onKey = e => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); navigate(null, { tab: 'sessions' }); document.getElementById('search')?.focus() }
       if (e.key === 'Escape') { navigate(null); document.activeElement?.blur?.() }
+      // [ and ] walk the side-panel tabs
+      if ((e.key === '[' || e.key === ']') && !isTyping(e.target) && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault()
+        setTab(t => TABS[(TABS.indexOf(t) + (e.key === ']' ? 1 : TABS.length - 1)) % TABS.length])
+        navigate(null)
+      }
       // Backspace = back, Shift+Backspace = forward — but never while typing in a field
       if (e.key === 'Backspace' && !isTyping(e.target)) { e.preventDefault(); e.shiftKey ? forward() : back() }
     }
@@ -124,7 +131,7 @@ export default function App() {
                 <span className="t">{replayAt ? `as of ${fmtTime(replayAt)}` : 'now (live)'}</span>
                 {replayAt && <button onClick={() => setReplayPos(100)}>back to live</button>}
               </div>
-              <button onClick={() => setRecenterSignal(n => n + 1)} title="frame the whole graph">⌖ recenter</button>
+              <button onClick={() => setRecenterSignal(n => n + 1)} aria-label="recenter the graph" title="frame the whole graph">⌖ recenter</button>
               <div className="spacing">
                 <button className={spacingOpen || spread !== 1 ? 'on' : ''} onClick={() => setSpacingOpen(o => !o)} title="how far apart elements sit">⇔ spacing{spread !== 1 ? ` ${spread.toFixed(1)}×` : ''}</button>
                 {spacingOpen && <div className="popover">

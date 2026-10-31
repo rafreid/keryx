@@ -120,6 +120,15 @@ def ts(v: Any) -> Optional[float]:
         return None
 
 
+def plural(n: Any, word: str, pl: Optional[str] = None) -> str:
+    """'1 job', '2 jobs', '1 incident', '3 results': proper plurals instead of 'job(s)' in user-facing text."""
+    try:
+        n = int(n or 0)
+    except (TypeError, ValueError):
+        n = 0
+    return f"{n} {word if n == 1 else (pl or word + 's')}"
+
+
 def short(text: Any, n: int = 90) -> str:
     t = re.sub(r"\s+", " ", str(text or "")).strip()
     return t if len(t) <= n else t[: n - 1] + "…"
@@ -1204,26 +1213,26 @@ def build_status() -> dict:
     if not jobs:
         check("cron", "amber", "no jobs defined")
     elif sched["age"] is not None and sched["age"] > 900:
-        check("cron", "red", f"scheduler silent for {int(sched['age'] // 60)}m ({len(jobs)} job(s))")
+        check("cron", "red", f"scheduler silent for {int(sched['age'] // 60)}m ({plural(len(jobs), 'job')})")
     elif open_inc:
         names = {j["id"]: j["name"] for j in details}
-        check("cron", "red", f"{len(open_inc)} open incident(s): " + ", ".join(dict.fromkeys(names.get(i['job_id'], i['job_id']) for i in open_inc[:3])),
+        check("cron", "red", f"{plural(len(open_inc), 'open incident')}: " + ", ".join(dict.fromkeys(names.get(i['job_id'], i['job_id']) for i in open_inc[:3])),
               incidents=[{"job": names.get(i["job_id"], i["job_id"]), "error": i["error"]} for i in open_inc[:3]])
     elif missed:
         check("cron", "red", f"missed trigger: {', '.join(missed[:3])}")
     elif stuck:
-        check("cron", "amber", f"{stuck} result(s) not delivered ({deliveries['failed']} failed)")
+        check("cron", "amber", f"{plural(stuck, 'result')} not delivered ({deliveries['failed']} failed)")
     else:
         last = execs[0] if execs else None
         failed = [e for e in execs[:20] if e["status"] in ("failed", "error")]
         if last is None:
-            check("cron", "amber", f"{len(jobs)} job(s), never run")
+            check("cron", "amber", f"{plural(len(jobs), 'job')}, never run")
         elif failed and failed[0] is last:
             check("cron", "red", f"last run failed: {short(last.get('error'), 80)}")
         else:
             age = now - (last["finished_at"] or last["started_at"] or now)
             check("cron", "green" if not failed else "amber",
-                  f"last run {last['status']} {int(age // 3600)}h ago" + (f", {len(failed)} recent failure(s)" if failed else ""))
+                  f"last run {last['status']} {int(age // 3600)}h ago" + (f", {plural(len(failed), 'recent failure')}" if failed else ""))
 
     # error log (last hour)
     err_lines = []
@@ -1262,10 +1271,10 @@ def build_status() -> dict:
         open_ = kb["total"] - c.get("done", 0)
         silent = [a for a in kb["attention"] if a["why"] == "worker silent"]
         if silent:
-            check("kanban", "red", f"{len(silent)} running task(s) with a silent worker: " + ", ".join(a["title"] for a in silent[:3]),
+            check("kanban", "red", f"{plural(len(silent), 'running task')} with a silent worker: " + ", ".join(a["title"] for a in silent[:3]),
                   board=kb["board"], counts=c)
         elif kb["attention"]:
-            check("kanban", "amber", f"{len(kb['attention'])} task(s) failing repeatedly: " + ", ".join(a["title"] for a in kb["attention"][:3]),
+            check("kanban", "amber", f"{plural(len(kb['attention']), 'task')} failing repeatedly: " + ", ".join(a["title"] for a in kb["attention"][:3]),
                   board=kb["board"], counts=c)
         elif c.get("blocked"):
             check("kanban", "amber", f"{c['blocked']} blocked · {c.get('running', 0)} running · {c.get('review', 0)} in review · {open_} open",
@@ -1327,7 +1336,7 @@ def attention_list(checks: list[dict], jobs: list[dict], open_inc: list[dict], m
             node=f"cron:{i['job_id']}")
     for j in jobs:
         if j["missed"] and j["id"] not in seen_jobs:
-            add(f"missed-{j['id']}", "red", "cron", f"missed trigger: {j['name']}", f"{j.get('missed_count') or 1} slot(s) skipped", node=f"cron:{j['id']}")
+            add(f"missed-{j['id']}", "red", "cron", f"missed trigger: {j['name']}", f"{plural(j.get('missed_count') or 1, 'slot')} skipped", node=f"cron:{j['id']}")
         elif j["state"] == "error" and j["id"] not in seen_jobs:
             add(f"failed-{j['id']}", "amber", "cron", f"last run failed: {j['name']}", short(j.get("last_error"), 160) or "", node=f"cron:{j['id']}")
     cr = by.get("cron")
@@ -1335,13 +1344,13 @@ def attention_list(checks: list[dict], jobs: list[dict], open_inc: list[dict], m
         add("scheduler", "red", "cron", cr["detail"], "no ticker heartbeat: jobs will not fire", tab="tasks")
     stuck = deliveries["pending"] + deliveries["delivering"] + deliveries["failed"]
     if stuck:
-        add("deliveries", "amber", "cron", f"{stuck} cron result(s) not delivered", f"{deliveries['failed']} failed", tab="tasks")
+        add("deliveries", "amber", "cron", f"{plural(stuck, 'cron result')} not delivered", f"{deliveries['failed']} failed", tab="tasks")
     if kb.get("board") is not None:
         for a in kb["attention"]:
             add(f"kanban-{a['id']}", "red" if a["why"] == "worker silent" else "amber", "kanban",
                 f"{a['title']}: {a['why']}", "", tab="board")
         if kb["counts"].get("blocked"):
-            add("kanban-blocked", "amber", "kanban", f"{kb['counts']['blocked']} kanban card(s) blocked", "", tab="board")
+            add("kanban-blocked", "amber", "kanban", f"{plural(kb['counts']['blocked'], 'kanban card')} blocked", "", tab="board")
     e = by.get("errors")
     if e and e["level"] != "green":
         add("errors", e["level"], "log", e["detail"], (e.get("recent") or [""])[-1], tab="logs")
@@ -1349,9 +1358,9 @@ def attention_list(checks: list[dict], jobs: list[dict], open_inc: list[dict], m
     if st and st["level"] != "green":
         add("storage", st["level"], "storage", st["detail"], "", tab="overview")
     if orphans:
-        add("orphans", "amber", "session", f"{orphans} session(s) orphaned by a restart (24h)", "", tab="sessions")
+        add("orphans", "amber", "session", f"{plural(orphans, 'session')} orphaned by a restart (24h)", "", tab="sessions")
     if waiting:
-        add("waiting", "info", "session", f"{waiting} session(s) waiting for you", "Hermes replied and the next move is yours", tab="sessions")
+        add("waiting", "info", "session", f"{plural(waiting, 'session')} waiting for you", "Hermes replied and the next move is yours", tab="sessions")
     rank = {"red": 0, "amber": 1, "info": 2}
     items.sort(key=lambda x: rank.get(x["severity"], 3))
     return items
@@ -1410,9 +1419,9 @@ def gateway_summary(gs: Optional[dict], now: float) -> Optional[dict]:
             m = p.get("metrics") if isinstance(p.get("metrics"), dict) else None
             if m:
                 today = m.get("metrics_today") if isinstance(m.get("metrics_today"), dict) else {}
-                bits = [f"{m.get('active_runs', 0)} active run(s)"]
+                bits = [plural(m.get('active_runs', 0), 'active run')]
                 if today.get("requests"):
-                    bits.append(f"{today['requests']} request(s) today")
+                    bits.append(f"{plural(today['requests'], 'request')} today")
                 detail = "connected · " + " · ".join(bits)
             elif when:
                 detail = f"connected {_rel(now - when)}"
@@ -1913,7 +1922,7 @@ def build_tasks() -> dict:
             results = res if isinstance(res, list) else res.get("results") if isinstance(res, dict) else None
             summary = None
             if isinstance(results, list):
-                summary = f"{len(results)} result(s)"
+                summary = f"{plural(len(results), 'result')}"
             elif isinstance(res, dict):
                 summary = short(res.get("summary") or res.get("result") or res.get("error"), 200)
             delegations.append({
