@@ -73,7 +73,7 @@ USER_CLOSE_REASONS = {"cli_close", "tui_shutdown", "tui_close", "user_exit", "se
 # The session was compacted: Hermes ends it and continues the same conversation in a child session.
 COMPRESSION_REASON = "compression"
 
-app = FastAPI(title="Keryx", version="2.6")
+app = FastAPI(title="Keryx", version="2.7")
 
 
 def authorised(request: Request) -> bool:

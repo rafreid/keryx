@@ -10,6 +10,11 @@ import { useCameraPose } from './hooks/useCameraPose.js'
 import { useTimeAxis3d, useRings2d } from './hooks/useTimeAxis.js'
 
 const LABELLED = new Set(['hub', 'source', 'session', 'subagent', 'cron', 'model'])
+// 3D label heights at the default camera distance; the render loop scales them with distance so a zoomed-out
+// picture does not shrink its text to dust and a close-up does not fill the screen with it
+const LABEL_HEIGHT = { hub: 8, source: 6, tool: 3.2, session: 4.2, subagent: 4, cron: 4, model: 4 }
+const LABEL_REF_DISTANCE = 420          // camera distance at which labels are their base size
+const LABEL_FAR = 1400                  // beyond this, only the hub and platforms keep their labels
 
 // ---- shape grammar: one geometry per node role (colour is reserved for state) ----
 const GEOMETRY = {
@@ -325,7 +330,8 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
     if (LABELLED.has(n.type) || n.type === 'tool') {
       const text = n.collapsedCount ? `${n.label} (+${n.collapsedCount})` : n.type === 'tool' ? `${n.label}${n.errors ? ` ✕${n.errors}` : ''} ×${n.calls}` : n.label
       label = new SpriteText(text.length > 34 ? text.slice(0, 33) + '…' : text)
-      label.textHeight = n.type === 'hub' ? 8 : n.type === 'source' ? 6 : n.type === 'tool' ? 2.8 : 3.4
+      label.textHeight = LABEL_HEIGHT[n.type] || LABEL_HEIGHT.session
+      label.userData.base = label.textHeight
       label.backgroundColor = palette().halo; label.padding = 0.6; label.borderRadius = 1   // halo: readable over links and the floor in both themes
       label.position.y = -(r + (n.type === 'hub' ? 7 : 3.5))
       if (n.type === 'tool') label.visible = false
@@ -340,6 +346,7 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
     const tick = () => {
       const t = performance.now()
       const { colorOf, emphasised, selected } = styleRef.current
+      const cam = fgRef.current?.camera?.()
       for (const { mesh, wire, label, node } of meshes.current.values()) {
         const css = colorOf(node)
         const m = css.match(/rgba\((\d+),(\d+),(\d+),([\d.]+)\)/)
@@ -358,6 +365,13 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
           label.color = withAlpha(pal.text, emphasised(node) ? 0.95 : 0.12)
           if (label.backgroundColor !== pal.halo) label.backgroundColor = pal.halo
           if (wire && wire.material.color.getStyle() !== pal.accent) wire.material.color.set(pal.accent)
+          if (cam && node.x != null) {                       // scale with distance; far away, keep only the structure's names
+            const dist = Math.hypot(cam.position.x - node.x, cam.position.y - node.y, cam.position.z - (node.z || 0))
+            const k = Math.min(2.4, Math.max(0.7, dist / LABEL_REF_DISTANCE))
+            label.textHeight = label.userData.base * k
+            const structural = node.type === 'hub' || node.type === 'source'
+            if (node.type !== 'tool') label.visible = structural || dist < LABEL_FAR || node.id === selected || node.id === styleRef.current.hoverId
+          }
           if (node.type === 'tool') label.visible = !!node.fanned || node.id === styleRef.current.hoverId
         }
       }
@@ -375,9 +389,10 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
     drawShape(ctx, n.type, n.x, n.y, r * breathe, col)
     if (n.id === selected) { ctx.lineWidth = 1.5 / scale; ctx.strokeStyle = palette().text; ctx.stroke() }
     const showToolLabel = n.type === 'tool' && (n.fanned || n.id === hover)
-    if (showToolLabel || (LABELLED.has(n.type) && (scale > 1.4 || n.type === 'hub' || n.type === 'source'))) {
+    // labels appear as you zoom in: structure always, sessions from a modest zoom, selected or hovered ones always
+    if (showToolLabel || (LABELLED.has(n.type) && (scale > 1.1 || n.type === 'hub' || n.type === 'source' || n.id === selected || n.id === hover))) {
       const text = n.collapsedCount ? `${n.label} (+${n.collapsedCount})` : n.type === 'tool' ? `${n.label}${n.errors ? ` ✕${n.errors}` : ''} ×${n.calls}` : n.label
-      ctx.font = `${Math.max(2.5, 10 / scale)}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'top'
+      ctx.font = `${Math.max(3, 11 / scale)}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'top'
       const t = text.length > 40 ? text.slice(0, 39) + '…' : text
       ctx.lineWidth = 3 / scale; ctx.lineJoin = 'round'; ctx.strokeStyle = withAlpha(palette().bg, emphasised(n) ? 0.85 : 0.15)
       ctx.strokeText(t, n.x, n.y + r + 1.5)                                        // halo keeps labels legible over links in both themes
