@@ -1,3 +1,6 @@
+import json
+import time
+
 import pytest
 from conftest import keryx
 
@@ -57,3 +60,79 @@ def test_storage_check(hermes_data, monkeypatch):
     monkeypatch.setattr(keryx, "storage_state", lambda: {"db": 1, "wal": 0, "logs": 0, "free": 500 << 20, "total": 100 << 30, "free_pct": 0.5})
     assert {c["name"]: c for c in keryx.build_status()["checks"]}["storage"]["level"] == "red"
     assert keryx.fmt_bytes(1536) == "2 KB" and keryx.fmt_bytes(5 << 30) == "5.0 GB" and keryx.fmt_bytes(None) == "?"
+
+
+def checks():
+    return {c["name"]: c for c in keryx.build_status()["checks"]}
+
+
+def test_platform_checks_come_from_the_gateway_state_file(hermes_data):
+    st = keryx.build_status()
+    c = checks()
+    assert c["telegram"]["level"] == "green" and c["telegram"]["kind"] == "platform" and c["telegram"]["detail"].startswith("connected")
+    assert c["webhook"]["level"] == "green"
+    assert c["api_server"]["level"] == "green" and "1 active run" in c["api_server"]["detail"] and "12 request" in c["api_server"]["detail"]
+    w = c["whatsapp"]
+    assert w["level"] == "amber" and w["state"] == "retrying" and w["error_code"] == "whatsapp_bridge_exited"
+    assert w["detail"].startswith("retrying since 9d ago") and "bridge process exited" in w["detail"]
+    assert "abc123" not in w["detail"]                               # error text is redacted before it leaves the server
+    assert "SECRET-ARGV" not in json.dumps(st)                       # argv never leaves gateway_summary
+    assert c["gateway"]["level"] == "green" and c["gateway"]["detail"].endswith("Hermes 0.22.2")
+    assert st["hermes"]["version"] == "0.22.2" and st["hermes"]["state"] == "running" and st["hermes"]["sha"] == "d923a5eb487a"
+    assert st["hermes"]["profiles"] == ["default"] and st["hermes"]["stale"] is False
+
+
+def test_gateway_state_outranks_the_heartbeat(hermes_data):
+    from conftest import write_gateway_state
+    write_gateway_state(hermes_data, gateway_state="degraded")           # partial start: amber even with a fresh heartbeat
+    keryx.configure(hermes_data)
+    g = checks()["gateway"]
+    assert g["level"] == "amber" and g["detail"].startswith("gateway degraded")
+    write_gateway_state(hermes_data, gateway_state="startup_failed", desired_state="running", exit_reason="boom")
+    keryx.configure(hermes_data)
+    g = checks()["gateway"]
+    assert g["level"] == "red" and g["detail"].startswith("gateway startup_failed, wanted running")
+    write_gateway_state(hermes_data, gateway_state="stopped", desired_state="stopped")
+    keryx.configure(hermes_data)
+    assert checks()["gateway"]["detail"].startswith("gateway stopped") and "wanted" not in checks()["gateway"]["detail"]
+
+
+def test_stale_gateway_state_file_is_only_a_warning(hermes_data):
+    from conftest import write_gateway_state, NOW
+    iso = lambda t: time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime(t))
+    write_gateway_state(hermes_data, updated_at=iso(NOW - 2 * 3600))
+    keryx.configure(hermes_data)
+    g = checks()["gateway"]
+    assert g["level"] == "amber" and "state file 120m old" in g["detail"]
+    assert keryx.build_status()["hermes"]["stale"] is True
+
+
+def test_needs_attention_is_red(hermes_data):
+    from conftest import write_gateway_state
+    import json as _json
+    base = _json.loads((hermes_data / "gateway_state.json").read_text())
+    base["platforms"]["telegram"].update(needs_attention=True, state="connected")
+    (hermes_data / "gateway_state.json").write_text(_json.dumps(base))
+    keryx.configure(hermes_data)
+    assert checks()["telegram"]["level"] == "red"
+
+
+def test_without_the_state_file_telegram_comes_from_the_log(hermes_data):
+    (hermes_data / "gateway_state.json").unlink()
+    keryx.configure(hermes_data)
+    st = keryx.build_status()
+    c = {x["name"]: x for x in st["checks"]}
+    assert st["hermes"] is None and "whatsapp" not in c
+    assert c["telegram"]["level"] == "green" and c["telegram"]["detail"].startswith("connected") and c["telegram"]["kind"] == "platform"
+    assert c["gateway"]["detail"].startswith("heartbeat") and "Hermes" not in c["gateway"]["detail"]
+    (hermes_data / "gateway_state.json").write_text("{not json")       # a half-written file is the same as no file
+    keryx.configure(hermes_data)
+    assert keryx.build_status()["hermes"] is None
+
+
+def test_diagnostics_carry_hermes_state(client):
+    d = client.get("/api/diagnostics").json()
+    assert d["hermes"]["version"] == "0.22.2"
+    plats = {p["name"]: p for p in d["hermes"]["platforms"]}
+    assert plats["whatsapp"]["state"] == "retrying" and "abc123" not in plats["whatsapp"]["error"]
+    assert "argv" not in json.dumps(d["hermes"]) and "SECRET-ARGV" not in client.get("/api/diagnostics").text
