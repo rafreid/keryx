@@ -1,4 +1,5 @@
-import React, { useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
+import Icon from './Icons.jsx'
 import Section from './Section.jsx'
 import { ACTIVE, STATUS, TYPE, ago, contextLevel, dur, fmtT, num, plural } from './util.js'
 import Shape from './Shapes.jsx'
@@ -29,11 +30,13 @@ export default function SidePanel({ node, cost, status, onClose, graph, tasks, h
   }
   const badgeLevel = { sessions: 'ok', tasks: (tasks?.jobs || []).some(j => j.state === 'error' || j.state === 'missed') ? 'err' : 'ok', logs: 'err',
     board: tasks?.kanban?.attention ? 'err' : 'ok' }
+  const [width, onResize] = usePanelWidth()
   return (
-    <div className="side">
+    <div className="side" style={width ? { width } : undefined}>
+      <div className="resizer" onPointerDown={onResize} role="separator" aria-orientation="vertical" aria-label="resize the panel (drag)" title="drag to widen the panel" />
       <div className="tabs" role="tablist" aria-label="side panel">
-        {TABS.map(t => <button key={t} role="tab" aria-selected={tab === t && !node} className={tab === t && !node ? 'on' : ''} onClick={e => { onClose(); setTab(t); e.currentTarget.scrollIntoView({ inline: 'nearest', block: 'nearest' }) }}>
-          {t}{badges[t] ? <span className={`badge ${badgeLevel[t]}`}>{badges[t]}</span> : null}
+        {TABS.map(t => <button key={t} role="tab" aria-selected={tab === t && !node} className={tab === t && !node ? 'on' : ''} onClick={() => { onClose(); setTab(t) }}>
+          <Icon name={t} size={13} />{t}{badges[t] ? <span className={`badge ${badgeLevel[t]}`}>{badges[t]}</span> : null}
         </button>)}
       </div>
       {node ? <NodeDetail node={node} graph={graph} onClose={onClose} onSelect={onSelect} links={status?.links} />
@@ -46,6 +49,24 @@ export default function SidePanel({ node, cost, status, onClose, graph, tasks, h
         : <Overview cost={cost} status={status} graph={graph} hidden={hidden} toggleHidden={toggleHidden} showAll={showAll} onSelect={onSelect} setTab={setTab} />}
     </div>
   )
+}
+
+/** Drag the panel's left edge to widen it (320 to 640 px); remembered per browser. Phones ignore it: the panel is full width there. */
+const MIN_W = 320, MAX_W = 640
+function usePanelWidth() {
+  const [width, setWidth] = useState(() => { try { return Number(localStorage.getItem('keryx.panelw')) || 0 } catch { return 0 } })
+  const drag = useRef(null)
+  useEffect(() => { try { width ? localStorage.setItem('keryx.panelw', String(width)) : localStorage.removeItem('keryx.panelw') } catch {} }, [width])
+  const onResize = useCallback(e => {
+    e.preventDefault()
+    const side = e.currentTarget.parentElement
+    const right = side.getBoundingClientRect().right
+    const move = ev => setWidth(Math.round(Math.min(MAX_W, Math.max(MIN_W, right - ev.clientX))))
+    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); document.body.style.cursor = ''; drag.current = null }
+    window.addEventListener('pointermove', move); window.addEventListener('pointerup', up)
+    document.body.style.cursor = 'col-resize'; drag.current = true
+  }, [])
+  return [width, onResize]
 }
 
 /** Context-window gauge: how full the model's context was at the last API call. */
@@ -231,7 +252,7 @@ function Overview({ cost, status, graph, hidden, toggleHidden, showAll, onSelect
         <tr><td>cron</td><td>{plural(s.cron_jobs ?? 0, 'job')} · {plural(s.cron_runs ?? 0, 'run')}</td></tr>
       </tbody></table>
       {status?.attention && <Attention items={status.attention} onSelect={onSelect} setTab={setTab} />}
-      <Section id="health" title="Health" summary={<span className={`dot ${status?.level || 'amber'}`} />}>
+      <Section id="health" title="Health" defaultOpen={false} summary={<><span className={`dot ${status?.level || 'amber'}`} />{(status?.checks || []).length ? `${plural((status.checks || []).filter(c => c.level !== 'green').length, 'check')} not green` : ''}</>}>
       <table><tbody>{(status?.checks || []).map(c => (
         <tr key={c.name}><td><span className={`dot ${c.level}`} />{c.name.replace(/_/g, ' ')}</td><td>{c.detail}{c.recent?.length ? <div className="small">{c.recent.map((l, i) => <div key={i}>{l}</div>)}</div> : null}</td></tr>
       ))}</tbody></table>
