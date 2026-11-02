@@ -184,3 +184,20 @@ def test_plurals_are_real_words():
     assert keryx.plural(None, "incident") == "0 incidents" and keryx.plural(3, "entry", "entries") == "3 entries"
     import json
     assert "(s)" not in json.dumps(keryx.build_status())                  # nothing user-facing says "job(s)" any more
+
+
+def test_status_without_state_db_is_a_setup_state(tmp_path):
+    """No state.db: one red 'data' check and one attention line instead of a column of derived reds."""
+    keryx.configure(tmp_path / "empty")
+    st = keryx.build_status()
+    assert st["data"] == {"state_db": False, "dir": False} and st["level"] == "red"
+    assert [c["name"] for c in st["checks"]] == ["data"] and st["checks"][0]["kind"] == "setup"
+    assert st["attention"][0]["label"] == "Hermes data not found" and st["attention"][0]["tab"] == "overview"
+    assert str(tmp_path) not in json.dumps(st)                                        # no path leaves the backend
+    (tmp_path / "empty").mkdir()
+    keryx.configure(tmp_path / "empty")
+    assert keryx.build_status()["data"] == {"state_db": False, "dir": True}
+
+
+def test_status_with_data_says_so(hermes_data):
+    assert keryx.build_status()["data"] == {"state_db": True}

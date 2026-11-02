@@ -5,7 +5,7 @@ import { tz } from './util.js'
 
 const WINDOWS = [[1, 'last hour'], [6, '6 hours'], [24, '24 hours'], [168, '7 days'], [0, 'all time']]
 
-export default function Header({ status, hours, setHours, view, setView, live, setLive, conn, cost, theme, setTheme, notify, setNotify, sound, setSound, onHelp }) {
+export default function Header({ status, hours, setHours, view, setView, live, setLive, cost, theme, setTheme, notify, setNotify, sound, setSound, onHelp }) {
   const level = status?.level || 'amber'
   // the title dot summarises health; only checks that are not green stay inline, the rest sit behind one pill
   const checks = status?.checks || []
@@ -29,8 +29,8 @@ export default function Header({ status, hours, setHours, view, setView, live, s
       <h1 title={(status?.attention || []).filter(a => a.severity !== 'info').map(a => `${a.severity === 'red' ? '●' : '○'} ${a.label}`).join('\n') || 'all clear'}><span className={`dot ${level} ${level === 'red' ? 'pulse' : ''}`} />Keryx{status?.keryx ? <span className="ver">{status.keryx}</span> : null} <span className="small" style={{ fontWeight: 400 }} title={hermes ? `gateway ${hermes.state}${hermes.desired && hermes.desired !== hermes.state ? ` (wanted ${hermes.desired})` : ''} · pid ${hermes.pid ?? '?'} · ${hermes.sha || ''}` : ''}>· Hermes activity{hermes?.version ? ` · Hermes ${hermes.version}` : ''}</span> <span className="small tz" title="times are shown in this browser's zone; analytics days are counted in UTC">{tz()}</span></h1>
       <span className="healthwrap">
         <button className={`pill ${health ? 'on' : ''}`} onClick={() => setHealth(h => !h)} aria-expanded={health} aria-label="health checks"
-                title={trouble.length ? trouble.map(c => `${c.name}: ${c.detail}`).join('\n') : 'every check is green'}>
-          <span className={`dot ${level}`} />health{trouble.length ? <> · {nRed ? <span className="err">{nRed} red</span> : null}{nRed && nAmber ? ' · ' : ''}{nAmber ? <span className="warn">{nAmber} amber</span> : null}</> : ' · all green'}
+                title={!status ? 'no status received yet' : trouble.length ? trouble.map(c => `${c.name}: ${c.detail}`).join('\n') : 'every check is green'}>
+          <span className={`dot ${level}`} />health{!status ? ' · waiting for data' : trouble.length ? <> · {nRed ? <span className="err">{nRed} red</span> : null}{nRed && nAmber ? ' · ' : ''}{nAmber ? <span className="warn">{nAmber} amber</span> : null}</> : ' · all green'}
         </button>
         {health && <div className="popover health">
           <table><tbody>{checks.map(c => (
@@ -68,8 +68,8 @@ export default function Header({ status, hours, setHours, view, setView, live, s
         </span>
         <button onClick={onHelp} aria-label="how to read Keryx" title="how to read this">?</button>
         <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label={theme === 'dark' ? 'switch to the light theme' : 'switch to the dark theme'} title="toggle theme">{theme === 'dark' ? '☾' : '☀'}</button>
-        <button className={live ? 'on' : ''} onClick={() => setLive(!live)} aria-pressed={live} aria-label={live ? 'pause live updates' : 'resume live updates'} title={`connection: ${conn}`}>
-          {live ? (conn === 'live' ? '● live' : `● ${conn}`) : '○ paused'}
+        <button className={live ? 'on' : ''} onClick={() => setLive(!live)} aria-pressed={live} aria-label={live ? 'pause live updates' : 'resume live updates'} title={live ? 'pause live updates; the strip below says how current the picture is' : 'resume live updates'}>
+          {live ? '● live' : '○ paused'}
         </button>
       </div>
     </div>

@@ -12,6 +12,8 @@ import { NARROW, useMedia } from './hooks/useMedia.js'
 import { TABS } from './tabs.js'
 import { TickContext, useClock } from './hooks/useTick.js'
 import FirstRun from './FirstRun.jsx'
+import ConnStrip from './ConnStrip.jsx'
+import SetupCard from './SetupCard.jsx'
 import { ago } from './util.js'
 
 const params = new URLSearchParams(location.search)
@@ -73,7 +75,7 @@ export default function App() {
   }), [])
   const showAll = useCallback(() => { setHidden(new Set()); try { localStorage.removeItem('keryx.hidden') } catch {} }, [])
   const [replayGraph, setReplayGraph] = useState(null)
-  const { data, conn } = useLive(hours, live)
+  const { data, conn, seenAt, downSince } = useLive(hours, live)
   const [notify, setNotify] = useState(() => { try { return localStorage.getItem('keryx.notify') === '1' && typeof Notification !== 'undefined' && Notification.permission === 'granted' } catch { return false } })
   useEffect(() => { try { localStorage.setItem('keryx.notify', notify ? '1' : '0') } catch {} }, [notify])
   const [sound, setSound] = useState(() => { try { return localStorage.getItem('keryx.sound') === '1' } catch { return false } })
@@ -113,12 +115,18 @@ export default function App() {
   const showLegend = () => { navigate(null, { tab: 'overview' }); try { localStorage.setItem('keryx.ov.legend', '1') } catch {}; setTimeout(() => document.getElementById('legend')?.scrollIntoView({ block: 'start' }), 50) }
   const nowClock = useClock(5000)
   const tick = data?.graph?.generated_at || 0
+  // no state.db behind the backend: the graph gives way to a setup card until one appears
+  const setup = !!(data?.status?.data && !data.status.data.state_db)
+
+  // locked: nothing else is worth drawing until the token is in (no shell, no first-run card, no "all green")
+  if (conn === 'auth') return <TokenGate />
 
   return (
     <TickContext.Provider value={tick}>
     <div className={`app ${narrow ? `narrow m-${mobile}` : ''}`}>
       <Header status={data?.status} hours={hours} setHours={setHours} view={view} setView={setView}
-              live={live} setLive={setLive} conn={conn} cost={data?.cost} theme={theme} setTheme={setTheme} notify={notify} setNotify={setNotify} sound={sound} setSound={setSound} onHelp={() => setFirstRun(true)} />
+              live={live} setLive={setLive} cost={data?.cost} theme={theme} setTheme={setTheme} notify={notify} setNotify={setNotify} sound={sound} setSound={setSound} onHelp={() => setFirstRun(true)} />
+      <ConnStrip conn={conn} live={live} seenAt={seenAt} dataAt={(data?.graph?.generated_at || data?.status?.generated_at || 0) * 1000} downSince={downSince} />
       {narrow && <div className="mobilebar" role="tablist" aria-label="phone layout">
         <button role="tab" aria-selected={mobile === 'map'} className={mobile === 'map' ? 'on' : ''} onClick={() => setMobile('map')}>map</button>
         <button role="tab" aria-selected={mobile === 'panel'} className={mobile === 'panel' ? 'on' : ''} onClick={() => setMobile('panel')}>{selectedNode ? selectedNode.label : tab}</button>
@@ -128,6 +136,7 @@ export default function App() {
         <div className="main">
           <NowStrip now={data?.now} selected={resolved} onSelect={navigate} />
           <div className="graphwrap">
+            {setup ? <SetupCard dirExists={data.status.data.dir} /> : <>
             <GraphView graph={graph} view={view} windowSec={windowSec} selected={resolved} onSelect={navigate}
                        search={search} collapsed={collapsed} toggleCollapse={toggleCollapse} hidden={hidden} recenterSignal={recenterSignal} band={band} onVisible={setVisible} spread={spread}
                        camRef={camRef} restore={restore} theme={theme} />
@@ -162,15 +171,15 @@ export default function App() {
               {visible?.filtered ? <>showing </> : null}
               sessions <b>{visible?.filtered ? `${visible.sessions} of ${stats.sessions ?? '–'}` : (stats.sessions ?? '–')}</b> · running <b>{visible?.filtered ? visible.running : (stats.running ?? 0)}</b> · active <b>{visible?.filtered ? visible.active : (stats.active ?? 0)}</b> ·
               tool calls <b>{visible?.filtered ? visible.tool_calls : (stats.tool_calls ?? 0)}</b>{(visible?.filtered ? visible.errors : stats.errors) ? <> · <span className="err">{visible?.filtered ? visible.errors : stats.errors} failed</span></> : null} ·
-              {graph?.generated_at ? (graph.replay ? ` as of ${fmtTime(graph.as_of)}` : ` updated ${ago(Math.min(graph.generated_at, nowClock))}`) : ' loading…'}
+              {graph?.generated_at ? (graph.replay ? ` as of ${fmtTime(graph.as_of)}` : ` last change ${ago(Math.min(graph.generated_at, nowClock))}`) : ' loading…'}
             </div>
             {firstRun && <FirstRun onClose={closeFirstRun} onLegend={showLegend} />}
+            </>}
           </div>
         </div>
         <SidePanel node={selectedNode} cost={data?.cost} status={data?.status} graph={graph} tasks={data?.tasks} onClose={() => { navigate(null); if (narrow) setMobile('map') }}
                    hidden={hidden} toggleHidden={toggleHidden} showAll={showAll} search={search} onSelect={navigate} tab={tab} setTab={setTab} />
       </div>
-      {conn === 'auth' && <TokenGate />}
       <div className="toasts">
         {toasts.map(t => <div key={t.id} className={`toast ${t.level}`} onClick={() => { if (t.node) { navigate(t.node) } dismiss(t.id) }}>
           <b>{t.title}</b>{t.body && <div className="small">{t.body}</div>}

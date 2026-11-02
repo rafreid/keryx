@@ -1,30 +1,52 @@
 import { useEffect, useRef, useState } from 'react'
+import { STALL_AFTER } from './conn.js'
 
-/** Live bundle {graph, now, status, cost} via SSE, with polling fallback. */
+/**
+ * Live bundle {graph, now, status, cost, tasks} via SSE, with polling fallback.
+ *
+ * `conn` is one of: connecting, live, stalled (the stream went quiet), polling (SSE failed, fetching
+ * every 10 s), offline (the fetches fail too), auth (401: a token is needed). `seenAt` is the last
+ * moment anything arrived from the backend, data or ping; `downSince` is when it stopped answering.
+ * A watchdog, not only the socket's own error event, drives the degraded states: a dead host or a
+ * stopped container often leaves the socket looking open.
+ */
 export function useLive(hours, enabled) {
   const [data, setData] = useState(null)
   const [conn, setConn] = useState('connecting')
+  const [seenAt, setSeenAt] = useState(0)
+  const [downSince, setDownSince] = useState(null)
+  const seen = useRef(0)
   useEffect(() => {
     if (!enabled) return
-    let es, poll, closed = false
+    let es = null, poll = null, retry = null, closed = false
+    const touch = () => { seen.current = Date.now(); setSeenAt(seen.current); setDownSince(null) }
+    const degrade = why => {                  // the stream failed or went quiet: poll until it comes back
+      setConn(why)
+      if (es) { es.close(); es = null }
+      if (closed || poll) return
+      const tick = () => fetchBundle(hours)
+        .then(d => { if (closed) return; setData(d); setConn('polling'); touch() })
+        .catch(e => {
+          if (closed) return
+          if (e instanceof AuthError) { setConn('auth'); clearInterval(poll); clearTimeout(retry); return }   // the token form reloads the page
+          setConn('offline'); setDownSince(s => s || Date.now())
+        })
+      tick(); poll = setInterval(tick, 10000)
+      retry = setTimeout(() => { if (!closed) { clearInterval(poll); poll = null; start() } }, 60000)   // retry SSE
+    }
     const start = () => {
       es = new EventSource(`/api/stream?hours=${hours}`)
-      es.addEventListener('update', e => { setData(JSON.parse(e.data)); setConn('live') })
-      es.onopen = () => setConn('live')
-      es.onerror = () => {
-        setConn('polling'); es.close()
-        if (!closed && !poll) {
-          const tick = () => fetchBundle(hours).then(d => { setData(d); setConn('polling') })
-            .catch(e => setConn(e instanceof AuthError ? 'auth' : 'offline'))
-          tick(); poll = setInterval(tick, 10000)
-          setTimeout(() => { if (!closed) { clearInterval(poll); poll = null; start() } }, 60000) // retry SSE
-        }
-      }
+      es.addEventListener('update', e => { setData(JSON.parse(e.data)); setConn('live'); touch() })
+      es.addEventListener('ping', touch)
+      es.onopen = () => { setConn('live'); touch() }
+      es.onerror = () => degrade('polling')
     }
+    seen.current = Date.now()
     start()
-    return () => { closed = true; es && es.close(); poll && clearInterval(poll) }
+    const watchdog = setInterval(() => { if (es && Date.now() - seen.current > STALL_AFTER) degrade('stalled') }, 5000)
+    return () => { closed = true; es && es.close(); poll && clearInterval(poll); retry && clearTimeout(retry); clearInterval(watchdog) }
   }, [hours, enabled])
-  return { data, conn }
+  return { data, conn, seenAt, downSince }
 }
 
 export class AuthError extends Error {}
