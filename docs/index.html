@@ -243,7 +243,7 @@ footer .wrap > div { display: flex; flex-wrap: wrap; gap: 16px; align-items: cen
         <div class="card">
           <h3>Health header</h3>
           <ul>
-            <li>The title dot shows the worst check; a <strong>health</strong> pill counts the red and amber ones and opens every check; only checks that are not green stay inline.</li>
+            <li>The title dot shows the worst check; a <strong>health</strong> pill counts the red and amber ones and opens every check (Esc closes it); only the single worst check stays inline. A strip under the header says whether the picture is current: <strong>live · checked 3s ago · last change 4m ago</strong>, <strong>reconnecting…</strong> or <strong>backend unreachable since 14:02</strong>, with the stream pinged every 15 s so a dead host shows within half a minute.</li>
             <li><strong>Gateway</strong> heartbeat and Hermes' own process state and version from <code>gateway_state.json</code>, one check per <strong>messaging platform</strong> as the gateway reports it (with the error it recorded when one is retrying), <strong>cron</strong> scheduler, the <strong>error log</strong>, session states, and the kanban board when it has tasks, each green / amber / red; the worst one drives the title dot.</li>
             <li>The cron check reads Hermes' own incident ledger and delivery queue: an open incident is red, undelivered results are amber.</li>
             <li>Token totals for the window with the spend, prefixed <code>~</code> when it is an estimate rather than a provider-reported figure.</li>
@@ -359,9 +359,9 @@ footer .wrap > div { display: flex; flex-wrap: wrap; gap: 16px; align-items: cen
         <h3>Navigation</h3>
         <ul>
           <li>Every selection is a browser history entry that remembers the selection, the tab and the camera pose. <kbd>Backspace</kbd> goes back, <kbd>Shift</kbd>+<kbd>Backspace</kbd> forward; <kbd>Alt</kbd>+<kbd>←</kbd> and trackpad swipes work too. <kbd>[</kbd> and <kbd>]</kbd> change tab, <kbd>↑</kbd> <kbd>↓</kbd> walk the session list, <kbd>?</kbd> in the header reopens the first-run card.</li>
-          <li>On a phone the graph and the panel take turns at full width behind a map / panel toggle; light and dark themes are both designed, not inverted.</li>
+          <li>On a phone the header is one row with a "…" sheet for the controls, the health counts sit in the map / panel bar, every control is at least 40 px tall, and the graph and the panel take turns at full width; light and dark themes are both designed, not inverted.</li>
           <li>The URL hash (<code>#session:…</code>, <code>#cron:…</code>) is a deep link you can share, or scan from the QR popover to open on your phone, where "add to home screen" keeps Keryx as an app.</li>
-          <li>Every icon button is labelled for screen readers; focus rings are visible; a first-run card explains the picture and <kbd>?</kbd> brings it back.</li>
+          <li>Every card, attention line, section header, trace step and kanban card is a real control reachable with <kbd>Tab</kbd>; focus rings are visible; a first-run card explains the picture, holds the reduce-motion switch, and <kbd>?</kbd> brings it back. The attention list is grouped into <strong>needs action</strong>, <strong>watch</strong> and <strong>info</strong>, says since when, and a line can be muted on this device until it changes. With no <code>state.db</code> behind the backend the graph gives way to a setup card naming the fix.</li>
         </ul>
       </div>
       <div class="card">

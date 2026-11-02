@@ -1,12 +1,27 @@
-import React from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { STATUS, contextLevel, dur, plural } from './util.js'
 import Shape from './Shapes.jsx'
 import { pressable } from './a11y.js'
 
 export default function NowStrip({ now, selected, onSelect }) {
   const rows = (now?.running || []).filter(r => r.status === 'running' || r.status === 'stale' || r.status === 'waiting')
+  const ref = useRef(null)
+  const [hiddenN, setHiddenN] = useState(0)      // cards off the right edge: the strip says so instead of looking merely cut off
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const count = () => {
+      const right = el.getBoundingClientRect().right
+      setHiddenN([...el.querySelectorAll('.card')].filter(c => c.getBoundingClientRect().left + 40 > right).length)
+    }
+    count()
+    el.addEventListener('scroll', count, { passive: true })
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(count) : null
+    ro?.observe(el)
+    return () => { el.removeEventListener('scroll', count); ro?.disconnect() }
+  }, [rows.length])
   return (
-    <div className="now" role="list" aria-label="sessions in progress">
+    <div className="now" role="list" aria-label="sessions in progress" ref={ref}>
       {rows.map(r => (
         <div key={r.id} className={`card ${selected === 'session:' + r.id ? 'sel' : ''}`} role="listitem">
           <div className="t" {...pressable(() => onSelect('session:' + r.id), { className: 't', 'aria-label': `${r.status}: ${r.title}. Open its details`, 'aria-pressed': selected === 'session:' + r.id })}>
@@ -30,6 +45,7 @@ export default function NowStrip({ now, selected, onSelect }) {
           </div>
         </div>
       ))}
+      {hiddenN > 0 && <button type="button" className="more" onClick={() => ref.current?.scrollBy({ left: 260, behavior: 'smooth' })} aria-label={`${hiddenN} more ${hiddenN === 1 ? 'session' : 'sessions'} to the right; scroll`}>{hiddenN} more ›</button>}
     </div>
   )
 }
