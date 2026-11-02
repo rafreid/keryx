@@ -1329,8 +1329,12 @@ def attention_list(checks: list[dict], jobs: list[dict], open_inc: list[dict], m
     items: list[dict] = []
     by = {c["name"]: c for c in checks}
 
-    def add(id_: str, sev: str, source: str, label: str, detail: str = "", node: Optional[str] = None, tab: Optional[str] = None):
-        items.append({"id": id_, "severity": sev, "source": source, "label": label, "detail": detail or "", "node": node, "tab": tab})
+    def add(id_: str, sev: str, source: str, label: str, detail: str = "", node: Optional[str] = None, tab: Optional[str] = None,
+            since: Optional[float] = None):
+        # `since` is when the condition began (an incident's first sighting, the missed slot, a transport's
+        # last state change); the viewer shows "since 9d" and uses label+detail as the mute signature
+        items.append({"id": id_, "severity": sev, "source": source, "label": label, "detail": detail or "", "node": node, "tab": tab,
+                      "since": since})
 
     g = by.get("gateway")
     if g and g["level"] != "green":
@@ -1342,7 +1346,7 @@ def attention_list(checks: list[dict], jobs: list[dict], open_inc: list[dict], m
     for c in checks:
         if c.get("kind") == "platform" and c["level"] != "green":
             add(f"platform-{c['name']}", c["level"], "platform", f"{c['name'].replace('_', ' ')} {c.get('state') or c['detail'].split(' ')[0]}",
-                c["detail"], tab="overview")
+                c["detail"], tab="overview", since=c.get("since"))
     names = {j["id"]: j["name"] for j in jobs}
     seen_jobs: set[str] = set()
     for i in open_inc:
@@ -1350,22 +1354,26 @@ def attention_list(checks: list[dict], jobs: list[dict], open_inc: list[dict], m
             continue
         seen_jobs.add(i["job_id"])
         add(f"incident-{i['id']}", "red", "cron", f"cron job failing: {names.get(i['job_id'], i['job_id'])}", short(i.get("error"), 160) or "",
-            node=f"cron:{i['job_id']}")
+            node=f"cron:{i['job_id']}", since=i.get("first_seen_at"))
     for j in jobs:
         if j["missed"] and j["id"] not in seen_jobs:
-            add(f"missed-{j['id']}", "red", "cron", f"missed trigger: {j['name']}", f"{plural(j.get('missed_count') or 1, 'slot')} skipped", node=f"cron:{j['id']}")
+            add(f"missed-{j['id']}", "red", "cron", f"missed trigger: {j['name']}", f"{plural(j.get('missed_count') or 1, 'slot')} skipped", node=f"cron:{j['id']}",
+                since=j.get("next_run"))
         elif j["state"] == "error" and j["id"] not in seen_jobs:
-            add(f"failed-{j['id']}", "amber", "cron", f"last run failed: {j['name']}", short(j.get("last_error"), 160) or "", node=f"cron:{j['id']}")
+            add(f"failed-{j['id']}", "amber", "cron", f"last run failed: {j['name']}", short(j.get("last_error"), 160) or "", node=f"cron:{j['id']}",
+                since=j.get("last_run"))
     cr = by.get("cron")
     if cr and cr["level"] == "red" and "scheduler silent" in cr["detail"]:
         add("scheduler", "red", "cron", cr["detail"], "no ticker heartbeat: jobs will not fire", tab="tasks")
     stuck = deliveries["pending"] + deliveries["delivering"] + deliveries["failed"]
     if stuck:
-        add("deliveries", "amber", "cron", f"{plural(stuck, 'cron result')} not delivered", f"{deliveries['failed']} failed", tab="tasks")
+        waiting_since = [d["created_at"] for d in deliveries.get("recent", []) if d.get("status") in ("pending", "delivering", "failed") and d.get("created_at")]
+        add("deliveries", "amber", "cron", f"{plural(stuck, 'cron result')} not delivered", f"{deliveries['failed']} failed", tab="tasks",
+            since=min(waiting_since) if waiting_since else None)
     if kb.get("board") is not None:
         for a in kb["attention"]:
             add(f"kanban-{a['id']}", "red" if a["why"] == "worker silent" else "amber", "kanban",
-                f"{a['title']}: {a['why']}", "", tab="board")
+                f"{a['title']}: {a['why']}", "", tab="board", since=a.get("since"))
         if kb["counts"].get("blocked"):
             add("kanban-blocked", "amber", "kanban", f"{plural(kb['counts']['blocked'], 'kanban card')} blocked", "", tab="board")
     e = by.get("errors")
@@ -1829,8 +1837,8 @@ def build_kanban(board: Optional[str] = None, include_archived: bool = False) ->
         lanes.append({"key": KANBAN_ARCHIVED, "label": "Archived", "glyph": "▪", "tasks": archived})
     counts = {l["key"]: len(l["tasks"]) for l in lanes}
     counts["archived"] = len(archived)
-    attention = ([{"id": t["id"], "title": t["title"], "why": "worker silent"} for t in tasks if t["stale"]]
-                 + [{"id": t["id"], "title": t["title"], "why": f"{t['failures']} failures in a row"} for t in tasks
+    attention = ([{"id": t["id"], "title": t["title"], "why": "worker silent", "since": t.get("heartbeat") or t.get("started_at")} for t in tasks if t["stale"]]
+                 + [{"id": t["id"], "title": t["title"], "why": f"{t['failures']} failures in a row", "since": t.get("started_at")} for t in tasks
                     if t["failures"] >= 2 and t["status"] not in ("done", KANBAN_ARCHIVED)])
     return {"generated_at": now, "board": pick["slug"], "board_name": pick["name"], "boards": boards, "lanes": lanes, "counts": counts,
             "attention": attention, "total": len(tasks) - len(archived), "stale_after": KANBAN_STALE_HEARTBEAT}
