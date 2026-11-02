@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { dur, fmtTime, num } from './util.js'
 import { buildTurns, exportMarkdown, findHits, glyphOf, pretty, visibleSteps, visibleTurns } from './turns.js'
 import { useRefetch } from './hooks/useTick.js'
+import { pressable } from './a11y.js'
 
 /**
  * Session reading view: the conversation as turns (your question → the steps Hermes took → its reply),
@@ -73,10 +74,10 @@ function Outline({ turns, shown }) {
   const toggle = () => setOpen(o => { try { localStorage.setItem('keryx.outline', o ? '0' : '1') } catch {} return !o })
   return (
     <div className="outline">
-      <div className="gh acc" onClick={toggle}>{open ? '▾' : '▸'} outline <span className="small">· {turns.length} questions</span></div>
+      <div className="gh acc"><button type="button" className="accbtn" onClick={toggle} aria-expanded={open}>{open ? '▾' : '▸'} outline <span className="small">· {turns.length} questions</span></button></div>
       {open && <ol>
         {turns.map((t, i) => <li key={i} className={shown.includes(t) ? '' : 'off'}>
-          <a href="#" onClick={e => { e.preventDefault(); document.getElementById(`turn-${i}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }}
+          <a href={`#turn-${i}`} onClick={e => { e.preventDefault(); document.getElementById(`turn-${i}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }}
              title={t.question?.text || '(no question: Hermes acted on its own)'}>
             <span className="n">{i + 1}</span>
             <span className="q">{t.question ? t.question.text : <i>— no question —</i>}</span>
@@ -99,7 +100,7 @@ function Turn({ i, t, filter, openAll, hits, dim, thinking }) {
         ? <div className={`step user${cls(t.question)}`}><span className="when">{fmtTime(t.question.ts)}</span><b>you</b><div className="txt">{t.question.text}</div></div>
         : <div className="step user auto"><span className="when">{fmtTime(t.ts)}</span><b>hermes</b> <span className="small">acted without a new question (wake-up, delegation result or cron)</span></div>}
       {steps.length > 0 && <>
-        <div className="steps-head acc" onClick={() => setOpen(o => !(o ?? isOpen))}>
+        <div className="steps-head acc" {...pressable(() => setOpen(o => !(o ?? isOpen)), { 'aria-expanded': isOpen })}>
           {isOpen ? '▾' : '▸'} steps · {t.tools} tool call{t.tools === 1 ? '' : 's'}{thinking && t.thinking ? ` · ${t.thinking} thinking` : ''}
           {t.failed ? <span className="err"> · {t.failed} failed</span> : null}
           {t.changes ? <span className="warn"> · {t.changes} edit{t.changes === 1 ? '' : 's'} +{t.added} −{t.removed}</span> : null}
@@ -122,7 +123,7 @@ function Step({ s, open, cls = '' }) {
   if (s.kind === 'user') return <div className={`step user${cls}`}><span className="when">{fmtTime(s.ts)}</span><b>you</b><div className="txt">{s.text}</div></div>
   if (s.kind === 'assistant') return <div className={`step assistant note${cls}`}><span className="when">{fmtTime(s.ts)}</span><b>hermes</b><div className="txt">{s.text}</div></div>
   if (s.kind === 'thinking') return (
-    <div className={`step thinking${cls}`} onClick={() => setO(v => !v)} title={isOpen ? 'collapse' : 'expand the reasoning'}>
+    <div className={`step thinking${cls}`} {...pressable(() => setO(v => !v), { title: isOpen ? 'collapse' : 'expand the reasoning', 'aria-expanded': isOpen })}>
       <span className="when">{fmtTime(s.ts)}</span><b>💭 thinking</b>
       <span className="small st"> {s.chars.toLocaleString()} chars{s.truncated ? ' · head only' : ''} {isOpen ? '▾' : '▸'}</span>
       <div className={`txt ${isOpen ? '' : 'clamp'}`}>{s.text}</div>
@@ -131,7 +132,7 @@ function Step({ s, open, cls = '' }) {
   if (s.kind === 'compaction') return <div className={`step compaction${cls}`} title={`segment ${s.segment}`}><span className="when">{fmtTime(s.ts)}</span><b>⟲ compacted</b> <span className="small">{s.text}</span></div>
   if (s.kind === 'event') return <div className={`step event${cls}`}><span className="when">{fmtTime(s.ts)}</span><b>{s.name.replace(/_/g, ' ')}</b>{s.text && <> <span className="small">{s.text}</span></>}</div>
   return (
-    <div className={`step tool ${s.failed ? 'failed' : ''}${cls}`} onClick={() => setO(v => !v)}>
+    <div className={`step tool ${s.failed ? 'failed' : ''}${cls}`} {...pressable(() => setO(v => !v), { 'aria-expanded': isOpen, 'aria-label': `${s.name}${s.title ? ` ${s.title}` : ''}, ${s.failed ? 'failed' : s.result != null ? 'done' : 'running'}. ${isOpen ? 'Collapse' : 'Expand'} arguments and result` })}>
       <span className="when">{fmtTime(s.ts)}</span>
       <span className="glyph" title={s.tool_kind}>{glyphOf(s)}</span><b>{s.name}</b>
       {s.title ? <span className="title" title={s.title}>{s.title}</span> : null}

@@ -35,7 +35,8 @@ export const radiusOf = n => Math.cbrt(n.val || 3) * (n.type === 'hub' ? 3.8 : n
  *  - stable node objects across live updates, hover highlight, search dimming, platform collapse
  *  - a breathing pulse on running sessions
  */
-export default function GraphView({ graph, view, windowSec, selected, onSelect, search, collapsed, toggleCollapse, hidden, recenterSignal, band, onVisible, spread = 1, camRef, restore, theme }) {
+export default function GraphView({ graph, view, windowSec, selected, onSelect, search, collapsed, toggleCollapse, hidden, recenterSignal, band, onVisible, spread = 1, camRef, restore, theme, reduceMotion = false }) {
+  const stillRef = useRef(reduceMotion); stillRef.current = reduceMotion   // read inside the animation loop without restarting it
   const fgRef = useRef()
   const framedFor = useRef(new Set())       // selections whose ring has already been framed by the camera
   const camTarget = useRef(null)            // where the camera is flying to (history restore), while it flies
@@ -285,7 +286,7 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
     return withAlpha(base, a)
   }, [windowSec, emphasised, focusId, showActive])
 
-  const particles = l => (l.active && showActive ? 3 + Math.min(6, l.value || 1) : l.kind === 'tool' && (l.value || 0) > 3 ? 1 : 0)
+  const particles = l => (reduceMotion ? 0 : l.active && showActive ? 3 + Math.min(6, l.value || 1) : l.kind === 'tool' && (l.value || 0) > 3 ? 1 : 0)
   const particleSpeed = l => {
     const s = typeof l.source === 'object' ? l.source : nodesRef.current.get(l.source)
     const rate = s?.calls_per_min || 0
@@ -355,11 +356,12 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
           mesh.material.opacity = +m[4]
           mesh.material.emissive?.setRGB(m[1] / 255 * 0.25, m[2] / 255 * 0.25, m[3] / 255 * 0.25)
         }
-        const breathe = node.status === 'running' ? 1 + 0.12 * Math.sin(t / 420) : 1
+        const still = stillRef.current
+        const breathe = node.status === 'running' && !still ? 1 + 0.12 * Math.sin(t / 420) : 1
         const sel = node.id === selected ? 1.35 : 1
         mesh.scale.setScalar(radiusOf(node) * breathe * sel)
-        if (node.type !== 'source') mesh.rotation.y = node.type === 'tool' || node.type === 'subagent' ? t / 4000 : 0
-        if (wire) { wire.rotation.y = t / 6000; wire.rotation.x = t / 9000 }
+        if (node.type !== 'source') mesh.rotation.y = !still && (node.type === 'tool' || node.type === 'subagent') ? t / 4000 : 0
+        if (wire && !still) { wire.rotation.y = t / 6000; wire.rotation.x = t / 9000 }
         if (label) {
           const pal = palette()
           label.color = withAlpha(pal.text, emphasised(node) ? 0.95 : 0.12)
@@ -385,7 +387,7 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
   const paint2d = useCallback((n, ctx, scale) => {
     const r = radiusOf(n)
     const col = colorOf(n)
-    const breathe = n.status === 'running' ? 1 + 0.12 * Math.sin(performance.now() / 420) : 1
+    const breathe = n.status === 'running' && !reduceMotion ? 1 + 0.12 * Math.sin(performance.now() / 420) : 1
     drawShape(ctx, n.type, n.x, n.y, r * breathe, col)
     if (n.id === selected) { ctx.lineWidth = 1.5 / scale; ctx.strokeStyle = palette().text; ctx.stroke() }
     const showToolLabel = n.type === 'tool' && (n.fanned || n.id === hover)
@@ -399,7 +401,7 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
       ctx.fillStyle = withAlpha(palette().text, emphasised(n) ? 0.95 : 0.15)
       ctx.fillText(t, n.x, n.y + r + 1.5)
     }
-  }, [colorOf, emphasised, selected, hover, theme])
+  }, [colorOf, emphasised, selected, hover, theme, reduceMotion])
 
   const common = {
     ref: fgRef, graphData: data, width: size.w, height: size.h, nodeId: 'id',
@@ -414,7 +416,7 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
 
   const bg = palette().bg
   return (
-    <div className="canvas" ref={wrapRef}>
+    <div className="canvas" ref={wrapRef} role="region" aria-label="Activity graph. It is drawn on a canvas and cannot be read by a screen reader; the same sessions, tools and jobs are listed in the Sessions, Tasks and Board tabs.">
       {view === '3d'
         ? <ForceGraph3D {...common} backgroundColor={bg} showNavInfo={false}
             nodeThreeObject={threeObject} nodeThreeObjectExtend={false} linkOpacity={0.8} />

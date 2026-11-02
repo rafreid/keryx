@@ -3,6 +3,7 @@ import Shape from './Shapes.jsx'
 import { STATUS, ago, fmtTime, nodeBaseColor, plural } from './util.js'
 import { getJSON, useDebounced } from './api.js'
 import { GROUPINGS, allTags, displayTitle, groupSessions, hiddenCount, isPinned, tagsOf } from './grouping.js'
+import { pressable } from './a11y.js'
 
 /** Arrow keys walk the list: focus the next or previous row anywhere in the panel. */
 const moveFocus = (el, dir) => {
@@ -80,13 +81,13 @@ export default function Sessions({ graph, selected, onSelect, search }) {
         // open by default; search forces open; Hermes' internal sessions start collapsed
         const isOpen = q || g.key === 'running' || g.key === 'pinned' ? true : g.key === 'internal' ? open.has(g.key) : !open.has(g.key)
         return <div key={g.key}>
-          <h3 className="acc" onClick={() => toggle(g.key)} title={g.key === 'internal' ? 'sessions Hermes ran for itself: one-shot CLI calls, tool helpers, kanban workers' : ''}>{g.key === 'running' ? <span className="dot green pulse" /> : isOpen ? '▾ ' : '▸ '}{g.label} <span className="small">· {g.rows.length}</span></h3>
+          <h3 className="acc" title={g.key === 'internal' ? 'sessions Hermes ran for itself: one-shot CLI calls, tool helpers, kanban workers' : ''}><button type="button" className="accbtn" onClick={() => toggle(g.key)} aria-expanded={isOpen}>{g.key === 'running' ? <span className="dot green pulse" /> : isOpen ? '▾ ' : '▸ '}{g.label} <span className="small">· {g.rows.length}</span></button></h3>
           {isOpen && g.rows.map(n => <Row key={n.id} n={n} />)}
         </div>
       })}
       {dq && content && <>
         <h3>in conversations <span className="small">· {content.sessions.length ? `${content.sessions.length} session${content.sessions.length === 1 ? '' : 's'}` : 'no matches'}{content.engine === 'like' ? ' · slow search (no FTS index)' : ''}</span></h3>
-        {contentOnly.map(h => <div key={h.id} className={`srow ${selected === `session:${h.id}` ? 'sel' : ''}`} onClick={() => onSelect(`session:${h.id}`)}>
+        {contentOnly.map(h => <div key={h.id} className={`srow ${selected === `session:${h.id}` ? 'sel' : ''}`} {...pressable(() => onSelect(`session:${h.id}`), { 'aria-label': h.title })}>
           <Shape type="session" color={nodeBaseColor({ type: 'session', status: h.ended ? 'ended' : 'waiting' })} />
           <div className="t">
             <div className="title">{h.title}</div>

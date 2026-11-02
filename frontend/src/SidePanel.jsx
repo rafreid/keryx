@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import Icon from './Icons.jsx'
+import { pressable } from './a11y.js'
 import Section from './Section.jsx'
 import { ACTIVE, STATUS, TYPE, ago, contextLevel, dur, fmtT, num, plural } from './util.js'
 import Shape from './Shapes.jsx'
@@ -200,7 +201,7 @@ function NodeDetail({ node, graph, onClose, onSelect, links }) {
   const Rows = ({ rows }) => <table><tbody>{rows.map(([k, v]) => <tr key={k}><td>{k}</td><td>{v}</td></tr>)}</tbody></table>
   return (
     <div>
-      <span className="close" onClick={onClose} role="button" aria-label="close" title="close (Esc)">✕</span>
+      <button type="button" className="close" onClick={onClose} aria-label="close the details" title="close (Esc)">✕</button>
       <h2>{isSession ? <Shape type={node.type} color={nodeBaseColor(node)} /> : null}{node.label}</h2>
       <div className="nd-summary"><Rows rows={summary} /></div>
       {other.length > 0 && <Rows rows={other} />}
@@ -226,7 +227,7 @@ function Attention({ items, onSelect, setTab }) {
   return (
     <Section id="attention" title="Attention" level={worst} summary={n ? <span className={worst}>{n} need{n === 1 ? 's' : ''} a look</span> : 'all clear'}>
       {!items.length && <div className="small">nothing needs you right now.</div>}
-      {items.map(a => <div key={a.id} className={`att ${a.severity}`} onClick={() => go(a)} title={a.node ? 'select in the graph' : `open the ${a.tab} tab`}>
+      {items.map(a => <div key={a.id} className={`att ${a.severity}`} {...pressable(() => go(a), { title: a.node ? 'select in the graph' : `open the ${a.tab} tab`, 'aria-label': `${a.severity === 'info' ? 'info' : a.severity}: ${a.label}. ${a.node ? 'Select it in the graph' : `Open the ${a.tab} tab`}` })}>
         <span className={`dot ${a.severity === 'info' ? 'blue' : a.severity}`} />
         <span className="src">{a.source}</span>
         <span className="lbl">{a.label}</span>
@@ -259,7 +260,7 @@ function Overview({ cost, status, graph, hidden, toggleHidden, showAll, onSelect
       </Section>
       {changes.length > 0 && <Section id="files" title="Recent file changes" summary={`${changes.length}`}>
         <div className="files">{changes.map(f => <div key={f.path} className="file changed" title={`${f.label} · ${fmtT(f.ts)}`}>
-          <span className="op">{OP[f.op]}</span><a className="path" href="#" onClick={e => { e.preventDefault(); onSelect(f.node) }}>{f.path}</a>
+          <span className="op">{OP[f.op]}</span><button type="button" className="linkbtn path" onClick={() => onSelect(f.node)} title={`open ${f.label}`}>{f.path}</button>
           <span className="small">{f.added || f.removed ? <span className="pm"><span className="add">+{f.added}</span> <span className="del">−{f.removed}</span> </span> : null}{ago(f.ts)}</span>
         </div>)}</div></Section>}
       <Section id="tokens" title="Tokens by model" summary={cost?.totals ? `${num(cost.totals.input)} in · ${num(cost.totals.output)} out` : ''}>
@@ -270,7 +271,8 @@ function Overview({ cost, status, graph, hidden, toggleHidden, showAll, onSelect
       {cost?.totals?.cost_usd ? <div className="small">{cost.totals.cost_basis === 'actual' ? 'spend in window (provider-reported)' : cost.totals.cost_basis === 'mixed' ? 'spend in window (part provider-reported, part estimated)' : 'estimated spend in window'}: ${cost.totals.cost_usd}</div>
         : <div className="small">{cost?.totals?.cost_basis === 'included' ? 'subscription: usage is included, no per-token cost.' : 'no cost recorded; cache hit shows how much prompt reuse you get.'}</div>}
       </Section>
-      <Section id="legend" title="Legend" summary={<>untick to hide{hidden?.size ? <> · {hidden.size} hidden · <a href="#" onClick={e => { e.preventDefault(); e.stopPropagation(); showAll() }}>show all</a></> : null}</>}>
+      <Section id="legend" title="Legend" summary={<>untick to hide{hidden?.size ? ` · ${hidden.size} hidden` : ''}</>}>
+      {hidden?.size > 0 && <div className="small"><button type="button" className="linkbtn" onClick={showAll}>show all {hidden.size} hidden kinds</button></div>}
       <table className="legend"><tbody>
         <tr><td colSpan="2" className="small">shape = what it is</td></tr>
         {Object.entries(TYPE).map(([k, v]) => <LegendRow key={k} id={`type:${k}`} hidden={hidden} toggle={toggleHidden}
@@ -310,7 +312,7 @@ function Resume({ node }) {
   const copy = async () => { try { await navigator.clipboard.writeText(cmd); setCopied(true); setTimeout(() => setCopied(false), 1500) } catch {} }
   return (
     <div className="resume small" title="run this where Hermes is installed to pick the conversation up in a terminal">
-      resume in a terminal: <code>{cmd}</code> <a href="#" onClick={e => { e.preventDefault(); copy() }}>{copied ? 'copied ✓' : 'copy'}</a>
+      resume in a terminal: <code>{cmd}</code> <button type="button" className="linkbtn" onClick={copy} aria-live="polite">{copied ? 'copied ✓' : 'copy'}</button>
     </div>
   )
 }
