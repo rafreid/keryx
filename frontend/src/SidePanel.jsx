@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import Icon from './Icons.jsx'
 import { pressable } from './a11y.js'
+import { applyMutes, groupBySeverity, loadMutes, saveMutes, signature, summarise } from './attention.js'
+import { useClock } from './hooks/useTick.js'
 import Section from './Section.jsx'
 import { ACTIVE, STATUS, TYPE, ago, contextLevel, dur, fmtT, num, plural } from './util.js'
 import Shape from './Shapes.jsx'
@@ -219,20 +221,48 @@ function NodeDetail({ node, graph, onClose, onSelect, links }) {
   )
 }
 
-/** hermes-workspace's attention card: everything red or amber in one ranked list, each line leading to a node or a tab. */
+/**
+ * hermes-workspace's attention card, triaged: "Needs action" (red), "Watch" (amber) and "Info", each with a
+ * count, each line leading to a node or a tab and saying how long it has been true. A line can be muted on
+ * this device until it changes, so a known outage stops shouting without touching Hermes.
+ */
 function Attention({ items, onSelect, setTab }) {
   const go = a => { if (a.node) onSelect(a.node); else if (a.tab) setTab(a.tab) }
-  const worst = items.find(a => a.severity === 'red') ? 'err' : items.find(a => a.severity === 'amber') ? 'warn' : ''
-  const n = items.filter(a => a.severity !== 'info').length
-  return (
-    <Section id="attention" title="Attention" level={worst} summary={n ? <span className={worst}>{n} need{n === 1 ? 's' : ''} a look</span> : 'all clear'}>
-      {!items.length && <div className="small">nothing needs you right now.</div>}
-      {items.map(a => <div key={a.id} className={`att ${a.severity}`} {...pressable(() => go(a), { title: a.node ? 'select in the graph' : `open the ${a.tab} tab`, 'aria-label': `${a.severity === 'info' ? 'info' : a.severity}: ${a.label}. ${a.node ? 'Select it in the graph' : `Open the ${a.tab} tab`}` })}>
+  const [mutes, setMutes] = useState(loadMutes)
+  const [showMuted, setShowMuted] = useState(false)
+  const { shown, muted, mutes: cleaned } = applyMutes(items, mutes)
+  useEffect(() => { if (JSON.stringify(cleaned) !== JSON.stringify(mutes)) { setMutes(cleaned); saveMutes(cleaned) } })   // drop stale mutes
+  const mute = a => { const m = { ...mutes, [a.id]: signature(a) }; setMutes(m); saveMutes(m) }
+  const unmute = a => { const m = { ...mutes }; delete m[a.id]; setMutes(m); saveMutes(m) }
+  const groups = groupBySeverity(shown)
+  const worst = groups[0]?.key === 'red' ? 'err' : groups[0]?.key === 'amber' ? 'warn' : ''
+  const now = useClock(30000)
+  const since = a => (a.since ? `since ${dur(now - a.since).split(' ')[0]}` : null)
+  const Row = ({ a, isMuted }) => (
+    <div className={`att ${a.severity} ${isMuted ? 'muted' : ''}`}>
+      <div className="go" {...pressable(() => go(a), { title: a.node ? 'select in the graph' : `open the ${a.tab} tab`, 'aria-label': `${a.severity === 'info' ? 'info' : a.severity}: ${a.label}${a.since ? `, ${since(a)}` : ''}. ${a.node ? 'Select it in the graph' : `Open the ${a.tab} tab`}` })}>
         <span className={`dot ${a.severity === 'info' ? 'blue' : a.severity}`} />
         <span className="src">{a.source}</span>
         <span className="lbl">{a.label}</span>
+        {a.since ? <span className="small when" title={fmtT(a.since)}>{since(a)}</span> : <span />}
         {a.detail ? <div className="small det">{a.detail}</div> : null}
+      </div>
+      {a.severity !== 'info' && (isMuted
+        ? <button type="button" className="linkbtn small mutebtn" onClick={() => unmute(a)} aria-label={`unmute: ${a.label}`}>unmute</button>
+        : <button type="button" className="ic mutebtn" onClick={() => mute(a)} aria-label={`mute until it changes: ${a.label}`} title="mute on this device until it changes"><Icon name="mute" size={12} /></button>)}
+    </div>
+  )
+  return (
+    <Section id="attention" title="Attention" level={worst} summary={<span className={worst}>{summarise(groups)}</span>}>
+      {!shown.length && <div className="small">{muted.length ? 'nothing new; everything else is muted on this device.' : 'nothing needs you right now.'}</div>}
+      {groups.map(g => <div key={g.key} className="attgroup">
+        <div className={`gh ${g.cls}`}>{g.title} · {g.items.length}</div>
+        {g.items.map(a => <Row key={a.id} a={a} />)}
       </div>)}
+      {muted.length > 0 && <div className="small attmuted">
+        <button type="button" className="linkbtn" onClick={() => setShowMuted(s => !s)} aria-expanded={showMuted}>{plural(muted.length, 'line')} muted on this device · {showMuted ? 'hide' : 'show'}</button>
+        {showMuted && muted.map(a => <Row key={a.id} a={a} isMuted />)}
+      </div>}
     </Section>
   )
 }
@@ -243,7 +273,7 @@ function Overview({ cost, status, graph, hidden, toggleHidden, showAll, onSelect
     .sort((a, b) => (b.ts || 0) - (a.ts || 0)).filter((f, i, a) => a.findIndex(g => g.path === f.path) === i).slice(0, 8)
   return (
     <div>
-      <h2>Overview <a className="small dl" href="/api/diagnostics" download aria-label="download diagnostics" title="privacy-safe JSON snapshot for bug reports: counts, states, ids, redacted errors, no prompts, no keys">⤓ diagnostics</a></h2>
+      <h2>Overview <a className="small dl" href="/api/diagnostics" download aria-label="download the diagnostics file: counts, versions and check results; no messages, prompts, memory or keys" title="a JSON file for bug reports: counts, versions, states, ids and redacted errors. No messages, prompts, memory or keys, so it is safe to attach to an issue.">⤓ diagnostics <span className="safe">safe to share</span></a></h2>
       <table><tbody>
         <tr><td>sessions in window</td><td>{s.sessions ?? '–'} · {plural(s.subagents ?? 0, 'subagent')}</td></tr>
         <tr><td>running / waiting / stale</td><td>{s.running ?? 0} / {s.waiting ?? 0} / {s.stale ?? 0}</td></tr>

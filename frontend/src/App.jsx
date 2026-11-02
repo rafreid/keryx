@@ -16,6 +16,7 @@ import ConnStrip from './ConnStrip.jsx'
 import SetupCard from './SetupCard.jsx'
 import { ago } from './util.js'
 import { pressable, reduceMotionPref } from './a11y.js'
+import Icon from './Icons.jsx'
 
 const params = new URLSearchParams(location.search)
 
@@ -208,7 +209,8 @@ function HealthCount({ status, onClick }) {
 
 /**
  * Where you have been: ‹ back, a few recent stops (click any to jump there), › forward.
- * Mirrors the browser history, so Alt+← / ⌘[ and a trackpad swipe do the same thing.
+ * Mirrors the browser history, so Alt+← / ⌘[ and a trackpad swipe do the same thing. It is labelled
+ * "history" and mixes tabs and nodes on purpose: it is the path taken, not a breadcrumb of where you are.
  */
 function Trail({ trail, idx, back, forward, go }) {
   if (trail.length < 2) return null
@@ -216,19 +218,20 @@ function Trail({ trail, idx, back, forward, go }) {
   const slice = trail.slice(from, from + 5)
   const prev = trail[idx - 1], next = trail[idx + 1]
   return (
-    <div className="trail">
-      <button disabled={!prev} onClick={back} title={prev ? `back to ${prev.label}  (Backspace, Alt+← or ⌘[)` : 'nothing to go back to'}>‹</button>
+    <nav className="trail" aria-label="history: where you have been">
+      <span className="small lbl" title="the stops you have visited, newest on the right; back and forward walk them like browser history"><Icon name="clock" size={12} /> history</span>
+      <button disabled={!prev} onClick={back} aria-label={prev ? `back to ${prev.label}` : 'nothing to go back to'} title={prev ? `back to ${prev.label}  (Backspace, Alt+← or ⌘[)` : 'nothing to go back to'}>‹</button>
       {from > 0 && <span className="small">…</span>}
       {slice.map((en, j) => {
         const i = from + j
         return <React.Fragment key={en.seq}>
           {j > 0 && <span className="sep">›</span>}
-          <a href="#" className={i === idx ? 'cur' : i > idx ? 'ahead' : ''} onClick={e => { e.preventDefault(); go(i - idx) }} title={en.id || `${en.label} tab`}>{en.label}</a>
+          <button type="button" className={`stop ${i === idx ? 'cur' : i > idx ? 'ahead' : ''}`} onClick={() => go(i - idx)} aria-current={i === idx ? 'step' : undefined} title={i === idx ? 'you are here' : `${i < idx ? 'back' : 'forward'} to ${en.id ? en.label : `the ${en.label} tab`}`}>{en.label}</button>
         </React.Fragment>
       })}
       {from + 5 < trail.length && <span className="small">…</span>}
-      <button disabled={!next} onClick={forward} title={next ? `forward to ${next.label}  (Shift+Backspace, Alt+→ or ⌘])` : 'nothing ahead'}>›</button>
-    </div>
+      <button disabled={!next} onClick={forward} aria-label={next ? `forward to ${next.label}` : 'nothing ahead'} title={next ? `forward to ${next.label}  (Shift+Backspace, Alt+→ or ⌘])` : 'nothing ahead'}>›</button>
+    </nav>
   )
 }
 

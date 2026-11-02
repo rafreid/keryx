@@ -163,6 +163,9 @@ def test_attention_list_ranks_what_needs_a_look(hermes_data):
     assert by["orphans"]["label"].startswith("2 session") and by["waiting"]["severity"] == "info"
     assert "gateway" not in by and "restart" not in by                                # green gateway stays out
     assert all(a["node"] or a["tab"] for a in att)                                     # every line leads somewhere
+    assert by["incident-inc1"]["since"] and by["platform-whatsapp"]["since"]           # "since 9d" where the data knows it
+    assert by["kanban-t-run-stale"]["since"] and by["deliveries"]["since"]
+    assert by["waiting"]["since"] is None and all("since" in a for a in att)
 
 
 def test_attention_includes_restart_and_gateway_trouble(hermes_data):
