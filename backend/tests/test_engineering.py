@@ -117,3 +117,17 @@ def test_concurrent_reads_keep_lineages_intact(hermes_data):
     ths = [threading.Thread(target=trace), threading.Thread(target=graph), threading.Thread(target=graph)]
     [t.start() for t in ths]; [t.join() for t in ths]
     assert bad == []
+
+
+def test_stream_pings_when_nothing_changes(hermes_data, monkeypatch):
+    """A quiet stream still speaks: a named 'ping' event, so the browser can tell quiet from dead."""
+    monkeypatch.setattr(keryx, "PING_EVERY", 0.05)
+    async def run():
+        resp = await keryx.api_stream(hours=24)
+        it = resp.body_iterator
+        first = await asyncio.wait_for(it.__anext__(), 10)
+        assert first.startswith("event: update\n")
+        second = await asyncio.wait_for(it.__anext__(), 10)
+        assert second.startswith("event: ping\ndata: {") and '"t":' in second
+        await it.aclose()
+    asyncio.run(run())

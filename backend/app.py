@@ -1134,6 +1134,8 @@ def build_now() -> dict:
 def build_status() -> dict:
     now = time.time()
     db = STATE.get()
+    if db is None:
+        return setup_status(now)
     checks: list[dict] = []
 
     def check(name: str, level: str, detail: str, **extra):
@@ -1300,8 +1302,23 @@ def build_status() -> dict:
     worst = "red" if any(c["level"] == "red" for c in checks) else "amber" if any(c["level"] == "amber" for c in checks) else "green"
     attention = attention_list(checks, details, open_inc, missed, deliveries, kb, orphans, waiting)
     return {"generated_at": now, "level": worst, "checks": checks, "links": dashboard_links(), "attention": attention, "keryx": app.version,
+            "data": {"state_db": True},
             "hermes": {k: gw[k] for k in ("state", "desired", "level", "version", "sha", "pid", "started", "updated", "age", "stale",
                                            "profiles", "restart_requested")} if gw else None}
+
+
+def setup_status(now: float) -> dict:
+    """The status payload while there is no state.db to read: one check and one attention line that
+    say so, instead of a column of red checks derived from data that does not exist. The viewer
+    swaps the graph for a setup card on `data.state_db == False`. No path leaves here; the
+    authorised /api/health answer already carries it."""
+    where = "the data directory" if DATA.is_dir() else "a data directory that does not exist"
+    detail = f"no state.db in {where}: HERMES_DATA (HERMES_HOME under docker compose) does not point at a Hermes home, or Keryx cannot read it"
+    return {"generated_at": now, "level": "red", "links": dashboard_links(), "keryx": app.version, "hermes": None,
+            "checks": [{"name": "data", "level": "red", "detail": detail, "kind": "setup"}],
+            "attention": [{"id": "data", "severity": "red", "source": "setup", "label": "Hermes data not found", "detail": detail,
+                           "node": None, "tab": "overview"}],
+            "data": {"state_db": False, "dir": DATA.is_dir()}}
 
 
 def attention_list(checks: list[dict], jobs: list[dict], open_inc: list[dict], missed: list[str], deliveries: dict,
@@ -2805,17 +2822,24 @@ class Broadcaster:
 BROADCAST = Broadcaster()
 
 
+PING_EVERY = 15      # seconds between SSE pings; the viewer calls the stream stalled after two missed ones
+
+
 @app.get("/api/stream")
 async def api_stream(hours: float = Query(24, ge=0)):
-    """Server-sent events: one 'update' per data change, keepalive every 25 s."""
+    """Server-sent events: one 'update' per data change, and a 'ping' every PING_EVERY seconds.
+
+    The ping is a named event rather than an SSE comment on purpose: a comment never reaches
+    JavaScript, so a browser could not tell a quiet stream from a dead one. The viewer stamps every
+    event it hears and reports the backend as unreachable when the stamps stop."""
     async def gen():
         q = await BROADCAST.subscribe(hours)
         try:
             while True:
                 try:
-                    yield await asyncio.wait_for(q.get(), timeout=25)
+                    yield await asyncio.wait_for(q.get(), timeout=PING_EVERY)
                 except asyncio.TimeoutError:
-                    yield ": keepalive\n\n"
+                    yield f"event: ping\ndata: {json.dumps({'t': time.time()})}\n\n"
         finally:
             BROADCAST.unsubscribe(hours, q)
     return StreamingResponse(gen(), media_type="text/event-stream",

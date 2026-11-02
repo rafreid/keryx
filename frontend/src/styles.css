@@ -77,8 +77,24 @@ button:hover { border-color: var(--muted); }
 .cost td:nth-child(n+2) { text-align: right; font-variant-numeric: tabular-nums; }
 .err { color: var(--red); } .ok { color: var(--green); } .warn { color: var(--amber); }
 .small { font-size: 11px; color: var(--muted); }
+/* connection strip: the one place that says whether the picture is current */
+.connstrip { display: flex; gap: 6px; align-items: center; min-height: 24px; padding: 2px 14px; font-size: 12px; color: var(--muted);
+  border-bottom: 1px solid var(--line); background: var(--panel); }
+.connstrip b { font-weight: 600; color: var(--text); } .connstrip .detail { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.connstrip.amber { background: color-mix(in srgb, var(--amber) 14%, var(--panel)); } .connstrip.amber b { color: var(--amber); }
+.connstrip.red { background: color-mix(in srgb, var(--red) 16%, var(--panel)); } .connstrip.red b { color: var(--red); }
+.connstrip.muted .dot, .dot.muted { background: var(--muted); }
+.app.narrow .connstrip.green { display: none; }          /* on a phone only trouble takes the room */
+/* setup card: shown in place of the graph while there is no state.db */
+.setup { position: absolute; inset: 0; overflow: auto; padding: 32px 24px; max-width: 720px; margin: 0 auto; font-size: 14px; line-height: 1.5; }
+.setup h2 { font-size: 20px; margin: 0 0 8px; } .setup p { margin: 8px 0; }
+.setup .fixes { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin: 14px 0; }
+.setup .fixes > div { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+.setup .fixes p { margin: 4px 0; font-size: 13px; color: var(--muted); }
+.setup pre { margin: 6px 0 0; padding: 8px 10px; background: var(--panel2); border-radius: 6px; font-size: 12px; white-space: pre-wrap; word-break: break-all; user-select: all; }
+.setup code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; background: var(--panel2); padding: 1px 4px; border-radius: 4px; }
 /* side gutters clear a phone's rounded corners and side bars */
-.header, .now, .side, .mobilebar { padding-left: max(14px, env(safe-area-inset-left, 0px)); padding-right: max(14px, env(safe-area-inset-right, 0px)); }
+.header, .now, .side, .mobilebar, .connstrip { padding-left: max(14px, env(safe-area-inset-left, 0px)); padding-right: max(14px, env(safe-area-inset-right, 0px)); }
 .side { min-width: 0; }
 .mobilebar { display: flex; gap: 6px; align-items: center; padding-top: 6px; padding-bottom: 6px; border-bottom: 1px solid var(--line); background: var(--panel); }
 .mobilebar button { padding: 4px 12px; border-radius: 14px; max-width: 45vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
