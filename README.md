@@ -14,8 +14,9 @@ Named after κῆρυξ, the Greek herald who carried messages for Hermes. Keryx
 - **Read-only.** Keryx opens Hermes' files, never writes them, and never talks to the agent.
 - **Live.** A server-sent-events stream pushes an update whenever a Hermes file changes; every panel refreshes on that one clock.
 - **One rule for the picture.** Shape says *what* a thing is, colour says *how it is doing*, position says *when* it started.
-- **Triage first.** One ranked attention list says what needs a look, and every line leads to the node or the tab that explains it.
-- **Works on a phone, in both themes.** The graph and the panel take turns at full width; light and dark are both designed, not inverted.
+- **Triage first.** The attention list is grouped into needs action, watch and info, says since when, and every line leads to the node or the tab that explains it.
+- **Honest about liveness.** A strip under the header says when Keryx last heard from the backend and goes amber, then red, within half a minute of the backend going away. It never shows "live" over a dead connection.
+- **Works on a phone, from the keyboard, in both themes.** The graph and the panel take turns at full width; every card, row and section is a real control; light and dark are both designed, not inverted; reduced motion is honoured.
 
 ## Screenshots
 
@@ -27,10 +28,24 @@ All screenshots are taken from the synthetic fixture the tests use, never from a
 | A selected session: status, request, latest step and context, then the trace as turns. | The kanban board, read-only, with a card open. |
 | ![The analytics tab: insight sentences, tiles, provider mix, hour-of-day clock](docs/img/analytics.png) | ![The tasks tab: delegations, scheduled jobs with run history, Hermes' incident ledger](docs/img/tasks.png) |
 | Analytics: insights, momentum, cache trend, provider mix, when Hermes works. | Tasks: delegations, scheduled jobs, incidents, the delivery queue. |
-| ![The logs tab: error-level lines, one tagged with the session that logged it](docs/img/logs.png) | ![The light theme in 2D: the same graph with labels and rings in the light palette](docs/img/light.png) |
-| Logs: every file Hermes writes, filtered by level; session-tagged lines link to their session. | The light theme, 2D view. |
+| ![The logs tab: error-level lines on a 24-hour clock, one tagged with the session that logged it](docs/img/logs.png) | ![The light theme: the same selected session with every graph and panel colour in the light palette](docs/img/light.png) |
+| Logs: every file Hermes writes, filtered by level; session-tagged lines link to their session. | The light theme: every accent reads at 5:1 or better. |
 
-<p align="center"><img src="docs/img/phone-panel.png" width="280" alt="Keryx on a phone: the overview panel at full width with the attention list"> <img src="docs/img/phone-map.png" width="280" alt="Keryx on a phone: the map view, with the session cards above the 2D graph"></p>
+<p align="center"><img src="docs/img/phone-panel.png" width="280" alt="Keryx on a phone: a one-row header, the health counts in the map / panel bar, and the overview panel with its grouped attention list"> <img src="docs/img/phone-map.png" width="280" alt="Keryx on a phone: the map view, with the session cards above the 2D graph"></p>
+
+## What's new in 2.8
+
+2.8 is a usability release that came out of a full UX audit of 2.7 (22 findings, all addressed). Nothing changed in what Keryx reads or stores; everything changed in how it tells you.
+
+- **The page tells the truth about the connection.** A strip under the header reads *live · checked 3s ago · last change 4m ago*, *reconnecting… showing data from 14:02* or *backend unreachable since 14:02 · showing the last snapshot*. The backend pings the stream every 15 s and the page calls it stalled after 30 s of silence, so a stopped container, a hung host or a pulled cable all show within half a minute. The stats bar says "last change" instead of "updated", which used to read as a stale connection when the data simply had not moved.
+- **A missing data directory explains itself.** With no `state.db` behind the backend the graph gives way to a setup card that names the directory Keryx looked in and the two fixes, instead of a column of red checks and a stats bar stuck on "loading". The locked page shows only the token form.
+- **A header that fits on one row.** Brand, health pill, the single worst check, tokens, controls. Every check still lives in the pill's popover, which now closes on Esc or a click outside. Icon buttons are inline SVG instead of OS emoji, with a word beside each on wide screens.
+- **A phone header that leaves room for the page.** One row (title, live toggle, a "…" sheet for the rest); the red and amber counts sit in the map / panel bar; every control is at least 40 px tall.
+- **Everything works from the keyboard.** Cards, attention lines, section headers, trace steps, kanban cards, cron jobs and incidents are real controls that answer `Tab`, `Enter` and `Space`; section headers announce whether they are open; toasts are a live region; the graph canvas says it cannot be read and points to the list tabs.
+- **Reduced motion.** The OS setting, or a switch in the help card, stops the breathing nodes, link particles, mesh rotation and pulsing dots, and starts the page in 2D.
+- **A triaged attention list.** Needs action / watch / info with counts, "since 9d" on each line, and a per-device mute that holds until the line changes. The diagnostics link is marked "safe to share".
+- **Tabs that wrap, a panel that resizes.** No tab is ever hidden off the edge; drag the panel's left edge to widen it.
+- **Typography.** A 24-hour clock everywhere (log times no longer wrap), a 12 px floor for body text, light-theme accents darkened so each reads at 5:1 or better, and a "N more" pill when the strip of running sessions overflows.
 
 ## Quick start
 
@@ -119,11 +134,11 @@ docker compose pull keryx && docker compose up -d keryx      # Docker
 
 **Reading the graph.** Hover highlights a neighbourhood. Click a node to select it; sessions fan their tools out in a ring facing you. Click a platform to collapse it. Search dims everything that does not match. The legend in the overview tab has checkboxes to hide any kind or status.
 
-**Time.** The window selector (last hour to all time) sets what is loaded. The replay bar re-queries the graph as of any moment in the window. The ruler along the bottom of the graph is clickable: each label keeps only the sessions that started in that span, and the stats bar reads "showing N of M". Times are shown in your browser's zone (named in the header); analytics days are counted in UTC.
+**Time.** The window selector (last hour to all time) sets what is loaded. The replay bar re-queries the graph as of any moment in the window. The ruler along the bottom of the graph is clickable: each label keeps only the sessions that started in that span, and the stats bar reads "showing N of M". Times are shown in your browser's zone on a 24-hour clock (the zone is named at the right end of the connection strip); analytics days are counted in UTC.
 
 **Spacing.** ⇔ spacing scales rings, link lengths and repulsion together (compact / normal / airy / wide, or a slider). ⌖ recenter frames the whole graph again. Both settings are remembered per browser.
 
-**Navigation history.** Every selection (graph click, now-card, side-panel link, toast) is a browser history entry that remembers the selection, the side-panel tab and the camera pose just before the move. The **history** trail under the toolbar shows `‹ back`, the last few stops (click one to jump there) and `› forward`; it is the path you took, not a breadcrumb of where you are, which is why tabs and nodes mix in it. The URL hash (`#session:…`, `#cron:…`) is a deep link: share it, or scan it from the 📱 QR popover, and the page opens on that node.
+**Navigation history.** Every selection (graph click, now-card, side-panel link, toast) is a browser history entry that remembers the selection, the side-panel tab and the camera pose just before the move. The **history** trail under the toolbar shows `‹ back`, the last few stops (click one to jump there) and `› forward`; it is the path you took, not a breadcrumb of where you are, which is why tabs and nodes mix in it. The URL hash (`#session:…`, `#cron:…`) is a deep link: share it, or scan it from the phone-icon QR popover, and the page opens on that node.
 
 **Keyboard.**
 
@@ -186,6 +201,9 @@ The only endpoint designed to be shared is `/api/diagnostics`, which is redacted
 | Health says `no heartbeat` | Hermes' gateway is not running, or it is an old Hermes without the `gateway_heartbeats` table. |
 | Context gauge says "assumed window" | neither Hermes' config nor its probe cache knows this model's window; set `model.context_length` in Hermes' config.yaml or `CONTEXT_LENGTH` for Keryx. |
 | The page asks for a token | `KERYX_TOKEN` is set on the server; paste it once. |
+| The graph says "No Hermes data found" | the same cause as `"state_db": false` above; the card names the directory Keryx looked in and goes away on its own once `state.db` appears there. |
+| The strip under the header says "reconnecting…" or "backend unreachable" | the page has not heard from the backend for 30 s (it pings every 15 s). Reconnecting means Keryx is polling and the stream will be retried in a minute; unreachable means the polls fail too: check `docker compose ps keryx` and the host. The data shown is the last snapshot, dated in the strip. |
+| Nodes do not breathe and links carry no particles | the system's reduced-motion setting is on, or the "reduce motion" switch in the help card (`?`) is ticked; untick it there to override the system setting for this browser. |
 | Sessions tab says `slow search (no FTS index)` | your Hermes predates the `messages_fts` index; Keryx falls back to a `LIKE` scan, which works but is slower on a big `state.db`. |
 | Memory tab says the panel is off | expected: set `KERYX_SHOW_MEMORY=1` to show Hermes' memory files. |
 | Health shows `storage` amber with a large WAL | Hermes' SQLite checkpoints are not landing (usually a reader holding the database open for a long time); restart Hermes' gateway and the WAL folds back into `state.db`. |
@@ -199,7 +217,7 @@ cd frontend
 npm install
 KERYX_API=http://localhost:9120 npm run dev     # Vite dev server with /api proxied to a running backend
 npm run build                                  # production build into backend/static
-npm test                                       # vitest: layout, turns, grouping, notification, sound and plural logic
+npm test                                       # vitest: layout, turns, grouping, notifications, sounds, connection state, attention triage, keyboard helpers, time formats
 ```
 
 Backend tests build a miniature Hermes data directory (state.db, cron store, logs) in a temp folder and run the real builders and routes against it:
@@ -226,7 +244,7 @@ After a change, rebuild the front end and rebuild the container (`docker compose
 
 - `GET /api/graph?hours=24[&at=<epoch>]`  nodes/links; `at` replays the graph as of that moment; `aliases` maps compacted segment ids to their node
 - `GET /api/now`  running + waiting sessions digest
-- `GET /api/status`  health checks (platform checks carry `kind: "platform"`), the ranked `attention` list (`severity`, `source`, `label`, `detail`, `node` or `tab`), dashboard links, and `hermes` (gateway state, desired state, version, pid, served profiles, restart requested) from `gateway_state.json`, or `null` without it
+- `GET /api/status`  health checks (platform checks carry `kind: "platform"`), the ranked `attention` list (`severity`, `source`, `label`, `detail`, `node` or `tab`, and `since` when the data knows when the condition began), dashboard links, `hermes` (gateway state, desired state, version, pid, served profiles, restart requested) from `gateway_state.json`, or `null` without it, and `data.state_db`. Without a `state.db` the payload is a setup state: one red `data` check, one attention line and `data.state_db: false`
 - `GET /api/cost?hours=24`  tokens/cost per model; `cost_basis` says whether the money is provider-reported (`actual`), priced from a table (`estimated`), `included` in a subscription or `unknown`
 - `GET /api/tasks`  delegations (goals, children, duration, delivery), cron jobs (next run, history, missed slots, open incidents), scheduler heartbeat, incidents, delivery queue, kanban counts
 - `GET /api/kanban?board=<slug>&archived=0`  the kanban board as lanes in Hermes' workflow order, every task with links, comment count, latest run and a `stale` flag for silent workers; `boards` lists the others
@@ -240,7 +258,7 @@ After a change, rebuild the front end and rebuild the container (`docker compose
 - `GET /api/logs?file=<stem of any logs/*.log>&level=WARNING&q=text&lines=200`  entries carry the session id when Hermes logged the line inside a session
 - `GET /api/diagnostics`  redacted JSON snapshot for bug reports
 - `GET /api/qr?text=`  SVG QR code
-- `GET /api/stream?hours=24`  server-sent events, one `update` per data change; one watcher serves every connected client
+- `GET /api/stream?hours=24`  server-sent events, one `update` per data change and a `ping` every 15 s while nothing changes, so a client can tell a quiet stream from a dead one; one watcher serves every connected client
 - `GET /api/health`  liveness
 
 ## Credits
