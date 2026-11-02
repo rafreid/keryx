@@ -25,15 +25,15 @@
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
     --bg: #f5f7fb; --panel: #ffffff; --panel2: #eef2f8; --line: #d3dbe8;
-    --fg: #14202e; --muted: #5b6b82; --accent: #0b7fc2; --accent-ink: #ffffff;
-    --green: #1f883d; --amber: #9a6700; --red: #cf222e; --violet: #6f42c1; --orange: #b35900; --pink: #bf3989;
+    --fg: #14202e; --muted: #5b6b82; --accent: #0a66ad; --accent-ink: #ffffff;
+    --green: #166f30; --amber: #875a00; --red: #c41f2b; --violet: #6f42c1; --orange: #b35900; --pink: #bf3989;
     color-scheme: light;
   }
 }
 :root[data-theme="light"] {
   --bg: #f5f7fb; --panel: #ffffff; --panel2: #eef2f8; --line: #d3dbe8;
-  --fg: #14202e; --muted: #5b6b82; --accent: #0b7fc2; --accent-ink: #ffffff;
-  --green: #1f883d; --amber: #9a6700; --red: #cf222e; --violet: #6f42c1; --orange: #b35900; --pink: #bf3989;
+  --fg: #14202e; --muted: #5b6b82; --accent: #0a66ad; --accent-ink: #ffffff;
+  --green: #166f30; --amber: #875a00; --red: #c41f2b; --violet: #6f42c1; --orange: #b35900; --pink: #bf3989;
   color-scheme: light;
 }
 * { box-sizing: border-box; }
@@ -138,8 +138,9 @@ footer .wrap > div { display: flex; flex-wrap: wrap; gap: 16px; align-items: cen
   <div class="wrap">
     <a class="brand" href="#top"><img src="favicon.svg" alt="">Keryx</a>
     <ul>
-      <li><a href="#features">Features</a></li>
       <li><a href="#grammar">The picture</a></li>
+      <li><a href="#features">Features</a></li>
+      <li><a href="#whats-new">What's new</a></li>
       <li><a href="#quickstart">Quick start</a></li>
       <li><a href="#configuration">Configuration</a></li>
       <li><a href="#api">API</a></li>
@@ -151,7 +152,7 @@ footer .wrap > div { display: flex; flex-wrap: wrap; gap: 16px; align-items: cen
 <header class="hero" id="top">
   <div class="wrap">
     <div style="display:grid;gap:18px">
-      <div class="eyebrow">Open source · MIT · for Hermes Agent</div>
+      <div class="eyebrow">Open source · MIT · for Hermes Agent · 2.8</div>
       <h1>See what your <em>Hermes agent</em> is doing, as it does it.</h1>
       <p class="lede">Keryx is a live, read-only activity monitor. It reads the agent's own records (its SQLite state, cron store and logs) without touching them, and draws them as a 3D force graph where shape, colour and position each carry one meaning.</p>
       <div class="cta">
@@ -161,8 +162,8 @@ footer .wrap > div { display: flex; flex-wrap: wrap; gap: 16px; align-items: cen
       </div>
     </div>
     <figure class="shot" style="margin:0">
-      <img src="img/graph.png" width="1440" height="900" alt="The Keryx dashboard: a health pill, a strip of running sessions, the 3D graph with Hermes at the centre and platforms, sessions, tools and cron jobs around it, and the overview panel with its attention list">
-      <figcaption>A Hermes install with two live sessions, a compacted Telegram chat, a subagent, two cron jobs, a kanban board and one open incident (sample data). The attention list on the right says what needs a look.</figcaption>
+      <img src="img/graph.png" width="1440" height="900" alt="The Keryx dashboard: a one-row header with the health pill and the worst check, the connection strip reading live, a strip of running sessions, the 3D graph with Hermes at the centre and platforms, sessions, tools and cron jobs around it, and a selected session's detail in the side panel">
+      <figcaption>A Hermes install with two live sessions, a compacted Telegram chat, a subagent, two cron jobs, a kanban board and one open incident (sample data). The strip under the header says the picture is current; the panel shows the selected session's status, request, latest step, context and trace.</figcaption>
     </figure>
   </div>
 </header>
@@ -176,7 +177,7 @@ footer .wrap > div { display: flex; flex-wrap: wrap; gap: 16px; align-items: cen
       </div>
       <div class="card">
         <h3><span class="dot pulse" style="background:var(--accent)"></span>Live</h3>
-        <p>One watcher follows the data files and pushes a server-sent event to every open page the moment something changes. Running sessions breathe; active links carry particles at the session's call rate.</p>
+        <p>One watcher follows the data files and pushes a server-sent event to every open page the moment something changes, and a ping every 15 s while nothing does. A strip under the header says when the page last heard from the backend and turns amber, then red, within half a minute of it going away: Keryx never shows "live" over a dead connection. Running sessions breathe and active links carry particles, unless you ask for reduced motion.</p>
       </div>
       <div class="card">
         <h3><span class="dot" style="background:var(--violet)"></span>Beside Hermes, not inside it</h3>
@@ -247,6 +248,7 @@ footer .wrap > div { display: flex; flex-wrap: wrap; gap: 16px; align-items: cen
             <li><strong>Gateway</strong> heartbeat and Hermes' own process state and version from <code>gateway_state.json</code>, one check per <strong>messaging platform</strong> as the gateway reports it (with the error it recorded when one is retrying), <strong>cron</strong> scheduler, the <strong>error log</strong>, session states, and the kanban board when it has tasks, each green / amber / red; the worst one drives the title dot.</li>
             <li>The cron check reads Hermes' own incident ledger and delivery queue: an open incident is red, undelivered results are amber.</li>
             <li>Token totals for the window with the spend, prefixed <code>~</code> when it is an estimate rather than a provider-reported figure.</li>
+            <li>With no <code>state.db</code> behind the backend the graph gives way to a <strong>setup card</strong> that names the directory Keryx looked in and the two fixes, and goes away on its own once the file appears. A locked page shows only the token form.</li>
           </ul>
         </div>
         <div class="card">
@@ -276,7 +278,7 @@ footer .wrap > div { display: flex; flex-wrap: wrap; gap: 16px; align-items: cen
           <li>Window selector from the last hour to all time.</li>
           <li><strong>Replay</strong>: drag the bar to re-query the graph as of any moment in the window and watch sessions appear, run and end.</li>
           <li>Click a label on the ruler under the graph to keep only the sessions that started in that span.</li>
-          <li>Times are shown in your browser's zone, named in the header; analytics days are counted in UTC.</li>
+          <li>Times are shown in your browser's zone on a 24-hour clock (the zone is named at the end of the connection strip); analytics days are counted in UTC.</li>
         </ul>
       </div>
       <div class="card">
@@ -320,7 +322,7 @@ footer .wrap > div { display: flex; flex-wrap: wrap; gap: 16px; align-items: cen
       <div class="card">
         <h3>Attention and context</h3>
         <ul>
-          <li>One ranked list of everything red or amber, from a failing cron job to a silent kanban worker or a pending gateway restart, each line leading to the node or the tab. The sessions waiting for you close the list.</li>
+          <li>Everything red or amber, from a failing cron job to a silent kanban worker or a pending gateway restart, in three groups with counts: <strong>needs action</strong>, <strong>watch</strong> and <strong>info</strong> (the sessions waiting for you). Each line leads to the node or the tab and says since when. A line can be muted on this device until its text changes; Keryx never writes any of that to Hermes.</li>
           <li>The context gauge is sized from the window Hermes probed for the model (<code>context_length_cache.yaml</code>) or set in its config, and a breakdown under each session says what fills it: your messages, replies, tool-call arguments and tool output by tool.</li>
           <li>Analytics gain insight sentences, sessions-per-day momentum, a cache-hit trend, provider mix, when Hermes works by hour of day and weekday, and achievement unlocks. Notifications can chime, synthesised in the browser, no audio files.</li>
         </ul>
@@ -361,14 +363,15 @@ footer .wrap > div { display: flex; flex-wrap: wrap; gap: 16px; align-items: cen
           <li>Every selection is a browser history entry that remembers the selection, the tab and the camera pose. <kbd>Backspace</kbd> goes back, <kbd>Shift</kbd>+<kbd>Backspace</kbd> forward; <kbd>Alt</kbd>+<kbd>←</kbd> and trackpad swipes work too. <kbd>[</kbd> and <kbd>]</kbd> change tab, <kbd>↑</kbd> <kbd>↓</kbd> walk the session list, <kbd>?</kbd> in the header reopens the first-run card.</li>
           <li>On a phone the header is one row with a "…" sheet for the controls, the health counts sit in the map / panel bar, every control is at least 40 px tall, and the graph and the panel take turns at full width; light and dark themes are both designed, not inverted.</li>
           <li>The URL hash (<code>#session:…</code>, <code>#cron:…</code>) is a deep link you can share, or scan from the QR popover to open on your phone, where "add to home screen" keeps Keryx as an app.</li>
-          <li>Every card, attention line, section header, trace step and kanban card is a real control reachable with <kbd>Tab</kbd>; focus rings are visible; a first-run card explains the picture, holds the reduce-motion switch, and <kbd>?</kbd> brings it back. The attention list is grouped into <strong>needs action</strong>, <strong>watch</strong> and <strong>info</strong>, says since when, and a line can be muted on this device until it changes. With no <code>state.db</code> behind the backend the graph gives way to a setup card naming the fix.</li>
+          <li>Every card, attention line, section header, trace step and kanban card is a real control reachable with <kbd>Tab</kbd> and activated with <kbd>Enter</kbd> or <kbd>Space</kbd>; section headers announce whether they are open; toasts are a live region; focus rings are visible. The graph canvas says it cannot be read by a screen reader and points to the list tabs.</li>
+          <li>A first-run card explains the picture and the keyboard, holds the <strong>reduce motion</strong> switch (the system setting is honoured by default), and <kbd>?</kbd> brings it back. The side-panel tabs carry icons and wrap instead of hiding off the edge; drag the panel's left edge to widen it. The history trail under the toolbar is the path you took, labelled as such.</li>
         </ul>
       </div>
       <div class="card">
         <h3>Into the Hermes dashboard</h3>
         <ul>
           <li>Set <code>HERMES_DASHBOARD_URL</code> and every session, cron job and the logs tab gets an "open in the Hermes dashboard" link. Keryx never calls the dashboard; the links are for you.</li>
-          <li>A redacted <strong>diagnostics</strong> download (counts, states, ids, masked error lines, no message content) to attach to bug reports.</li>
+          <li>A redacted <strong>diagnostics</strong> download, marked "safe to share" (counts, versions, states, ids, masked error lines; no messages, prompts, memory or keys), to attach to bug reports.</li>
         </ul>
       </div>
     </div>
@@ -395,16 +398,58 @@ footer .wrap > div { display: flex; flex-wrap: wrap; gap: 16px; align-items: cen
     </div>
     <div class="two">
       <figure class="shot" style="margin:0">
-        <img src="img/light.png" width="1440" height="900" alt="The light theme in 2D: the same graph with labels, rings and overlays in the light palette">
-        <figcaption>The light theme, 2D view: every overlay and graph colour follows the theme.</figcaption>
+        <img src="img/light.png" width="1440" height="900" alt="The light theme: the same selected session with every graph, panel and overlay colour in the light palette">
+        <figcaption>The light theme: every overlay and graph colour follows the theme, and every accent reads at 5:1 or better.</figcaption>
       </figure>
       <figure class="shot phones" style="margin:0;background:transparent;border:0;box-shadow:none">
         <div style="display:flex;gap:12px;justify-content:center">
-          <img src="img/phone-panel.png" width="400" height="800" alt="Keryx on a phone: the overview panel at full width with the attention list" style="width:48%;border:1px solid var(--line);border-radius:12px">
+          <img src="img/phone-panel.png" width="400" height="800" alt="Keryx on a phone: a one-row header, the health counts in the map / panel bar, and the overview panel with its grouped attention list" style="width:48%;border:1px solid var(--line);border-radius:12px">
           <img src="img/phone-map.png" width="400" height="800" alt="Keryx on a phone: the map view, with session cards above the 2D graph" style="width:48%;border:1px solid var(--line);border-radius:12px">
         </div>
-        <figcaption>On a phone the panel and the map take turns at full width.</figcaption>
+        <figcaption>On a phone the header is one row, the health counts sit in the map / panel bar, and the panel and the map take turns at full width.</figcaption>
       </figure>
+    </div>
+  </div>
+</section>
+
+<section id="whats-new">
+  <div class="wrap">
+    <div class="head">
+      <div class="eyebrow">Release notes</div>
+      <h2>What's new in 2.8</h2>
+      <p class="prose muted">A usability release from a full UX audit of 2.7: twenty-two findings, all addressed. Nothing changed in what Keryx reads or stores; everything changed in how it tells you.</p>
+    </div>
+    <div class="grid">
+      <div class="card">
+        <h3><span class="dot" style="background:var(--green)"></span>Honest about liveness</h3>
+        <ul>
+          <li>A strip under the header reads <strong>live · checked 3s ago · last change 4m ago</strong>, <strong>reconnecting… showing data from 14:02</strong> or <strong>backend unreachable since 14:02 · showing the last snapshot</strong>.</li>
+          <li>The backend pings the stream every 15 s; 30 s of silence counts as stalled, so a stopped container, a hung host or a pulled cable all show within half a minute.</li>
+          <li>With no <code>state.db</code> behind the backend, a setup card names the directory and the fixes. A locked page shows only the token form.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3><span class="dot" style="background:var(--accent)"></span>A header on a diet</h3>
+        <ul>
+          <li>Desktop: brand, health pill, the single worst check, tokens, controls, on one row. Every check still lives in the pill's popover, which closes on <kbd>Esc</kbd> or a click outside.</li>
+          <li>Phone: one row with a "…" sheet for the controls; the red and amber counts sit in the map / panel bar; every control is at least 40 px tall.</li>
+          <li>Inline SVG icons instead of OS emoji, with a word beside each on wide screens. Tabs wrap instead of hiding; the panel's left edge drags.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3><span class="dot" style="background:var(--violet)"></span>Keyboard, screen reader, motion</h3>
+        <ul>
+          <li>Cards, attention lines, section headers, trace steps, kanban cards, cron jobs and incidents are real controls that answer <kbd>Tab</kbd>, <kbd>Enter</kbd> and <kbd>Space</kbd>; section headers announce whether they are open; toasts are a live region.</li>
+          <li>Reduced motion from the system setting or a switch in the help card: no breathing nodes, particles, rotation or pulsing dots, and 2D by default.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3><span class="dot" style="background:var(--amber)"></span>Triage and type</h3>
+        <ul>
+          <li>The attention list is grouped into needs action, watch and info with counts, says since when, and a line can be muted on this device until it changes. The diagnostics link is marked "safe to share".</li>
+          <li>A 24-hour clock everywhere, a 12 px floor for body text, light-theme accents at 5:1 or better, and a "N more" pill when the strip of running sessions overflows.</li>
+        </ul>
+      </div>
     </div>
   </div>
 </section>
@@ -485,7 +530,7 @@ cd keryx
       <tbody>
         <tr><td><code>GET /api/graph?hours=24[&amp;at=…]</code></td><td>nodes and links; <code>at</code> replays the graph as of that moment; <code>aliases</code> maps compacted segment ids to their node</td></tr>
         <tr><td><code>GET /api/now</code></td><td>running and waiting sessions digest</td></tr>
-        <tr><td><code>GET /api/status</code></td><td>health checks (one per platform), the ranked attention list, dashboard links, and the gateway's state and Hermes version</td></tr>
+        <tr><td><code>GET /api/status</code></td><td>health checks (one per platform), the attention list with severity, where it leads and <code>since</code>, dashboard links, the gateway's state and Hermes version, and <code>data.state_db</code>; without a <code>state.db</code> it is a setup state with one red <code>data</code> check</td></tr>
         <tr><td><code>GET /api/cost?hours=24</code></td><td>tokens and cost per model with a <code>cost_basis</code> (actual, estimated, included, unknown)</td></tr>
         <tr><td><code>GET /api/tasks</code></td><td>delegations, cron jobs with history and incidents, scheduler heartbeat, incidents, delivery queue, kanban counts</td></tr>
         <tr><td><code>GET /api/kanban?board=…</code></td><td>the kanban board as lanes; <code>/api/kanban/{task_id}</code> is one card with comments, runs and events</td></tr>
@@ -497,7 +542,7 @@ cd keryx
         <tr><td><code>GET /api/session/{id}/context</code></td><td>what fills the context: characters by part and by tool</td></tr>
         <tr><td><code>GET /api/logs?file=…&amp;level=…&amp;q=…</code></td><td>log entries with level, logger and session id</td></tr>
         <tr><td><code>GET /api/diagnostics</code></td><td>redacted snapshot for bug reports</td></tr>
-        <tr><td><code>GET /api/stream?hours=24</code></td><td>server-sent events, one <code>update</code> per data change</td></tr>
+        <tr><td><code>GET /api/stream?hours=24</code></td><td>server-sent events, one <code>update</code> per data change and a <code>ping</code> every 15 s while nothing changes</td></tr>
         <tr><td><code>GET /api/health</code></td><td>liveness</td></tr>
       </tbody>
     </table></div>
