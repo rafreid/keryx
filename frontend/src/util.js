@@ -1,5 +1,7 @@
-export const fmtT = t => (t ? new Date(t * 1000).toLocaleString() : '–')
-export const fmtTime = t => (t ? new Date(t * 1000).toLocaleTimeString() : '–')
+// 24-hour clock everywhere: '13:47:36' sorts, aligns (tabular-nums) and never wraps, where '1:47:36 PM' did all three
+const H23 = { hourCycle: 'h23', hour: '2-digit', minute: '2-digit', second: '2-digit' }
+export const fmtT = t => (t ? new Date(t * 1000).toLocaleString(undefined, { ...H23, year: 'numeric', month: 'short', day: 'numeric' }) : '–')
+export const fmtTime = t => (t ? new Date(t * 1000).toLocaleTimeString(undefined, H23) : '–')
 export const dur = s => {
   if (s == null) return '–'
   s = Math.max(0, s)

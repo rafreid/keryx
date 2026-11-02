@@ -92,9 +92,10 @@ docker compose pull keryx && docker compose up -d keryx      # Docker
 
 | Area | What it shows |
 |---|---|
-| Header | the title dot shows the worst health check; a **health** pill counts the red and amber ones and opens every check; only checks that are not green stay inline. Checks: gateway (heartbeat, Hermes' own process state and version from `gateway_state.json`, a pending restart), one per messaging platform as the gateway reports it, cron (incidents, missed slots, undelivered results), error log, sessions, the kanban board when it has tasks, storage. Token totals with the spend, `~` when estimated. The browser's timezone is named beside the title. |
+| Header | the title dot shows the worst health check; a **health** pill counts the red and amber ones and opens every check (Esc or a click outside closes it); the single worst check stays inline with "N more in health". Checks: gateway (heartbeat, Hermes' own process state and version from `gateway_state.json`, a pending restart), one per messaging platform as the gateway reports it, cron (incidents, missed slots, undelivered results), error log, sessions, the kanban board when it has tasks, storage. Token totals with the spend, `~` when estimated. |
+| Connection strip | under the header, the one place that says whether the picture is current: **live · checked 3s ago · last change 4m ago**, **reconnecting… showing data from 14:02** (amber, the stream went quiet or failed and Keryx is polling), **backend unreachable since 14:02 · showing the last snapshot** (red), or **live updates paused**. The backend pings the stream every 15 s; 30 s of silence counts as stalled. The browser's timezone sits at its right end. On a phone only the non-green states take the room. |
 | Right now | one card per open session: the request, the latest step, plan progress, elapsed and idle time, calls per minute, context usage, git branch, subagents. |
-| Attention | one ranked list of everything red or amber (failing cron jobs, platforms that are not connected, silent kanban workers, undelivered results, log errors, a pending gateway restart, orphaned sessions) and, last, the sessions waiting for you. Each line selects the node or opens the tab. |
+| Attention | everything red or amber (failing cron jobs, platforms that are not connected, silent kanban workers, undelivered results, log errors, a pending gateway restart, orphaned sessions) in three groups, **needs action**, **watch** and **info** (the sessions waiting for you), each with a count and "since 9d" where the data knows when it began. Each line selects the node or opens the tab. The bell on a line mutes it on this device until its text changes; muted lines sit behind "N muted · show". Keryx never writes any of this to Hermes. |
 | Graph | Hermes at the centre, the platforms it talks on around it, each session in its platform's wedge with its tools clustered around it, subagents in orbit, models on a shelf, cron jobs below. 3D or 2D; labels scale with distance. A clickable ruler along the bottom filters by when a session started. |
 | Selected node | a session opens with four lines (status, request, latest step, context gauge) and the command to resume it in a terminal, then the **trace** as a reading view, the agent's **plan** (its `todo_list`), **what fills the context** (your messages, replies, tool-call arguments and tool output by tool, in characters), **files touched**, and two collapsed sections: cost and usage, lineage and environment. |
 | Sessions tab | grouped by platform, time or project; `#tags` from titles as filter chips; ☆ pins, ★ for sessions pinned in Hermes itself; Hermes' internal sessions (one-shot calls, tool helpers, kanban workers) in a collapsed group; sessions Hermes hides stay out unless you tick "show hidden". The search box also looks inside conversations through Hermes' full-text index. |
@@ -103,8 +104,9 @@ docker compose pull keryx && docker compose up -d keryx      # Docker
 | Analytics tab | insight sentences, sessions-per-day momentum, cache-hit trend, provider mix, when Hermes works by hour of day and weekday, daily trend, a year heatmap, per-day cost, model share, Hermes' skill ledger, achievement unlocks. |
 | Logs tab | filterable tails of every log file Hermes writes; lines logged inside a session link to it. |
 | Memory tab | Hermes' `MEMORY.md` and `USER.md`, read-only, opt-in (`KERYX_SHOW_MEMORY=1`). |
-| Phone | under 800px the graph and the panel take turns at full width behind a map / panel toggle; screens under 1200px start in 2D. |
-| First run | a card explains shape, colour and position, the glyphs, and where the data comes from; the `?` in the header brings it back. |
+| Phone | under 800px the header is one row (title, live toggle, a "…" sheet with the window, view, alerts, sound, QR, help and theme), the red and amber counts sit in the map / panel bar and open the Overview, and the graph and the panel take turns at full width. Screens under 1200px start in 2D; every control is at least 40 px tall. |
+| No data yet | when there is no `state.db` behind the backend the graph gives way to a setup card naming the directory Keryx looked in and the two fixes (`HERMES_HOME` under docker compose, `HERMES_DATA` from source, `HERMES_UID`/`HERMES_GID` for permissions). The card goes away on its own when the file appears. |
+| First run | a card explains shape, colour and position, the glyphs, where the data comes from and the keyboard; the `?` in the header brings it back. It also holds the **reduce motion** switch: Keryx follows the system's reduced-motion setting (no breathing nodes, link particles or pulsing dots, 2D by default) and the switch overrides it for this browser. |
 | Notifications | in-app toasts, desktop notifications if you allow them, and optional short synthesised sounds (no audio files), when Hermes replies and waits for you, a session fails or is orphaned, a delegation finishes, a cron job fails or misses its trigger. |
 
 **Compacted conversations.** When Hermes compacts a long chat it ends the session and continues in a child session. Keryx folds that lineage into one node: it starts when the first segment started, takes its colour from the latest segment, and its trace shows every segment with a ⟲ marker where the context was compacted. The node keeps the first segment's id, so a `#session:…` link to any segment opens the same node. Branches the user made (`/branch`) stay separate sessions joined to their origin by a teal link; delegated subagents keep their purple link.
@@ -121,7 +123,7 @@ docker compose pull keryx && docker compose up -d keryx      # Docker
 
 **Spacing.** ⇔ spacing scales rings, link lengths and repulsion together (compact / normal / airy / wide, or a slider). ⌖ recenter frames the whole graph again. Both settings are remembered per browser.
 
-**Navigation history.** Every selection (graph click, now-card, side-panel link, toast) is a browser history entry that remembers the selection, the side-panel tab and the camera pose just before the move. The trail under the toolbar shows `‹ back`, the last few stops (click one to jump there) and `› forward`. The URL hash (`#session:…`, `#cron:…`) is a deep link: share it, or scan it from the 📱 QR popover, and the page opens on that node.
+**Navigation history.** Every selection (graph click, now-card, side-panel link, toast) is a browser history entry that remembers the selection, the side-panel tab and the camera pose just before the move. The **history** trail under the toolbar shows `‹ back`, the last few stops (click one to jump there) and `› forward`; it is the path you took, not a breadcrumb of where you are, which is why tabs and nodes mix in it. The URL hash (`#session:…`, `#cron:…`) is a deep link: share it, or scan it from the 📱 QR popover, and the page opens on that node.
 
 **Keyboard.**
 
@@ -133,11 +135,16 @@ docker compose pull keryx && docker compose up -d keryx      # Docker
 | `⌘K` / `Ctrl+K` | focus search and open the sessions tab |
 | `[` / `]` | previous / next side-panel tab |
 | `↑` / `↓`, `Enter` | walk the session list, select the focused row |
-| `Esc` | clear the selection |
+| `Esc` | clear the selection, or close an open popover |
+| `Tab`, `Enter` / `Space` | reach and activate every card, attention line, section header, trace step and kanban card |
 
-Every icon button carries a label for screen readers and a visible focus ring.
+Every control is a real button with a label for screen readers and a visible focus ring; section headers announce whether they are open. The graph canvas itself cannot be read by a screen reader; it is labelled to say so and points to the Sessions, Tasks and Board tabs, which list the same things.
 
-**Other buttons.** 🔔 enables desktop notifications; 🔈 adds a short sound per notification (synthesised in the browser, off by default). 📱 shows a QR code of the current page for your phone; Keryx ships a web-app manifest, so "add to home screen" keeps it as an app there. `?` reopens the first-run card. ☾/☀ toggles the theme. ⤓ diagnostics (overview tab) downloads a redacted snapshot to attach to a bug report.
+**Other buttons.** The bell enables desktop notifications; the speaker adds a short sound per notification (synthesised in the browser, off by default). The phone icon shows a QR code of the current page for your phone; Keryx ships a web-app manifest, so "add to home screen" keeps it as an app there. `?` reopens the first-run card. The moon / sun toggles the theme. Screens wider than 1600 px show a word next to each icon. ⤓ diagnostics (overview tab, marked "safe to share") downloads a JSON snapshot of counts, versions and check results to attach to a bug report; it never contains messages, prompts, memory or keys.
+
+**Side panel.** The tabs carry icons and wrap rather than scroll, so none is ever hidden. Drag the panel's left edge to widen it (420 to 640 px); the width is remembered per browser.
+
+**Language.** Keryx is English only. Absolute dates and times follow the browser's locale on a 24-hour clock; relative times ("4m ago"), counts and abbreviations ("58.0k") are English.
 
 ## Configuration
 
@@ -154,7 +161,7 @@ All settings are environment variables.
 | `STALE_AFTER` | `1800` | seconds; a session that is mid-turn but idle for this long is shown as stale |
 | `CONTEXT_LENGTH` | `400000` | last-resort context window for the gauge. Keryx first uses `model.context_length` from Hermes' config.yaml, then the window Hermes probed and cached in `context_length_cache.yaml`, then a small built-in table; only a model none of those know falls back to this value, and the gauge says so |
 
-Colours and labels live in `frontend/src/util.js`; rebuild after changing them.
+Colours and labels live in `frontend/src/util.js`; rebuild after changing them. Light-theme accents are set so every one of them reads at 5:1 or better on the page background at 12 px.
 
 ## What Keryx reads
 
