@@ -39,7 +39,9 @@ export function useNotifications(data, desktop, sound = false) {
     return () => clearTimeout(t)
   }, [toasts])
   const dismiss = id => setToasts(ts => ts.filter(t => t.id !== id))
-  return { toasts, dismiss }
+  /** An in-app notice from the UI itself (replaces window.alert): {level, title, body}. */
+  const push = n => setToasts(ts => [...ts, { ...n, id: `${Date.now()}-ui` }].slice(-6))
+  return { toasts, dismiss, push }
 }
 
 const LEVEL_RANK = { err: 3, warn: 2, ok: 1, info: 0 }

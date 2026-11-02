@@ -9,7 +9,7 @@ import { PALETTE, fmtTime, readPalette } from './util.js'
 import { useNotifications } from './notify.js'
 import { useNavHistory } from './history.js'
 import { NARROW, useMedia } from './hooks/useMedia.js'
-import { TABS } from './tabs.js'
+import { TABS, troubleCounts } from './tabs.js'
 import { TickContext, useClock } from './hooks/useTick.js'
 import FirstRun from './FirstRun.jsx'
 import ConnStrip from './ConnStrip.jsx'
@@ -80,7 +80,7 @@ export default function App() {
   useEffect(() => { try { localStorage.setItem('keryx.notify', notify ? '1' : '0') } catch {} }, [notify])
   const [sound, setSound] = useState(() => { try { return localStorage.getItem('keryx.sound') === '1' } catch { return false } })
   useEffect(() => { try { localStorage.setItem('keryx.sound', sound ? '1' : '0') } catch {} }, [sound])
-  const { toasts, dismiss } = useNotifications(data, notify, sound)
+  const { toasts, dismiss, push } = useNotifications(data, notify, sound)
 
   // 3D is the default; the URL remembers only the window, so reopening the page always starts in 3D
   // (an explicit ?view=2d link still opens 2D).
@@ -125,12 +125,13 @@ export default function App() {
     <TickContext.Provider value={tick}>
     <div className={`app ${narrow ? `narrow m-${mobile}` : ''}`}>
       <Header status={data?.status} hours={hours} setHours={setHours} view={view} setView={setView}
-              live={live} setLive={setLive} cost={data?.cost} theme={theme} setTheme={setTheme} notify={notify} setNotify={setNotify} sound={sound} setSound={setSound} onHelp={() => setFirstRun(true)} />
+              live={live} setLive={setLive} cost={data?.cost} theme={theme} setTheme={setTheme} notify={notify} setNotify={setNotify} sound={sound} setSound={setSound} onHelp={() => setFirstRun(true)} onNotice={push} narrow={narrow} />
       <ConnStrip conn={conn} live={live} seenAt={seenAt} dataAt={(data?.graph?.generated_at || data?.status?.generated_at || 0) * 1000} downSince={downSince} />
       {narrow && <div className="mobilebar" role="tablist" aria-label="phone layout">
         <button role="tab" aria-selected={mobile === 'map'} className={mobile === 'map' ? 'on' : ''} onClick={() => setMobile('map')}>map</button>
         <button role="tab" aria-selected={mobile === 'panel'} className={mobile === 'panel' ? 'on' : ''} onClick={() => setMobile('panel')}>{selectedNode ? selectedNode.label : tab}</button>
-        <span className="small">{stats.running ?? 0} running · {stats.sessions ?? 0} in window</span>
+        <span className="small" title={`${stats.sessions ?? 0} sessions in the window`}>{stats.running ?? 0} running</span>
+        <HealthCount status={data?.status} onClick={() => { navigate(null, { tab: 'overview' }); setMobile('panel') }} />
       </div>}
       <div className="body">
         <div className="main">
@@ -187,6 +188,17 @@ export default function App() {
       </div>
     </div>
     </TickContext.Provider>
+  )
+}
+
+/** The phone's health summary: red and amber counts that open the Overview (the desktop pill is hidden there). */
+function HealthCount({ status, onClick }) {
+  if (!status) return null
+  const { red, amber } = troubleCounts(status.checks)
+  return (
+    <button className="hcount" onClick={onClick} aria-label={`health: ${red} red, ${amber} amber; open the overview`} title="open the attention list">
+      <span className={`dot ${status.level}`} aria-hidden="true" />{red ? <span className="err">{red} red</span> : null}{red && amber ? ' · ' : ''}{amber ? <span className="warn">{amber} amber</span> : null}{!red && !amber ? 'all green' : null}
+    </button>
   )
 }
 
