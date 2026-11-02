@@ -42,7 +42,7 @@ export default function Tasks({ tasks, onSelect, links }) {
           summary={openInc.length ? <span className="err">{openInc.length} open</span> : `${incidents.length} resolved`}>
         <div className="small" style={{ marginBottom: 4 }}>Hermes groups repeated cron failures by job and error signature: <i>detected</i> → <i>alerted</i> → <i>resolved</i> (ran fine again) or <i>closed</i> (acknowledged with <code>hermes cron</code>).</div>
         {incidents.map(i => <div key={i.id} className={`task incident ${i.open ? 'open' : ''}`} onClick={() => onSelect(`cron:${i.job_id}`)} title="select the job in the graph">
-          <div className="t"><b>{i.job}</b><span className={`tag ${i.open ? 'failed' : i.state === 'closed' ? 'paused' : 'done'}`}>{i.state}</span><span className="small">{i.failure_type}</span></div>
+          <div className="t"><b><button type="button" className="linkbtn plain" onClick={e => { e.stopPropagation(); onSelect(`cron:${i.job_id}`) }} aria-label={`${i.job}: select the job in the graph`}>{i.job}</button></b><span className={`tag ${i.open ? 'failed' : i.state === 'closed' ? 'paused' : 'done'}`}>{i.state}</span><span className="small">{i.failure_type}</span></div>
           <div className="small err">{i.error}</div>
           <div className="small">first {ago(i.first_seen_at)} · last {ago(i.last_seen_at)}{i.closed_at ? ` · closed ${ago(i.closed_at)}` : ''}</div>
         </div>)}
@@ -70,9 +70,9 @@ function Delegation({ d, onSelect }) {
         <span className={`tag ${open ? 'running' : /complet/.test(d.state) ? 'done' : 'failed'}`}>{d.state}</span>
         <span className="small">{d.dispatched ? ago(d.dispatched) : ''}{d.duration != null ? ` · ${dur(d.duration)}` : ''}{d.delivery ? ` · ${d.delivery}` : ''}</span>
       </div>
-      {d.parent && <div className="small">from <a href="#" onClick={e => { e.preventDefault(); onSelect(`session:${d.parent}`) }}>{d.parent_title || d.parent}</a></div>}
+      {d.parent && <div className="small">from <button type="button" className="linkbtn" onClick={() => onSelect(`session:${d.parent}`)}>{d.parent_title || d.parent}</button></div>}
       <ol className="goals">{(d.goals?.length ? d.goals : [d.goal]).filter(Boolean).map((g, i) => <li key={i}>{g}</li>)}</ol>
-      {d.children?.length > 0 && <div className="small">subagents: {d.children.map((c, i) => <span key={c.id}>{i ? ', ' : ''}<a href="#" onClick={e => { e.preventDefault(); onSelect(`session:${c.id}`) }}>{c.title}</a></span>)}</div>}
+      {d.children?.length > 0 && <div className="small">subagents: {d.children.map((c, i) => <span key={c.id}>{i ? ', ' : ''}<button type="button" className="linkbtn" onClick={() => onSelect(`session:${c.id}`)}>{c.title}</button></span>)}</div>}
       {d.summary && <div className="small">result: {d.summary}</div>}
     </div>
   )
@@ -82,7 +82,7 @@ function Job({ j, onSelect }) {
   const tag = j.state === 'scheduled' || j.state === 'running' ? 'running' : j.state === 'paused' ? 'paused' : 'failed'
   return (
     <div className="task job" onClick={() => onSelect(`cron:${j.id}`)} title="select in the graph">
-      <div className="t"><b>{j.name}</b><span className={`tag ${tag}`}>{j.state}</span></div>
+      <div className="t"><b><button type="button" className="linkbtn plain" onClick={e => { e.stopPropagation(); onSelect(`cron:${j.id}`) }} aria-label={`${j.name}: select the job in the graph`}>{j.name}</button></b><span className={`tag ${tag}`}>{j.state}</span></div>
       <div className="small">{j.schedule} · {j.mode}{j.deliver ? ` · → ${j.deliver}` : ''}</div>
       <div className="small">
         next <b className={j.missed ? 'err' : ''}>{fmtIn(j.next_run)}</b> ({fmtT(j.next_run)})

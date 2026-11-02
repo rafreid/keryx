@@ -15,13 +15,17 @@ import FirstRun from './FirstRun.jsx'
 import ConnStrip from './ConnStrip.jsx'
 import SetupCard from './SetupCard.jsx'
 import { ago } from './util.js'
+import { pressable, reduceMotionPref } from './a11y.js'
 
 const params = new URLSearchParams(location.search)
 
 export default function App() {
   const [hours, setHours] = useState(Number(params.get('hours') ?? 24))
-  // 3D needs room: screens under 1200px start in 2D unless the link asks for 3D
-  const [view, setView] = useState(params.get('view') === '2d' ? '2d' : params.get('view') === '3d' ? '3d' : window.innerWidth < 1200 ? '2d' : '3d')
+  const [reduceMotion, setReduceMotionState] = useState(reduceMotionPref)
+  const setReduceMotion = v => { setReduceMotionState(v); try { localStorage.setItem('keryx.motion', v ? '1' : '0') } catch {} }
+  useEffect(() => { document.documentElement.dataset.motion = reduceMotion ? 'reduce' : 'full' }, [reduceMotion])
+  // 3D needs room and motion: small screens and reduced-motion users start in 2D unless the link asks for 3D
+  const [view, setView] = useState(params.get('view') === '2d' ? '2d' : params.get('view') === '3d' ? '3d' : window.innerWidth < 1200 || reduceMotionPref() ? '2d' : '3d')
   // phone layout: the graph and the panel take turns at full width; picking something shows the panel
   const narrow = useMedia(NARROW)
   const [mobile, setMobile] = useState('panel')
@@ -140,7 +144,7 @@ export default function App() {
             {setup ? <SetupCard dirExists={data.status.data.dir} /> : <>
             <GraphView graph={graph} view={view} windowSec={windowSec} selected={resolved} onSelect={navigate}
                        search={search} collapsed={collapsed} toggleCollapse={toggleCollapse} hidden={hidden} recenterSignal={recenterSignal} band={band} onVisible={setVisible} spread={spread}
-                       camRef={camRef} restore={restore} theme={theme} />
+                       camRef={camRef} restore={restore} theme={theme} reduceMotion={reduceMotion} />
             <TimeAxis windowSec={windowSec} band={band} setBand={setBand} />
             <div className="toolbar">
               <input id="search" type="search" placeholder="search sessions, requests, tools…  (⌘K)" value={search} onChange={e => setSearch(e.target.value)} />
@@ -174,15 +178,15 @@ export default function App() {
               tool calls <b>{visible?.filtered ? visible.tool_calls : (stats.tool_calls ?? 0)}</b>{(visible?.filtered ? visible.errors : stats.errors) ? <> · <span className="err">{visible?.filtered ? visible.errors : stats.errors} failed</span></> : null} ·
               {graph?.generated_at ? (graph.replay ? ` as of ${fmtTime(graph.as_of)}` : ` last change ${ago(Math.min(graph.generated_at, nowClock))}`) : ' loading…'}
             </div>
-            {firstRun && <FirstRun onClose={closeFirstRun} onLegend={showLegend} />}
+            {firstRun && <FirstRun onClose={closeFirstRun} onLegend={showLegend} reduceMotion={reduceMotion} setReduceMotion={setReduceMotion} />}
             </>}
           </div>
         </div>
         <SidePanel node={selectedNode} cost={data?.cost} status={data?.status} graph={graph} tasks={data?.tasks} onClose={() => { navigate(null); if (narrow) setMobile('map') }}
                    hidden={hidden} toggleHidden={toggleHidden} showAll={showAll} search={search} onSelect={navigate} tab={tab} setTab={setTab} />
       </div>
-      <div className="toasts">
-        {toasts.map(t => <div key={t.id} className={`toast ${t.level}`} onClick={() => { if (t.node) { navigate(t.node) } dismiss(t.id) }}>
+      <div className="toasts" aria-live="polite" aria-relevant="additions">
+        {toasts.map(t => <div key={t.id} className={`toast ${t.level}`} {...pressable(() => { if (t.node) { navigate(t.node) } dismiss(t.id) }, { 'aria-label': `${t.title}${t.body ? `: ${t.body}` : ''}. ${t.node ? 'Open it' : 'Dismiss'}` })}>
           <b>{t.title}</b>{t.body && <div className="small">{t.body}</div>}
         </div>)}
       </div>

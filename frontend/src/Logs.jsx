@@ -27,8 +27,8 @@ export default function Logs({ onSelect, links }) {
             <span className="when">{e.ts ? fmtTime(e.ts) : ''}</span>
             <span className="lvl">{e.level}</span>
             <span className="logger" title={e.logger}>{e.logger.split('.').slice(-1)[0]}</span>
-            {e.session && <a className="sess" href="#" title={`logged inside session ${e.session} · click to select it`}
-               onClick={ev => { ev.preventDefault(); ev.stopPropagation(); onSelect?.(`session:${e.session}`) }}>{e.session.slice(0, 8)}</a>}
+            {e.session && <button type="button" className="sess linkbtn" title={`logged inside session ${e.session} · click to select it`}
+               onClick={() => onSelect?.(`session:${e.session}`)}>{e.session.slice(0, 8)}</button>}
             <pre>{e.msg}</pre>
           </div>
         ))}

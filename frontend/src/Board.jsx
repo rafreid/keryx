@@ -21,7 +21,7 @@ export default function Board({ onSelect, links }) {
     <div>
       <h2>Board</h2>
       <div className="small">Hermes has no kanban board{data.boards?.length ? ' by that name' : ''}. One appears at <code>kanban.db</code> in the data directory the first time <code>hermes kanban</code> creates a task.</div>
-      {data.boards?.length > 0 && <div className="small" style={{ marginTop: 6 }}>boards: {data.boards.map(b => <a key={b.slug} href="#" onClick={e => { e.preventDefault(); pick(b.slug) }}>{b.name} </a>)}</div>}
+      {data.boards?.length > 0 && <div className="small" style={{ marginTop: 6 }}>boards: {data.boards.map(b => <button key={b.slug} type="button" className="linkbtn" onClick={() => pick(b.slug)}>{b.name} </button>)}</div>}
     </div>
   )
   const c = data.counts || {}
@@ -39,7 +39,7 @@ export default function Board({ onSelect, links }) {
       <div className="small">{open} open · {c.running || 0} running · {c.review || 0} in review · {c.done || 0} done
         {data.attention?.length ? <span className="err"> · {data.attention.length} need{data.attention.length === 1 ? 's' : ''} attention</span> : null}</div>
       {data.attention?.length > 0 && <div className="small err" style={{ margin: '4px 0' }}>
-        {data.attention.map(a => <div key={a.id + a.why}>⚠ <a href="#" onClick={e => { e.preventDefault(); setOpenId(a.id) }}>{a.title}</a>: {a.why}</div>)}
+        {data.attention.map(a => <div key={a.id + a.why}>⚠ <button type="button" className="linkbtn" onClick={() => setOpenId(a.id)}>{a.title}</button>: {a.why}</div>)}
       </div>}
       {data.lanes.map(l => (
         <Section key={l.key} id={`kb-${l.key}`} title={<><span className="glyph">{l.glyph}</span> {l.label}</>} summary={`${l.tasks.length}`}
@@ -58,7 +58,7 @@ function Card({ t, open, toggle, board, onSelect }) {
   return (
     <div className={`task kcard ${open ? 'open' : ''} ${t.stale ? 'stale' : ''}`} onClick={toggle} title={open ? 'collapse' : 'open the card'}>
       <div className="t">
-        <b>{t.title}</b>
+        <b><button type="button" className="linkbtn plain" onClick={e => { e.stopPropagation(); toggle() }} aria-expanded={open}>{t.title}</button></b>
         {t.priority ? <span className="tag" title="priority">P{t.priority}</span> : null}
         <span className={`tag ${tone}`}>{t.stale ? 'worker silent' : t.status}</span>
       </div>
@@ -93,7 +93,7 @@ function Detail({ id, board, onSelect }) {
     <div className="kdetail" onClick={stop}>
       {t.body && <><div className="k">task</div><div className="txt">{t.body}</div></>}
       <table><tbody>
-        {t.session_id && <tr><td>session</td><td><a href="#" onClick={e => { e.preventDefault(); onSelect(`session:${t.session_id}`) }}>{t.session_id.slice(0, 12)}…</a> <span className="small">(the worker's conversation)</span></td></tr>}
+        {t.session_id && <tr><td>session</td><td><button type="button" className="linkbtn" onClick={() => onSelect(`session:${t.session_id}`)}>{t.session_id.slice(0, 12)}…</button> <span className="small">(the worker's conversation)</span></td></tr>}
         {t.assignee && <tr><td>assignee</td><td>{t.assignee}{t.model ? <span className="small"> · {t.model}</span> : null}</td></tr>}
         {(t.workspace_path || t.branch) && <tr><td>workspace</td><td>{t.workspace_kind}{t.workspace_path ? ` · ${t.workspace_path}` : ''}{t.branch ? <span className="small"> · ⎇ {t.branch}</span> : null}</td></tr>}
         {t.skills?.length > 0 && <tr><td>skills</td><td>{t.skills.join(', ')}</td></tr>}

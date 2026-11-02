@@ -45,7 +45,17 @@ select, button, input { background: var(--panel2); color: var(--text); border: 1
 button.on { border-color: var(--accent); color: var(--accent); }
 button:hover { border-color: var(--muted); }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.srow:focus-visible, .att:focus-visible, .kcard:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.srow:focus-visible, .att:focus-visible, .kcard:focus-visible, .step:focus-visible, .steps-head:focus-visible, .card .t:focus-visible, .toast:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+/* text-looking controls: section headers, copy, in-text links to nodes */
+.accbtn, .linkbtn { background: none; border: none; padding: 0; margin: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; border-radius: 4px; }
+.accbtn { text-transform: inherit; letter-spacing: inherit; }
+.linkbtn { color: var(--accent); } .linkbtn.plain { color: inherit; font-weight: inherit; }
+.linkbtn:hover { text-decoration: underline; } .accbtn:hover { color: var(--text); }
+.side button.close { float: right; background: none; border: none; padding: 2px 6px; color: var(--muted); font: inherit; cursor: pointer; }
+/* reduced motion: the OS setting, or the switch in the help card, stops every decorative animation */
+@media (prefers-reduced-motion: reduce) { .pulse { animation: none; } .toast { animation: none; } }
+:root[data-motion="reduce"] .pulse { animation: none; } :root[data-motion="reduce"] .toast { animation: none; }
+.fr-motion { display: flex; gap: 8px; align-items: flex-start; margin: 8px 0 2px; cursor: pointer; } .fr-motion input { margin: 2px 0 0; accent-color: var(--accent); }
 .body { flex: 1; display: flex; min-height: 0; }
 .main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .now { display: flex; gap: 10px; overflow-x: auto; padding: 10px 14px; border-bottom: 1px solid var(--line);
@@ -53,6 +63,7 @@ button:hover { border-color: var(--muted); }
 .now:empty::after { content: "idle — no running sessions"; color: var(--muted); align-self: center; }
 .card { flex: 0 0 300px; background: var(--panel2); border: 1px solid var(--line); border-radius: 8px;
   padding: 8px 10px; cursor: pointer; font-size: 12px; }
+.card .t { border-radius: 4px; margin: -2px -4px 0; padding: 2px 4px; }
 .card:hover, .card.sel { border-color: var(--accent); }
 .card .t { font-weight: 600; font-size: 13px; margin-bottom: 2px; display: flex; gap: 6px; align-items: center; }
 .card .req { color: var(--text); opacity: .9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -88,7 +99,6 @@ button:hover { border-color: var(--muted); }
 .side h3 { font-size: 12px; color: var(--muted); margin: 14px 0 6px; text-transform: uppercase; letter-spacing: .5px; }
 .side table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .side td { padding: 3px 0; vertical-align: top; } .side td:first-child { color: var(--muted); width: 40%; }
-.side .close { float: right; cursor: pointer; color: var(--muted); }
 .cost td:nth-child(n+2) { text-align: right; font-variant-numeric: tabular-nums; }
 .err { color: var(--red); } .ok { color: var(--green); } .warn { color: var(--amber); }
 .small { font-size: 11px; color: var(--muted); }
@@ -169,13 +179,14 @@ svg.bars .axis { fill: var(--muted); font-size: 7px; }
 .srow { display: flex; gap: 6px; align-items: flex-start; padding: 6px 6px; border-radius: 6px; cursor: pointer; border: 1px solid transparent; }
 .srow:hover { background: var(--panel2); } .srow.sel { border-color: var(--accent); }
 .srow .title { font-size: 12.5px; line-height: 1.3; }
-h3.acc { cursor: pointer; user-select: none; }
+h3.acc { user-select: none; } .section h3.acc .accbtn { width: 100%; }
 kbd { background: var(--panel2); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; font-size: 11px; }
 /* logs */
 .loglist { font-size: 11.5px; margin-top: 6px; }
 .log { display: grid; grid-template-columns: 60px 56px minmax(0, 1fr) auto; grid-auto-rows: auto; column-gap: 6px; padding: 4px 0; border-top: 1px solid var(--line); }
 .log pre { grid-column: 1 / -1; margin: 2px 0 0; white-space: pre-wrap; word-break: break-word; font-size: 11px; color: var(--text); }
-.log .when { color: var(--muted); } .log .sess { color: var(--accent, #6ad1ff); font-family: ui-monospace, monospace; font-size: 10.5px; text-decoration: none; white-space: nowrap; } .log .lvl { font-weight: 600; } .log .logger { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.log .when { color: var(--muted); } .log .sess { color: var(--accent, #6ad1ff); font-family: ui-monospace, monospace; font-size: 10.5px; text-decoration: none; white-space: nowrap; }
+.log button.sess { justify-self: end; } .log .lvl { font-weight: 600; } .log .logger { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .log.warning .lvl { color: var(--amber); } .log.error .lvl, .log.critical .lvl { color: var(--red); } .log.info .lvl { color: var(--muted); }
 /* trace */
 .trace { font-size: 12px; }
@@ -244,7 +255,7 @@ kbd { background: var(--panel2); border: 1px solid var(--line); border-radius: 4
 .files { font-size: 11.5px; }
 .file { display: grid; grid-template-columns: 28px 1fr auto; gap: 6px; align-items: baseline; padding: 2px 0; border-top: 1px solid var(--line); }
 .file .op { color: var(--muted); } .file.changed .op { color: var(--amber); }
-.file .path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
+.file .path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; min-width: 0; }
 .dl { float: right; font-weight: 400; }
 .toasts { position: fixed; right: 16px; bottom: 16px; display: flex; flex-direction: column; gap: 8px; z-index: 20; max-width: 340px; }
 .toast { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--muted); border-radius: 8px; padding: 8px 12px;
@@ -257,7 +268,7 @@ kbd { background: var(--panel2); border: 1px solid var(--line); border-radius: 4
 /* collapsible overview sections */
 .section h3.acc .sum { text-transform: none; letter-spacing: 0; }
 .section.closed h3 { opacity: .8; }
-.gh.acc { cursor: pointer; user-select: none; } .gh.acc.ok { color: var(--green); } .gh.acc.err { color: var(--red); }
+.gh.acc { user-select: none; } .gh.acc.ok { color: var(--green); } .gh.acc.err { color: var(--red); }
 
 /* navigation trail: ‹ back · recent stops · › forward, under the toolbar */
 .trail { position: absolute; top: 46px; left: 12px; display: flex; gap: 6px; align-items: center; font-size: 12px; color: var(--muted);
