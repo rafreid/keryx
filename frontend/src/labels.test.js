@@ -78,6 +78,12 @@ describe('2D occlusion', () => {
     expect(cullLabels2d(nodes, { fontSize: 11, radiusOf: r, measure: () => 200 })).toEqual(['a'])
     expect(cullLabels2d(nodes, { fontSize: 11, radiusOf: r, measure: () => 20 }).sort()).toEqual(['a', 'b'])
   })
+  it('applies the overview budget when asked', () => {
+    const nodes = rankByStart([s('a', { x: 0, y: 0, started: 100 }), s('b', { x: 400, y: 0, started: 90 }), s('c', { x: 800, y: 0, started: 80 }), s('d', { x: 1200, y: 0, started: 70 }),
+      s('e', { x: 1600, y: 0, started: 60 }), s('r', { x: 2000, y: 0, started: 1, status: 'running' }), { id: 'h', type: 'hub', label: 'Hermes', x: 2400, y: 0 }])
+    expect(cullLabels2d(nodes, { fontSize: 11, radiusOf: r, budget: true }).sort()).toEqual(['a', 'b', 'c', 'd', 'h', 'r'])
+    expect(cullLabels2d(nodes, { fontSize: 11, radiusOf: r }).length).toBe(7)
+  })
   it('keeps labels that do not collide, and the selection always', () => {
     const nodes = rankByStart([s('a', { x: 0, y: 0, started: 100 }), s('b', { x: 400, y: 0, started: 10 }), s('c', { x: 2, y: 1, started: 1 })])
     expect(cullLabels2d(nodes, { fontSize: 11, radiusOf: r }).sort()).toEqual(['a', 'b'])

@@ -4,6 +4,29 @@ Keryx versions are the `version` string in `backend/app.py`, shown in the page h
 Each entry links the pull requests that made it. The published image `ghcr.io/rafreid/keryx` carries
 `latest` for the head of `main` and a version tag for each release.
 
+## 2.9
+
+A graph release from a visual and interaction review of the 3D view: fourteen findings, all addressed.
+Nothing changed in what Keryx reads; the picture got honest colours, legible labels and depth.
+
+- Graph colours are CSS tokens with a light block that clears 3:1 for every node and link (the old
+  dark hexes fell to 1.3:1 on the light background); "active" is a halo ring and particles, never a
+  red fill, so a running session stays green; switching theme repaints the WebGL background.
+  ([#45](https://github.com/rafreid/keryx/pull/45))
+- Labels keep ~11 px on screen at any zoom, a priority budget decides which the overview shows, a
+  screen-space occlusion pass hides any that would overprint, and nothing outside the focused
+  neighbourhood is labelled; the sprite textures are no longer re-rasterised every frame. Tool
+  labels read "write_file ×3 · 1 failed". ([#46](https://github.com/rafreid/keryx/pull/46))
+- Depth: a stem from every session to the floor ring, a 42° overview, an accent ring on the
+  selection, fog tied to the camera distance, a key light that gives spheres a terminator.
+  ([#47](https://github.com/rafreid/keryx/pull/47))
+- The overview frames the sessions and platforms at 62 % of the canvas instead of 40 %; the hub is
+  accent-coloured in both themes; the 2D canvas pauses its redraw loop under reduced motion.
+  ([#48](https://github.com/rafreid/keryx/pull/48))
+- Phone map: refits on rotation and panel resize, a label budget when zoomed out, more padding
+  under the toolbar, the history trail hidden (the browser's back button does the same).
+  ([#49](https://github.com/rafreid/keryx/pull/49))
+
 ## 2.8
 
 A usability release from a full UX audit of 2.7: twenty-two findings, all addressed. Nothing changed
