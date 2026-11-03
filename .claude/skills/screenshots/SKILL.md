@@ -32,6 +32,8 @@ gallery stays consistent in version and theme.
 3. Click or key into the state the row describes. Use `[`/`]` to switch tabs.
 4. Take the screenshot into `.playwright-mcp/<name>.png`, then copy it to `docs/img/<name>.png`.
 5. Read the console; any error means the shot is invalid.
+6. After the whole set is replaced, run `python3 .claude/skills/screenshots/webp.py` (needs Pillow) so
+   every `docs/img/*.webp` matches its `.png`; the website serves the webp and falls back to the png.
 
 Light theme is toggled with the header theme button; on phones use the map/panel bar at the bottom.
 The website `docs/index.html` is checked by serving `docs/` with `python3 -m http.server 9122`
