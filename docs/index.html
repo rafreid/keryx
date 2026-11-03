@@ -94,12 +94,18 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 .hero .lede { font-size: clamp(17px, 1.6vw, 20px); color: var(--muted); max-width: 60ch; }
 .hero .cta { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
 .hero .greek { font-family: var(--display); color: var(--muted); font-size: 14px; }
-.shot { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: #0b0f17; box-shadow: 0 30px 80px -40px rgba(0,0,0,0.8); }
+.shot { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: #0b0f17; box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 30px 80px -40px rgba(0,0,0,0.8); }
+:root[data-theme="light"] .shot { box-shadow: 0 0 0 1px rgba(20,32,46,0.08), 0 24px 60px -28px rgba(20,32,46,0.45); }
+@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) .shot { box-shadow: 0 0 0 1px rgba(20,32,46,0.08), 0 24px 60px -28px rgba(20,32,46,0.45); } }
 .shot img { width: 100%; }
 figcaption { font-size: 13px; color: var(--muted); padding: 8px 2px 0; }
 .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
 .pulse { animation: pulse 2.4s ease-in-out infinite; }
 @keyframes pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.35); opacity: 0.6; } }
+
+.phones-row { display: flex; gap: 12px; justify-content: center; }
+.phones-row picture { width: 48%; }
+.phones-row img { border: 1px solid var(--line); border-radius: 12px; }
 
 /* sections */
 section { padding-block: 56px; border-top: 1px solid var(--line); }
@@ -178,7 +184,7 @@ footer .wrap > div { display: flex; flex-wrap: wrap; gap: 16px; align-items: cen
       </div>
     </div>
     <figure class="shot" style="margin:0">
-      <img src="img/graph.png" width="1440" height="900" alt="The Keryx dashboard: a one-row header with the health pill and the worst check, the connection strip reading live, a strip of running sessions, the 3D graph with Hermes at the centre and platforms, sessions, tools and cron jobs around it, and a selected session's detail in the side panel">
+      <picture><source srcset="img/graph.webp" type="image/webp"><img src="img/graph.png" width="1440" height="900" alt="The Keryx dashboard: a one-row header with the health pill and the worst check, the connection strip reading live, a strip of running sessions, the 3D graph with Hermes at the centre and platforms, sessions, tools and cron jobs around it, and a selected session's detail in the side panel" fetchpriority="high" decoding="async"></picture>
       <figcaption>A Hermes install with two live sessions, a compacted Telegram chat, a subagent, two cron jobs, a kanban board and one open incident (sample data). The strip under the header says the picture is current; the panel shows the selected session's status, request, latest step, context and trace.</figcaption>
     </figure>
   </div>
@@ -253,7 +259,7 @@ footer .wrap > div { display: flex; flex-wrap: wrap; gap: 16px; align-items: cen
 
     <div class="two">
       <figure class="shot" style="margin:0">
-        <img src="img/session.png" width="1440" height="900" alt="A session selected in Keryx: its tools fanned out in a ring, and the side panel showing status, request, latest step, the context gauge, the resume command and the turn-by-turn trace">
+        <picture><source srcset="img/session.webp" type="image/webp"><img src="img/session.png" width="1440" height="900" alt="A session selected in Keryx: its tools fanned out in a ring, and the side panel showing status, request, latest step, the context gauge, the resume command and the turn-by-turn trace" loading="lazy" decoding="async"></picture>
         <figcaption>A selected session: tools fan out in a ring facing you; the panel opens with four lines and the trace, then the plan, what fills the context and files touched.</figcaption>
       </figure>
       <div class="grid" style="grid-template-columns:1fr">
@@ -394,33 +400,33 @@ footer .wrap > div { display: flex; flex-wrap: wrap; gap: 16px; align-items: cen
 
     <div class="two">
       <figure class="shot" style="margin:0">
-        <img src="img/board.png" width="1440" height="900" alt="The board tab: Hermes' kanban lanes with a running card opened to its comments, run history and event timeline">
+        <picture><source srcset="img/board.webp" type="image/webp"><img src="img/board.png" width="1440" height="900" alt="The board tab: Hermes' kanban lanes with a running card opened to its comments, run history and event timeline" loading="lazy" decoding="async"></picture>
         <figcaption>Board: Hermes' kanban queue in its own lanes, read-only, with a card open.</figcaption>
       </figure>
       <figure class="shot" style="margin:0">
-        <img src="img/analytics.png" width="1440" height="900" alt="The analytics tab: insight sentences, session and token tiles, sessions-per-day momentum, cache hit, provider mix donut">
+        <picture><source srcset="img/analytics.webp" type="image/webp"><img src="img/analytics.png" width="1440" height="900" alt="The analytics tab: insight sentences, session and token tiles, sessions-per-day momentum, cache hit, provider mix donut" loading="lazy" decoding="async"></picture>
         <figcaption>Analytics: insights, momentum, cache trend, provider mix, when Hermes works.</figcaption>
       </figure>
     </div>
     <div class="two">
       <figure class="shot" style="margin:0">
-        <img src="img/tasks.png" width="1440" height="900" alt="The tasks tab: a completed delegation, two scheduled jobs with run history, an open incident and its lifecycle">
+        <picture><source srcset="img/tasks.webp" type="image/webp"><img src="img/tasks.png" width="1440" height="900" alt="The tasks tab: a completed delegation, two scheduled jobs with run history, an open incident and its lifecycle" loading="lazy" decoding="async"></picture>
         <figcaption>Tasks: delegations, scheduled jobs, Hermes' incident ledger.</figcaption>
       </figure>
       <figure class="shot" style="margin:0">
-        <img src="img/logs.png" width="1440" height="900" alt="The logs tab: error-level lines from errors.log, one of them tagged with the session that logged it">
+        <picture><source srcset="img/logs.webp" type="image/webp"><img src="img/logs.png" width="1440" height="900" alt="The logs tab: error-level lines from errors.log, one of them tagged with the session that logged it" loading="lazy" decoding="async"></picture>
         <figcaption>Logs: every file Hermes writes, filtered by level; session-tagged lines link to their session.</figcaption>
       </figure>
     </div>
     <div class="two">
       <figure class="shot" style="margin:0">
-        <img src="img/light.png" width="1440" height="900" alt="The light theme: the same selected session with every graph, panel and overlay colour in the light palette">
+        <picture><source srcset="img/light.webp" type="image/webp"><img src="img/light.png" width="1440" height="900" alt="The light theme: the same selected session with every graph, panel and overlay colour in the light palette" loading="lazy" decoding="async"></picture>
         <figcaption>The light theme: every overlay and graph colour follows the theme, and every accent reads at 5:1 or better.</figcaption>
       </figure>
       <figure class="shot phones" style="margin:0;background:transparent;border:0;box-shadow:none">
-        <div style="display:flex;gap:12px;justify-content:center">
-          <img src="img/phone-panel.png" width="400" height="800" alt="Keryx on a phone: a one-row header, the health counts in the map / panel bar, and the overview panel with its grouped attention list" style="width:48%;border:1px solid var(--line);border-radius:12px">
-          <img src="img/phone-map.png" width="400" height="800" alt="Keryx on a phone: the map view, with session cards above the 2D graph" style="width:48%;border:1px solid var(--line);border-radius:12px">
+        <div class="phones-row">
+          <picture><source srcset="img/phone-panel.webp" type="image/webp"><img src="img/phone-panel.png" width="400" height="800" alt="Keryx on a phone: a one-row header, the health counts in the map / panel bar, and the overview panel with its grouped attention list" loading="lazy" decoding="async"></picture>
+          <picture><source srcset="img/phone-map.webp" type="image/webp"><img src="img/phone-map.png" width="400" height="800" alt="Keryx on a phone: the map view, with session cards above the 2D graph" loading="lazy" decoding="async"></picture>
         </div>
         <figcaption>On a phone the header is one row, the health counts sit in the map / panel bar, and the panel and the map take turns at full width.</figcaption>
       </figure>
