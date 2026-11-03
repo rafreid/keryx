@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { floorY, fogRange, overviewPose, stemSegments } from './depth.js'
+import { FILL, fitDistance, floorY, fogRange, overviewPose, stemSegments, structureRadius } from './depth.js'
 
 describe('depth cues', () => {
   it('fog follows the camera distance and never collapses', () => {
@@ -18,8 +18,19 @@ describe('depth cues', () => {
     const out = new Float32Array(6)
     expect(stemSegments([{ type: 'session', x: 0, y: 0 }, { type: 'session', x: 1, y: 1 }], out)).toBe(1)
   })
-  it('overview pose is elevated about 42 degrees', () => {
+  it('overview pose is elevated about 42 degrees at the given distance', () => {
     const p = overviewPose(100)
     expect(Math.atan2(p.y, p.z) * 180 / Math.PI).toBeCloseTo(42, 0)
+    expect(Math.hypot(p.x, p.y, p.z)).toBeCloseTo(100)
+  })
+  it('frames sessions and platforms, not the model shelf', () => {
+    const nodes = [{ type: 'session', x: 100, y: -15, z: 0 }, { type: 'model', x: 0, y: 400, z: 0 }, { type: 'source', x: 0, y: -15, z: 60 }]
+    expect(structureRadius(nodes)).toBeGreaterThanOrEqual(100)
+    expect(structureRadius(nodes)).toBeLessThan(200)
+  })
+  it('fit distance fills the view and respects a portrait canvas', () => {
+    const d = fitDistance(100, 1000, 600)
+    expect(100 / (d * Math.tan(37.5 * Math.PI / 180))).toBeCloseTo(FILL, 5)
+    expect(fitDistance(100, 400, 800)).toBeGreaterThan(d)         // narrower canvas: back off so the width still fits
   })
 })

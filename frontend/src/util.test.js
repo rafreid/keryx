@@ -23,7 +23,7 @@ describe('small helpers', () => {
 })
 
 describe('graph colours', () => {
-  const pal = { text: '#e6edf7', muted: '#8fa0b8', active: '#ffffff',
+  const pal = { text: '#e6edf7', muted: '#8fa0b8', active: '#ffffff', accent: '#6ad1ff',
     node: { platform: '#6ad1ff', tool: '#ffb86b', model: '#f778ba', cron: '#ffd866', fail: '#f85149' },
     status: { running: '#3fb950', orphaned: '#f85149' }, link: { link: '#8ea0bf', spawn: '#c3a6ff' } }
   it('DOM consumers get CSS var() strings so a theme switch re-colours them for free', () => {
@@ -38,7 +38,7 @@ describe('graph colours', () => {
     expect(nodeFill({ type: 'session', status: 'running' }, pal)).toBe('#3fb950')
     expect(nodeFill({ type: 'session', status: 'unknown' }, pal)).toBe('#8fa0b8')
     expect(nodeFill({ type: 'tool', errors: 1 }, pal)).toBe('#f85149')
-    expect(nodeFill({ type: 'hub' }, pal)).toBe('#e6edf7')
+    expect(nodeFill({ type: 'hub' }, pal)).toBe('#6ad1ff')
     expect(nodeFill({ type: 'model' }, pal)).toBe('#f778ba')
     expect(linkFill({ kind: 'spawn' }, pal)).toBe('#c3a6ff')
     expect(linkFill({ kind: 'tool', errors: 1 }, pal)).toBe('#f85149')

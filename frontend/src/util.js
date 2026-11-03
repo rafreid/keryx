@@ -19,7 +19,7 @@ export const num = n => (n == null ? '–' : n >= 1e6 ? (n / 1e6).toFixed(2) + '
 // Colours are CSS tokens (styles.css defines them per theme). DOM consumers use the var() strings below;
 // the canvas and WebGL renderers read the literal values through palette() → nodeFill / linkFill.
 export const TYPE = {
-  hub:      { color: 'var(--text)', label: 'Hermes agent' },
+  hub:      { color: 'var(--accent)', label: 'Hermes agent' },
   source:   { color: 'var(--n-platform)', label: 'platform (telegram, tui, cron…)' },
   session:  { color: 'var(--muted)', label: 'session — sphere; colour = status below' },
   subagent: { color: 'var(--muted)', label: 'subagent — octahedron; colour = status below' },
@@ -53,7 +53,7 @@ export function nodeFill(n, pal = palette()) {
   if (n.type === 'session' || n.type === 'subagent') return pal.status[n.status] || pal.muted
   if (n.type === 'tool') return n.errors > 0 ? pal.node.fail : pal.node.tool
   if (n.type === 'cron') return n.status === 'failed' ? pal.node.fail : pal.node.cron
-  if (n.type === 'hub') return pal.text
+  if (n.type === 'hub') return pal.accent
   if (n.type === 'source') return pal.node.platform
   if (n.type === 'model') return pal.node.model
   return pal.muted

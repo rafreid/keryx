@@ -9,7 +9,7 @@ import { layoutTargets, LAYOUT, setSpread } from './layout.js'
 import { useCameraPose } from './hooks/useCameraPose.js'
 import { useTimeAxis3d, useRings2d } from './hooks/useTimeAxis.js'
 import { cullLabels2d, cullLabels3d, labelHeight, labelText, labelVisible3d, rankByStart } from './labels.js'
-import { fogRange, overviewPose, stemSegments } from './depth.js'
+import { fitDistance, fogRange, overviewPose, stemSegments, structureRadius } from './depth.js'
 
 const LABELLED = new Set(['hub', 'source', 'session', 'subagent', 'cron', 'model'])
 // label sizing and the overview budget live in labels.js (shared with the 2D painter and unit-tested)
@@ -172,7 +172,7 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
     const fg = fgRef.current
     if (!fg) return
     if (view === '3d') {
-      const t = setTimeout(() => fg.cameraPosition(overviewPose(215), { x: 0, y: 0, z: 0 }, 0), 50)
+      const t = setTimeout(() => fg.cameraPosition(overviewPose(fitDistance(LAYOUT.sessionRadius + 40, size.w, size.h)), { x: 0, y: 0, z: 0 }, 0), 50)
       return () => clearTimeout(t)
     }
   }, [view])
@@ -180,19 +180,19 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
     const fg = fgRef.current
     if (!fg) return
     if (view === '3d') {
-      // frame the whole structure: platform ring + session ring + recency depth + model shelf
-      const span = Math.max(...data.nodes.map(n => Math.hypot(n.x || 0, n.y || 0, n.z || 0)), LAYOUT.sessionRadius + 60)
+      // frame the sessions and platforms (not the model shelf) so the structure fills most of the canvas
+      const dist = fitDistance(structureRadius(data.nodes), size.w, size.h)
       // trackball controls let a drag roll the camera; put "up" back to +y so the picture comes back
       // exactly as on first load: floor flat, hub centred, time axis on the left
       const cam = fg.camera(), ctl = fg.controls()
       if (cam) cam.up.set(0, 1, 0)
       if (ctl?.target) ctl.target.set(0, -15, 0)
-      const p = overviewPose(span)
+      const p = overviewPose(dist)
       fg.cameraPosition({ x: p.x, y: p.y - 15, z: p.z }, { x: 0, y: -15, z: 0 }, ms)
     } else {
-      fg.zoomToFit(ms, 50)
+      fg.zoomToFit(ms, 40, n => n.type !== 'model')
     }
-  }, [view, data])
+  }, [view, data, size])
   const selectedRef = useRef(selected); selectedRef.current = selected
   const onEngineStop = useCallback(() => {
     if (fitted.current) return
@@ -357,7 +357,7 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
     group.add(ring)
     let wire = null
     if (n.type === 'hub') {
-      wire = new THREE.Mesh(GEOMETRY.hub, new THREE.MeshBasicMaterial({ color: palette().accent, wireframe: true, transparent: true, opacity: 0.35 }))
+      wire = new THREE.Mesh(GEOMETRY.hub, new THREE.MeshBasicMaterial({ color: palette().text, wireframe: true, transparent: true, opacity: 0.3 }))
       wire.scale.setScalar(r * 1.35)
       group.add(wire)
     }
@@ -435,7 +435,7 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
         }
         if (node.type !== 'source') mesh.rotation.y = !still && (node.type === 'tool' || node.type === 'subagent') ? t / 4000 : 0
         if (wire && !still) { wire.rotation.y = t / 6000; wire.rotation.x = t / 9000 }
-        if (wire && entry.accent !== pal.accent) { entry.accent = pal.accent; wire.material.color.set(pal.accent) }
+        if (wire && entry.accent !== pal.text) { entry.accent = pal.text; wire.material.color.set(pal.text) }
         if (label) {
           // every SpriteText setter re-rasterises its canvas, so write only on change (and the height in half-unit steps)
           const col = withAlpha(pal.text, emphasised(node) ? 0.95 : 0.12)
@@ -517,7 +517,7 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
         ? <ForceGraph3D {...common} backgroundColor={bg} showNavInfo={false}
             nodeThreeObject={threeObject} nodeThreeObjectExtend={false} linkOpacity={0.8} lights={lights} />
         : <ForceGraph2D {...common} backgroundColor={bg} nodeCanvasObject={paint2d} nodeCanvasObjectMode={() => 'replace'}
-            linkDirectionalArrowLength={0} autoPauseRedraw={false} onRenderFramePre={framePre} />}
+            linkDirectionalArrowLength={0} autoPauseRedraw={reduceMotion} onRenderFramePre={framePre} />}
     </div>
   )
 }
@@ -527,7 +527,7 @@ export function drawShape(ctx, type, x, y, r, fill) {
   ctx.beginPath()
   switch (type) {
     case 'hub': ctx.arc(x, y, r, 0, 2 * Math.PI); ctx.fillStyle = fill; ctx.fill()
-      ctx.beginPath(); ctx.arc(x, y, r * 1.5, 0, 2 * Math.PI); ctx.lineWidth = r * 0.18; ctx.strokeStyle = withAlpha(palette().accent, 0.5); ctx.stroke()
+      ctx.beginPath(); ctx.arc(x, y, r * 1.5, 0, 2 * Math.PI); ctx.lineWidth = r * 0.18; ctx.strokeStyle = withAlpha(palette().text, 0.45); ctx.stroke()
       ctx.beginPath(); ctx.arc(x, y, r, 0, 2 * Math.PI); return
     case 'source': ctx.arc(x, y, r, 0, 2 * Math.PI); ctx.lineWidth = r * 0.5; ctx.strokeStyle = fill; ctx.stroke(); return
     case 'subagent': ctx.moveTo(x, y - r * 1.2); ctx.lineTo(x + r, y); ctx.lineTo(x, y + r * 1.2); ctx.lineTo(x - r, y); ctx.closePath(); break
