@@ -49,7 +49,19 @@ All screenshots are taken from the synthetic fixture the tests use, never from a
 
 ## Quick start
 
-You need a Hermes Agent install whose data directory you can read, and either Docker or Python 3.11+. Node is **not** required: a prebuilt image is published for every release.
+You need a Hermes Agent install whose data directory you can read, on the same machine, and Docker. A prebuilt image is published for every release, so Node is **not** required. (Python 3.11+ works without Docker, but that path builds the front end from source and needs Node 18+ once.)
+
+Nothing to clone: run the published image against your Hermes data directory (`~/.hermes` for a native install; for Hermes in Docker use the host directory you mount at `/opt/data` and the uid that owns it, see [Doing it by hand](#doing-it-by-hand)):
+
+```bash
+docker run -d --name keryx --restart unless-stopped \
+  --user "$(id -u):$(id -g)" \
+  -v ~/.hermes:/opt/data \
+  -p 127.0.0.1:9120:9120 \
+  ghcr.io/rafreid/keryx:latest
+```
+
+Or clone the repository and let the quick-start script find the directory, its owner and Docker for you:
 
 ```bash
 git clone https://github.com/rafreid/keryx.git
@@ -65,7 +77,7 @@ The script finds your Hermes data directory (`~/.hermes` for a native install, `
 |---|---|
 | `./quickstart.sh` | Docker if available, otherwise Python |
 | `./quickstart.sh --build` | build the image from this checkout (needs Node 18+) |
-| `./quickstart.sh --python` | skip Docker and run uvicorn directly |
+| `./quickstart.sh --python` | skip Docker and run uvicorn directly (builds the front end first: Node 18+ once) |
 | `HERMES_HOME=/srv/hermes ./quickstart.sh` | point at a non-standard data directory |
 
 ### Doing it by hand
