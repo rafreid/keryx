@@ -74,29 +74,32 @@ export function cullBoxes(items, { selected, hover } = {}) {
   return on
 }
 
+const PAD = 1.5                            // margin around each box: measured widths exclude the halo padding, and adjacent labels still need air
 const LABELLED = new Set(['hub', 'source', 'session', 'subagent', 'cron', 'model'])
 export const wantsLabel = (n, hover) => (n.type === 'tool' ? !!n.fanned || n.id === hover : LABELLED.has(n.type))
 
 /** 2D: boxes in world units under the node (the painter divides by zoom, so `fontSize` already is). */
-export function cullLabels2d(nodes, { selected, hover, fontSize, radiusOf, emphasised = () => true }) {
+export function cullLabels2d(nodes, { selected, hover, fontSize, radiusOf, emphasised = () => true, measure }) {
   for (const n of nodes) n.labelOn = false
   const items = []
   for (const n of nodes) {
     if (n.x == null || !wantsLabel(n, hover)) continue
     if (!emphasised(n) && n.type !== 'hub' && n.type !== 'source' && n.id !== selected && n.id !== hover) continue
-    const w = labelText(n).length * fontSize * 0.56, h = fontSize * 1.25
+    const text = labelText(n)
+    const w = (measure ? measure(text) : text.length * fontSize * 0.56) * PAD, h = fontSize * 1.25 * PAD
     const x0 = n.x - w / 2, y0 = n.y + radiusOf(n) + 1.5
     items.push({ n, x0, y0, x1: x0 + w, y1: y0 + h })
   }
   return cullBoxes(items, { selected, hover })
 }
 
-/** 3D: boxes in screen pixels from projected node positions ({ n, sx, sy } with the label hanging below). */
+/** 3D: boxes in screen pixels from projected label anchors ({ n, sx, sy, aspect }: sprite centre and width/height). */
 export function cullLabels3d(projected, { selected, hover }) {
-  const items = projected.map(({ n, sx, sy }) => {
+  const items = projected.map(({ n, sx, sy, aspect }) => {
     const px = LABEL_PX * (LABEL_SCALE[n.type] ?? 1)
-    const w = labelText(n).length * px * 0.56, h = px * 1.3
-    return { n, x0: sx - w / 2, y0: sy, x1: sx + w / 2, y1: sy + h }
+    const h = px * 1.3 * PAD
+    const w = aspect ? h * aspect : labelText(n).length * px * 0.56 * PAD
+    return { n, x0: sx - w / 2, y0: sy - h / 2, x1: sx + w / 2, y1: sy + h / 2 }   // a sprite is centred on its anchor
   })
   return cullBoxes(items, { selected, hover })
 }

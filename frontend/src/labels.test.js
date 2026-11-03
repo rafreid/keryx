@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { LABEL_FAR, cullLabels2d, labelHeight, labelPriority, labelText, labelVisible3d, rankByStart } from './labels.js'
+import { LABEL_FAR, cullLabels2d, cullLabels3d, labelHeight, labelPriority, labelText, labelVisible3d, rankByStart } from './labels.js'
 
 const s = (id, extra = {}) => ({ id, type: 'session', label: id, ...extra })
 
@@ -49,6 +49,19 @@ describe('3D visibility budget', () => {
   })
 })
 
+describe('3D occlusion', () => {
+  it('boxes are centred on the sprite anchor, so two labels one line apart collide', () => {
+    const a = { id: 'a', type: 'hub', label: 'Hermes' }, b = s('b', { label: 'long chat (branch)', labelRank: 0 })
+    expect(cullLabels3d([{ n: a, sx: 100, sy: 100 }, { n: b, sx: 110, sy: 112 }], {})).toEqual(['a'])
+    expect(cullLabels3d([{ n: a, sx: 100, sy: 100 }, { n: b, sx: 110, sy: 140 }], {}).sort()).toEqual(['a', 'b'])
+  })
+  it('uses the sprite aspect ratio for the width when given', () => {
+    const a = { id: 'a', type: 'source', label: 'tui' }, b = s('b', { label: 'x', labelRank: 0 })
+    expect(cullLabels3d([{ n: a, sx: 100, sy: 100, aspect: 10 }, { n: b, sx: 160, sy: 100, aspect: 1 }], {})).toEqual(['a'])
+    expect(cullLabels3d([{ n: a, sx: 100, sy: 100 }, { n: b, sx: 160, sy: 100 }], {}).sort()).toEqual(['a', 'b'])
+  })
+})
+
 describe('2D occlusion', () => {
   const r = () => 4
   it('hides a label that would overprint a higher-priority one', () => {
@@ -59,6 +72,11 @@ describe('2D occlusion', () => {
   it('skips dimmed nodes', () => {
     const nodes = rankByStart([s('a', { x: 0, y: 0 }), s('b', { x: 400, y: 0 })])
     expect(cullLabels2d(nodes, { fontSize: 11, radiusOf: r, emphasised: n => n.id === 'a' })).toEqual(['a'])
+  })
+  it('measures text when a measure function is given', () => {
+    const nodes = rankByStart([s('a', { x: 0, y: 0, started: 100 }), s('b', { x: 60, y: 0, started: 10 })])
+    expect(cullLabels2d(nodes, { fontSize: 11, radiusOf: r, measure: () => 200 })).toEqual(['a'])
+    expect(cullLabels2d(nodes, { fontSize: 11, radiusOf: r, measure: () => 20 }).sort()).toEqual(['a', 'b'])
   })
   it('keeps labels that do not collide, and the selection always', () => {
     const nodes = rankByStart([s('a', { x: 0, y: 0, started: 100 }), s('b', { x: 400, y: 0, started: 10 }), s('c', { x: 2, y: 1, started: 1 })])
