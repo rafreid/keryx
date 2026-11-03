@@ -1182,6 +1182,10 @@ def build_status() -> dict:
             extra["restart_requested"] = True
         if gw["version"]:
             detail += f" · Hermes {gw['version']}"
+        if gw["stale_platforms"]:
+            # not a fault: a removed adapter's last record, kept by the gateway but written by an earlier process
+            detail += f" · ignoring {plural(len(gw['stale_platforms']), 'old platform record')} ({', '.join(gw['stale_platforms'])})"
+            extra["stale_platforms"] = gw["stale_platforms"]
     check("gateway", level, detail, **extra)
 
     # platforms: one check per transport from gateway_state.json (hermes-desktop's Gateway screen reads
@@ -1304,7 +1308,7 @@ def build_status() -> dict:
     return {"generated_at": now, "level": worst, "checks": checks, "links": dashboard_links(), "attention": attention, "keryx": app.version,
             "data": {"state_db": True},
             "hermes": {k: gw[k] for k in ("state", "desired", "level", "version", "sha", "pid", "started", "updated", "age", "stale",
-                                           "profiles", "restart_requested")} if gw else None}
+                                           "profiles", "restart_requested", "stale_platforms")} if gw else None}
 
 
 def setup_status(now: float) -> dict:
@@ -1425,8 +1429,20 @@ def gateway_summary(gs: Optional[dict], now: float) -> Optional[dict]:
     age = (now - updated) if updated else None
     stale = state == "running" and age is not None and age > GATEWAY_STALE_AFTER
     platforms = []
+    stale_platforms = []
+    gw_pid, gw_start = gs.get("pid"), gs.get("start_time")
     for name, p in sorted((gs.get("platforms") or {}).items()):
         if not isinstance(p, dict):
+            continue
+        # The gateway only ever adds to the platforms map (gateway/status.py merges the file it finds at
+        # startup and never prunes), so an adapter that was removed from the config keeps the record its
+        # last run wrote. Such a record names a writer process that is not the running gateway; it is
+        # history, not a transport to check.
+        wpid = p.get("writer_pid")
+        if wpid is not None and gw_pid is not None and state == "running" and (
+                wpid != gw_pid or (p.get("writer_start_time") is not None and gw_start is not None
+                                   and p.get("writer_start_time") != gw_start)):
+            stale_platforms.append(name)
             continue
         pstate = str(p.get("state") or "unknown")
         level = PLATFORM_LEVEL.get(pstate, "amber")
@@ -1457,7 +1473,8 @@ def gateway_summary(gs: Optional[dict], now: float) -> Optional[dict]:
             "sha": (gs.get("code_sha") or "")[:12] or None, "pid": gs.get("pid"),
             "started": None,       # start_time is Linux /proc ticks since boot (a pid fingerprint), not an epoch
             "updated": updated, "age": age, "stale": stale, "profiles": gs.get("served_profiles") or [],
-            "restart_requested": bool(gs.get("restart_requested")), "exit_reason": gs.get("exit_reason"), "platforms": platforms}
+            "restart_requested": bool(gs.get("restart_requested")), "exit_reason": gs.get("exit_reason"), "platforms": platforms,
+            "stale_platforms": stale_platforms}
 
 
 def _rel(seconds: float) -> str:
@@ -2016,7 +2033,8 @@ def build_diagnostics() -> dict:
     out["kanban"] = kanban_overview()
     gw = gateway_summary(load_gateway_state(), now)
     out["hermes"] = {k: gw[k] for k in ("state", "desired", "version", "sha", "age", "stale", "profiles", "restart_requested", "exit_reason")} | {
-        "platforms": [{k: p[k] for k in ("name", "state", "level", "error_code", "needs_attention")} | {"error": redact(p["error"] or "")} for p in gw["platforms"]]} if gw else None
+        "platforms": [{k: p[k] for k in ("name", "state", "level", "error_code", "needs_attention")} | {"error": redact(p["error"] or "")} for p in gw["platforms"]],
+        "stale_platforms": gw["stale_platforms"]} if gw else None
     tasks = build_tasks()
     out["cron"] = {"scheduler": tasks["scheduler"],
                    "jobs": [{k: j[k] for k in ("id", "name", "schedule", "kind", "state", "enabled", "mode", "next_run", "last_run",

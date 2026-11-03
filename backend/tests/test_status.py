@@ -82,6 +82,35 @@ def test_platform_checks_come_from_the_gateway_state_file(hermes_data):
     assert st["hermes"]["profiles"] == ["default"] and st["hermes"]["stale"] is False
 
 
+def test_platform_record_from_an_earlier_gateway_process_is_not_a_check(hermes_data):
+    """The gateway never prunes the platforms map, so an adapter removed from the config keeps the
+    record its last run wrote (writer_pid of a process that is gone). It must not show as a red or
+    amber transport for days; the gateway check names it as ignored instead."""
+    from conftest import write_gateway_state
+    import json as _json
+    base = _json.loads((hermes_data / "gateway_state.json").read_text())
+    base["platforms"]["whatsapp"]["writer_pid"] = 170                   # a gateway process that is gone
+    write_gateway_state(hermes_data, platforms=base["platforms"])
+    c = checks()
+    assert "whatsapp" not in c
+    assert c["telegram"]["level"] == "green"                            # same writer_pid as the gateway: live
+    assert c["api_server"]["level"] == "green"                          # no writer_pid at all: live
+    assert c["gateway"]["level"] == "green" and "ignoring 1 old platform record (whatsapp)" in c["gateway"]["detail"]
+    assert c["gateway"]["stale_platforms"] == ["whatsapp"]
+    st = keryx.build_status()
+    assert st["hermes"]["stale_platforms"] == ["whatsapp"]
+    diag = keryx.build_diagnostics()
+    assert [p["name"] for p in diag["hermes"]["platforms"]] == ["api_server", "telegram", "webhook"]
+    assert diag["hermes"]["stale_platforms"] == ["whatsapp"]
+    # same pid but a different start_time is a recycled pid, not the same process
+    base["platforms"]["whatsapp"].update(writer_pid=base["pid"], writer_start_time=base["start_time"] + 1)
+    write_gateway_state(hermes_data, platforms=base["platforms"])
+    assert "whatsapp" not in checks()
+    # a gateway that is not running cannot vouch for any record: keep them all, as before
+    write_gateway_state(hermes_data, gateway_state="stopped", desired_state="stopped")
+    assert checks()["whatsapp"]["state"] == "retrying"
+
+
 def test_gateway_state_outranks_the_heartbeat(hermes_data):
     from conftest import write_gateway_state
     write_gateway_state(hermes_data, gateway_state="degraded")           # partial start: amber even with a fresh heartbeat
