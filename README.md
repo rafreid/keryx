@@ -89,7 +89,7 @@ HERMES_HOME=~/.hermes HERMES_UID=$(id -u) HERMES_GID=$(id -g) docker compose up 
 HERMES_HOME=/opt/hermes-data docker compose up -d
 ```
 
-If Hermes already runs from a compose file, paste the `keryx` service from [docker-compose.yml](docker-compose.yml) into it and mount the same host directory you give Hermes. The image is `ghcr.io/rafreid/keryx:latest`; add `HERMES_DASHBOARD_URL=http://<host>:9119` to get links into the Hermes dashboard.
+If Hermes already runs from a compose file, paste the `keryx` service from [docker-compose.yml](docker-compose.yml) into it and mount the same host directory you give Hermes. The image is `ghcr.io/rafreid/keryx:latest` (or a version tag such as `2.9.0`, one per [release](https://github.com/rafreid/keryx/releases)); add `HERMES_DASHBOARD_URL=http://<host>:9119` to get links into the Hermes dashboard.
 
 **Python.**
 
