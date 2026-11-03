@@ -195,9 +195,9 @@ footer .wrap > div { display: flex; flex-wrap: wrap; gap: 16px; align-items: cen
 <header class="hero" id="top">
   <div class="wrap">
     <div style="display:grid;gap:18px">
-      <div class="eyebrow">Open source · MIT · for Hermes Agent · 2.8</div>
+      <div class="eyebrow">Open source · <a href="https://github.com/rafreid/keryx/blob/main/LICENSE">MIT</a> · for Hermes Agent · <a href="https://github.com/rafreid/keryx/releases/tag/v2.8.0" title="Release notes for 2.8">2.8</a></div>
       <h1>See what your <em>Hermes agent</em> is doing, as it does it.</h1>
-      <p class="lede">Keryx is a live, read-only activity monitor. It reads the agent's own records (its SQLite state, cron store and logs) without touching them, and draws them as a 3D force graph where shape, colour and position each carry one meaning.</p>
+      <p class="lede">Keryx is a live, read-only activity monitor. It reads the agent's own records (its SQLite state, cron store and logs) without touching them, and draws them as a 3D force graph where shape, colour and position each carry one meaning. It sits beside the dashboard Hermes ships with, not in place of it.</p>
       <div class="cta">
         <a class="btn primary" href="#quickstart">Get running in two minutes</a>
         <a class="btn" href="https://github.com/rafreid/keryx">Source on GitHub</a>
@@ -226,9 +226,10 @@ footer .wrap > div { display: flex; flex-wrap: wrap; gap: 16px; align-items: cen
       </div>
       <div class="card">
         <h3><span class="dot" style="background:var(--violet)"></span>Beside Hermes, not inside it</h3>
-        <p>A small container (FastAPI + React) on port 9120 that mounts the Hermes data directory. Works with a native install or the official Hermes Docker image, on the same host. Nothing to install into Hermes.</p>
+        <p>A small container (FastAPI + React) on port 9120 that mounts the Hermes data directory. Works with a native install or the official Hermes Docker image, on the same host: Keryx reads files, not a network API, so it cannot watch a Hermes on another machine. Nothing to install into Hermes.</p>
       </div>
     </div>
+    <div class="callout" style="border-left-color:var(--accent)"><strong>Why not the dashboard Hermes already has?</strong> Keep it. The Hermes dashboard (port 9119) is where you act: config, sessions, cron jobs, the kanban board. Keryx is where you look: the whole install as one picture, which sessions are waiting for you or have gone quiet, an attention list grouped by what needs doing, a reading view of any conversation with its plan, context and files touched, and a strip that says whether the picture is current. It cannot change anything, so it can be left open on a second screen or a phone. Set <code>HERMES_DASHBOARD_URL</code> and every session, cron job and log tab in Keryx links to the matching page in the dashboard.</div>
   </div>
 </section>
 
@@ -462,7 +463,7 @@ footer .wrap > div { display: flex; flex-wrap: wrap; gap: 16px; align-items: cen
     <div class="head">
       <div class="eyebrow">Release notes</div>
       <h2>What's new in 2.8</h2>
-      <p class="prose muted">A usability release from a full UX audit of 2.7: twenty-two findings, all addressed. Nothing changed in what Keryx reads or stores; everything changed in how it tells you.</p>
+      <p class="prose muted">A usability release from a full UX audit of 2.7: twenty-two findings, all addressed across <a href="https://github.com/rafreid/keryx/blob/main/CHANGELOG.md#28">pull requests 31 to 36</a>. Nothing changed in what Keryx reads or stores; everything changed in how it tells you. Earlier versions are in the <a href="https://github.com/rafreid/keryx/blob/main/CHANGELOG.md">changelog</a>.</p>
     </div>
     <div class="grid">
       <div class="card">
@@ -606,11 +607,12 @@ cd keryx
 <footer>
   <div class="wrap">
     <div>
-      <span>Keryx is an open-source project of <a href="https://www.afluxsystems.com">Aflux Systems LLC</a>, released under the MIT license.</span>
+      <span>Keryx 2.8 is an open-source project of <a href="https://www.afluxsystems.com">Aflux Systems LLC</a>, released under the <a href="https://github.com/rafreid/keryx/blob/main/LICENSE">MIT license</a>.</span>
     </div>
     <div>
       <a href="https://github.com/rafreid/keryx">GitHub</a>
       <a href="https://github.com/rafreid/keryx/issues">Issues</a>
+      <a href="https://github.com/rafreid/keryx/blob/main/CHANGELOG.md">Changelog</a>
       <a href="https://github.com/NousResearch/hermes-agent">Hermes Agent</a>
       <a href="https://github.com/vasturiano/3d-force-graph">3d-force-graph</a>
     </div>
