@@ -64,6 +64,12 @@ code, pre, kbd { font-family: var(--mono); font-size: 0.92em; }
 code { background: var(--panel2); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; }
 pre { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; overflow-x: auto; margin: 0; line-height: 1.5; }
 pre code { background: none; border: 0; padding: 0; }
+.codebox { position: relative; min-width: 0; }
+.codebox pre { padding-right: 72px; }
+.copy { position: absolute; top: 8px; right: 8px; font: 500 12px/1 var(--body); padding: 6px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel2); color: var(--muted); cursor: pointer; }
+.copy:hover, .copy:focus-visible { color: var(--fg); border-color: var(--accent); }
+.copy[data-done] { color: var(--green); border-color: var(--green); }
+@media (max-width: 720px) { .codebox pre { padding-right: 16px; padding-bottom: 44px; } .copy { top: auto; bottom: 8px; } }
 kbd { background: var(--panel2); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 6px; font-size: 0.85em; }
 h1, h2, h3 { font-family: var(--display); text-wrap: balance; line-height: 1.15; margin: 0; }
 h2 { font-size: clamp(26px, 3.2vw, 36px); font-weight: 700; letter-spacing: -0.01em; }
@@ -498,19 +504,26 @@ footer .wrap > div { display: flex; flex-wrap: wrap; gap: 16px; align-items: cen
     <div class="head">
       <div class="eyebrow">Quick start</div>
       <h2>Running in two minutes</h2>
-      <p class="prose muted">You need a Hermes Agent install whose data directory you can read, and Docker or Python 3.11+. Node is not required: a prebuilt image is published for every release.</p>
+      <p class="prose muted">You need a Hermes Agent install whose data directory you can read, on the same machine, and Docker. A prebuilt image is published for every release, so Node is not required. (Without Docker, Python 3.11+ works too, but that path builds the front end from source and needs Node 18+ once; see the note under step 1.)</p>
     </div>
     <div class="steps">
       <div class="step"><div>
-        <h3>Clone and run the quick-start script</h3>
+        <h3>Run the image, or clone and run the quick-start script</h3>
+        <p class="muted">Nothing to clone: one <code>docker run</code> against the published image. Replace <code>~/.hermes</code> with your Hermes data directory if it lives elsewhere, and <code>--user</code> with the uid that owns it if that is not you (see <strong>Permissions</strong> below).</p>
+<pre><code>docker run -d --name keryx --restart unless-stopped \
+  --user "$(id -u):$(id -g)" \
+  -v ~/.hermes:/opt/data \
+  -p 127.0.0.1:9120:9120 \
+  ghcr.io/rafreid/keryx:latest</code></pre>
+        <p class="muted">Or clone the repository and let the script work it out:</p>
 <pre><code>git clone https://github.com/rafreid/keryx.git
 cd keryx
 ./quickstart.sh</code></pre>
-        <p class="muted">It finds the Hermes data directory (<code>~/.hermes</code> for a native install, <code>/opt/hermes-data</code> or <code>/opt/data</code> for the Docker install), works out which user owns it, pulls the image and starts Keryx with Docker Compose. Without Docker it falls back to a Python virtualenv. <code>--build</code> builds from source, <code>--python</code> skips Docker, <code>HERMES_HOME=…</code> points at another directory.</p>
+        <p class="muted">It finds the Hermes data directory (<code>~/.hermes</code> for a native install, <code>/opt/hermes-data</code> or <code>/opt/data</code> for the Docker install), works out which user owns it, pulls the image and starts Keryx with Docker Compose. <code>--build</code> builds from source, <code>--python</code> skips Docker and runs uvicorn in a virtualenv (it builds the front end first, so that path needs Node 18+ the first time), <code>HERMES_HOME=…</code> points at another directory.</p>
       </div></div>
       <div class="step"><div>
         <h3>Open the page</h3>
-        <p class="muted">Keryx listens on <code>http://localhost:9120/</code>. <code>curl localhost:9120/api/health</code> should answer with <code>"state_db": true</code>; if it is <code>false</code>, the data path is wrong or not readable by the Keryx user.</p>
+        <p class="muted">Keryx listens on <code>http://localhost:9120/</code>. <code>curl localhost:9120/api/health</code> should answer with <code>"state_db": true</code>; if it is <code>false</code>, the data path is wrong or not readable by the Keryx user. That and every other known symptom, with its fix, is in the <a href="https://github.com/rafreid/keryx#troubleshooting">troubleshooting table</a>.</p>
       </div></div>
       <div class="step"><div>
         <h3>Optional: link it to the Hermes dashboard, lock it</h3>
@@ -605,6 +618,21 @@ cd keryx
 </footer>
 
 <script>
+// Code blocks: a copy button, only where the clipboard API exists.
+if (navigator.clipboard) {
+  for (const pre of document.querySelectorAll('pre')) {
+    const box = document.createElement('div'); box.className = 'codebox';
+    pre.replaceWith(box); box.append(pre);
+    const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'copy'; btn.textContent = 'Copy';
+    btn.setAttribute('aria-label', 'Copy this code block');
+    btn.addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(pre.textContent.trim() + '\n'); btn.textContent = 'Copied'; btn.dataset.done = '1'; }
+      catch { btn.textContent = 'Press ⌘C'; }
+      setTimeout(() => { btn.textContent = 'Copy'; delete btn.dataset.done; }, 1600);
+    });
+    box.append(btn);
+  }
+}
 // Tables: show a fade at the right edge only while there is more table to the right.
 for (const box of document.querySelectorAll('.tbl')) {
   const update = () => {
