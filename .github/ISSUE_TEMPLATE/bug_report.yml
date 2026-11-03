@@ -14,7 +14,7 @@ body:
     attributes:
       label: Keryx version
       description: Shown beside the title, or `curl localhost:9120/api/health`.
-      placeholder: "2.8"
+      placeholder: "2.9"
     validations:
       required: true
   - type: input
