@@ -48,10 +48,11 @@ export default function App() {
   const [spacingOpen, setSpacingOpen] = useState(false)
   useEffect(() => { try { localStorage.setItem('keryx.spread', String(spread)) } catch {} }, [spread])
   useEffect(() => { setBand(null) }, [hours])
-  const [theme, setTheme] = useState(() => { try { return localStorage.getItem('keryx.theme') || 'dark' } catch { return 'dark' } })
+  // the theme attribute and the graph palette change synchronously with the state, so the render that follows
+  // (the WebGL background, canvas fills) already reads the new tokens; effects would run one frame too late
+  const [theme, setThemeState] = useState(() => { try { return applyTheme(localStorage.getItem('keryx.theme') || 'dark') } catch { return applyTheme('dark') } })
+  const setTheme = useCallback(t => setThemeState(applyTheme(t)), [])
   useEffect(() => {
-    document.documentElement.dataset.theme = theme
-    PALETTE.current = readPalette()
     document.querySelector('meta[name=theme-color]')?.setAttribute('content', PALETTE.current.bg)
     try { localStorage.setItem('keryx.theme', theme) } catch {}
   }, [theme])
@@ -256,3 +257,9 @@ function TokenGate() {
 const isTyping = el => !!el && (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.isContentEditable)
 const fmtFrac = (f, w) => { const sec = f * w; return sec < 3600 ? `${sec / 60 | 0}m` : sec < 86400 ? `${sec / 3600 | 0}h` : `${sec / 86400 | 0}d` }
 const minStart = g => g ? Math.min(...g.nodes.filter(n => n.started).map(n => n.started)) : null
+
+function applyTheme(t) {
+  document.documentElement.dataset.theme = t
+  PALETTE.current = readPalette()
+  return t
+}

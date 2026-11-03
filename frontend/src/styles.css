@@ -2,6 +2,13 @@
   --bg: #0b0f17; --panel: #121a27; --panel2: #182234; --line: #223049; --text: #e6edf7; --muted: #8fa0b8;
   --accent: #6ad1ff; --green: #3fb950; --amber: #e3b341; --red: #f85149; --blue: #58a6ff; --shadow: rgba(0,0,0,.35);
   --label-halo: rgba(11,15,23,.75);   /* behind graph labels so they read on busy backgrounds */
+  /* graph palette: the canvas, WebGL and the legend all read these (readPalette in util.js), so a theme
+     is one block of tokens. Node roles (--n-*), session statuses (--s-*), links (--l-*). */
+  --n-platform: #6ad1ff; --n-tool: #ffb86b; --n-model: #f778ba; --n-cron: #ffd866; --n-fail: #f85149;
+  --s-running: #3fb950; --s-waiting: #58a6ff; --s-stale: #d29922; --s-ended: #4f8f6a; --s-closed: #6b7a8c; --s-orphaned: #f85149; --s-failed: #f85149;
+  --l-link: #8ea0bf; --l-spawn: #c3a6ff; --l-branch: #8fd3c5; --l-model: #f778ba;
+  --active: #ffffff;                  /* halo ring on anything touched in the last 5 min; never a fill, so status colour stays */
+  --age-floor: .28;                   /* opacity of the oldest node in the window; light needs a higher floor to keep 3:1 */
 }
 * { box-sizing: border-box; }
 html, body, #root { margin: 0; height: 100%; background: var(--bg); color: var(--text);
@@ -164,7 +171,12 @@ button:hover { border-color: var(--muted); }
 
 /* light theme */
 :root[data-theme="light"] { --bg: #f4f6fa; --panel: #ffffff; --panel2: #eef2f7; --line: #d6dde8; --text: #14202e; --muted: #5b6b80; --accent: #0a66ad;
-  --green: #166f30; --amber: #875a00; --red: #c41f2b; --blue: #0860c9;   /* each at least 5:1 on --bg, so 12 px text clears AA with room */ --shadow: rgba(20,32,46,.18); --label-halo: rgba(244,246,250,.8); }
+  --green: #166f30; --amber: #875a00; --red: #c41f2b; --blue: #0860c9;   /* each at least 5:1 on --bg, so 12 px text clears AA with room */ --shadow: rgba(20,32,46,.18); --label-halo: rgba(244,246,250,.8);
+  /* graph palette, each at least 3:1 on --bg (the WCAG floor for non-text); tokens.test.js checks it */
+  --n-platform: #0b7fc2; --n-tool: #b45309; --n-model: #b3287a; --n-cron: #8a6d00; --n-fail: #c41f2b;
+  --s-running: #1a7f37; --s-waiting: #0860c9; --s-stale: #875a00; --s-ended: #3b7f63; --s-closed: #5b6b80; --s-orphaned: #c41f2b; --s-failed: #c41f2b;
+  --l-link: #7a8899; --l-spawn: #6f42c1; --l-branch: #1f7a6d; --l-model: #b3287a;
+  --active: #14202e; --age-floor: .5; }
 :root[data-theme="light"] .popover.qr img { border: 1px solid var(--line); }
 /* side panel tabs */
 .tabs { display: flex; flex-wrap: wrap; gap: 0; margin: -4px -14px 10px; padding: 0 10px; border-bottom: 1px solid var(--line); }
