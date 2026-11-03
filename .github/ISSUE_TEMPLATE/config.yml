@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Troubleshooting
+    url: https://github.com/rafreid/keryx#troubleshooting
+    about: Known symptoms and their fixes (empty graph, state_db false, permission denied, token prompt).
+  - name: Hermes Agent itself
+    url: https://github.com/NousResearch/hermes-agent/issues
+    about: Keryx only reads what Hermes records. A problem in a session, cron job or the gateway belongs there.

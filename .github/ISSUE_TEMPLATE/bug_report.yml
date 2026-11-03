@@ -1,0 +1,44 @@
+name: Bug report
+description: Something Keryx shows or does is wrong
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you saw, and what you expected instead.
+    validations:
+      required: true
+  - type: input
+    id: keryx
+    attributes:
+      label: Keryx version
+      description: Shown beside the title, or `curl localhost:9120/api/health`.
+      placeholder: "2.8"
+    validations:
+      required: true
+  - type: input
+    id: hermes
+    attributes:
+      label: Hermes version and install
+      placeholder: "0.9.x, native / Docker"
+  - type: dropdown
+    id: how
+    attributes:
+      label: How Keryx runs
+      options:
+        - docker run / docker compose (published image)
+        - docker compose --build (from source)
+        - quickstart.sh --python (uvicorn)
+  - type: textarea
+    id: diag
+    attributes:
+      label: Diagnostics
+      description: Paste `/api/diagnostics` (the ⤓ link in the overview tab). It is redacted and safe to share; it carries no message content.
+      render: json
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or console
+      description: "`docker compose logs keryx` or `backend/keryx.log`, and anything red in the browser console."
+      render: shell
