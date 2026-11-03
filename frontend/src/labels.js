@@ -79,12 +79,15 @@ const LABELLED = new Set(['hub', 'source', 'session', 'subagent', 'cron', 'model
 export const wantsLabel = (n, hover) => (n.type === 'tool' ? !!n.fanned || n.id === hover : LABELLED.has(n.type))
 
 /** 2D: boxes in world units under the node (the painter divides by zoom, so `fontSize` already is). */
-export function cullLabels2d(nodes, { selected, hover, fontSize, radiusOf, emphasised = () => true, measure }) {
+export function cullLabels2d(nodes, { selected, hover, fontSize, radiusOf, emphasised = () => true, measure, budget = false }) {
   for (const n of nodes) n.labelOn = false
   const items = []
   for (const n of nodes) {
     if (n.x == null || !wantsLabel(n, hover)) continue
-    if (!emphasised(n) && n.type !== 'hub' && n.type !== 'source' && n.id !== selected && n.id !== hover) continue
+    const keep = n.type === 'hub' || n.type === 'source' || n.id === selected || n.id === hover
+    if (!emphasised(n) && !keep) continue
+    // zoomed out (a phone, or a wide window): only the structure, the sessions that need a look and the newest
+    if (budget && !keep && !(n.status === 'running' || n.status === 'waiting' || (n.labelRank ?? 99) < LABEL_OVERVIEW_N)) continue
     const text = labelText(n)
     const w = (measure ? measure(text) : text.length * fontSize * 0.56) * PAD, h = fontSize * 1.25 * PAD
     const x0 = n.x - w / 2, y0 = n.y + radiusOf(n) + 1.5

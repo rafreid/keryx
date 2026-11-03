@@ -190,9 +190,15 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
       const p = overviewPose(dist)
       fg.cameraPosition({ x: p.x, y: p.y - 15, z: p.z }, { x: 0, y: -15, z: 0 }, ms)
     } else {
-      fg.zoomToFit(ms, 40, n => n.type !== 'model')
+      fg.zoomToFit(ms, size.w < 800 ? 90 : 40, n => n.type !== 'model')   // phones: the toolbar and stats bar overlay more of the canvas
     }
   }, [view, data, size])
+  // the canvas changed size (phone rotation, panel resize): refit, unless the user is looking at something
+  useEffect(() => {
+    if (!fitted.current || selectedRef.current) return
+    const t = setTimeout(() => frameAll(400), 350)
+    return () => clearTimeout(t)
+  }, [size.w, size.h])  // eslint-disable-line react-hooks/exhaustive-deps
   const selectedRef = useRef(selected); selectedRef.current = selected
   const onEngineStop = useCallback(() => {
     if (fitted.current) return
@@ -491,7 +497,7 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
     paintRings(ctx, scale)
     const fontSize = Math.max(3, 11 / scale)
     ctx.font = `${fontSize}px sans-serif`
-    cullLabels2d(data.nodes, { selected, hover, fontSize, radiusOf, emphasised, measure: t => ctx.measureText(t).width })
+    cullLabels2d(data.nodes, { selected, hover, fontSize, radiusOf, emphasised, measure: t => ctx.measureText(t).width, budget: scale < 0.9 })
   }, [paintRings, data, selected, hover, emphasised])
 
   const common = {

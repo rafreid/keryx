@@ -280,7 +280,7 @@ footer .wrap > div { display: flex; flex-wrap: wrap; gap: 16px; align-items: cen
       </div>
       <div class="card">
         <h3>Position is when it started</h3>
-        <p>Each platform (Telegram, TUI, CLI, cron…) owns a wedge around the hub and its sessions sit inside it, ordered by start time. In 3D the rings step downward from "now", in 2D they grow outward, and a clickable ruler along the bottom of the graph filters by when a session started. Opacity fades with age; labels scale with distance. Subagents orbit the session that spawned them; tools cluster around the session that called them; models sit on a shelf above; cron jobs fan out below.</p>
+        <p>Each platform (Telegram, TUI, CLI, cron…) owns a wedge around the hub and its sessions sit inside it, ordered by start time. In 3D the rings step downward from "now", in 2D they grow outward, and a clickable ruler along the bottom of the graph filters by when a session started. Opacity fades with age; labels keep a readable size at any zoom and give way to each other instead of overprinting; a stem drops from each session to the floor ring so its height reads at any angle. Subagents orbit the session that spawned them; tools cluster around the session that called them; models sit on a shelf above; cron jobs fan out below.</p>
       </div>
     </div>
   </div>
@@ -325,7 +325,7 @@ footer .wrap > div { display: flex; flex-wrap: wrap; gap: 16px; align-items: cen
         <h3>The graph</h3>
         <ul>
           <li>3D (default) or 2D, same layout and grammar.</li>
-          <li>Hover highlights a neighbourhood; click selects; sessions fan their tools out in a ring facing the camera.</li>
+          <li>Hover highlights a neighbourhood; click selects, an accent ring marks the selection, and sessions fan their tools out in a ring facing the camera. Anything touched in the last five minutes wears a halo and sends particles along its links.</li>
           <li>Click a platform to collapse everything under it. Search dims what does not match. The legend has checkboxes to hide any kind or status.</li>
           <li><strong>Spacing</strong> scales rings, link lengths and repulsion together; <strong>recenter</strong> frames the whole graph again. Both remembered per browser.</li>
         </ul>
@@ -424,7 +424,7 @@ footer .wrap > div { display: flex; flex-wrap: wrap; gap: 16px; align-items: cen
         <h3>Navigation</h3>
         <ul>
           <li>Every selection is a browser history entry that remembers the selection, the tab and the camera pose. <kbd>Backspace</kbd> goes back, <kbd>Shift</kbd>+<kbd>Backspace</kbd> forward; <kbd>Alt</kbd>+<kbd>←</kbd> and trackpad swipes work too. <kbd>[</kbd> and <kbd>]</kbd> change tab, <kbd>↑</kbd> <kbd>↓</kbd> walk the session list, <kbd>?</kbd> in the header reopens the first-run card.</li>
-          <li>On a phone the header is one row with a "…" sheet for the controls, the health counts sit in the map / panel bar, every control is at least 40 px tall, and the graph and the panel take turns at full width; light and dark themes are both designed, not inverted.</li>
+          <li>On a phone the header is one row with a "…" sheet for the controls, the health counts sit in the map / panel bar, every control is at least 40 px tall, and the graph and the panel take turns at full width; the map refits when the phone rotates. Light and dark themes are both designed, not inverted: every graph colour has a value per theme.</li>
           <li>The URL hash (<code>#session:…</code>, <code>#cron:…</code>) is a deep link you can share, or scan from the QR popover to open on your phone, where "add to home screen" keeps Keryx as an app.</li>
           <li>Every card, attention line, section header, trace step and kanban card is a real control reachable with <kbd>Tab</kbd> and activated with <kbd>Enter</kbd> or <kbd>Space</kbd>; section headers announce whether they are open; toasts are a live region; focus rings are visible. The graph canvas says it cannot be read by a screen reader and points to the list tabs.</li>
           <li>A first-run card explains the picture and the keyboard, holds the <strong>reduce motion</strong> switch (the system setting is honoured by default), and <kbd>?</kbd> brings it back. The side-panel tabs carry icons and wrap instead of hiding off the edge; drag the panel's left edge to widen it. The history trail under the toolbar is the path you took, labelled as such.</li>
@@ -463,7 +463,7 @@ footer .wrap > div { display: flex; flex-wrap: wrap; gap: 16px; align-items: cen
     <div class="two">
       <figure class="shot" style="margin:0">
         <picture><source srcset="img/light.webp" type="image/webp"><img src="img/light.png" width="1440" height="900" alt="The light theme: the same selected session with every graph, panel and overlay colour in the light palette" loading="lazy" decoding="async"></picture>
-        <figcaption>The light theme: every overlay and graph colour follows the theme, and every accent reads at 5:1 or better.</figcaption>
+        <figcaption>The light theme: every overlay and graph colour follows the theme; accents read at 5:1 or better and every graph colour at 3:1 or better.</figcaption>
       </figure>
       <figure class="shot phones" style="margin:0;background:transparent;border:0;box-shadow:none">
         <div class="phones-row">
@@ -480,38 +480,36 @@ footer .wrap > div { display: flex; flex-wrap: wrap; gap: 16px; align-items: cen
   <div class="wrap">
     <div class="head">
       <div class="eyebrow">Release notes</div>
-      <h2>What's new in 2.8</h2>
-      <p class="prose muted">A usability release from a full UX audit of 2.7: twenty-two findings, all addressed across <a href="https://github.com/rafreid/keryx/blob/main/CHANGELOG.md#28">pull requests 31 to 36</a>. Nothing changed in what Keryx reads or stores; everything changed in how it tells you. Earlier versions are in the <a href="https://github.com/rafreid/keryx/blob/main/CHANGELOG.md">changelog</a>.</p>
+      <h2>What's new in 2.9</h2>
+      <p class="prose muted">A graph release from a visual and interaction review of the 3D view: fourteen findings, all addressed across <a href="https://github.com/rafreid/keryx/blob/main/CHANGELOG.md#29">pull requests 45 to 49</a>. Nothing changed in what Keryx reads; the picture got honest colours, legible labels and depth. 2.8's usability work and earlier versions are in the <a href="https://github.com/rafreid/keryx/blob/main/CHANGELOG.md">changelog</a>.</p>
     </div>
     <div class="grid">
       <div class="card">
-        <h3><span class="dot" style="background:var(--green)"></span>Honest about liveness</h3>
+        <h3><span class="dot" style="background:var(--green)"></span>Colours that mean one thing</h3>
         <ul>
-          <li>A strip under the header reads <strong>live · checked 3s ago · last change 4m ago</strong>, <strong>reconnecting… showing data from 14:02</strong> or <strong>backend unreachable since 14:02 · showing the last snapshot</strong>.</li>
-          <li>The backend pings the stream every 15 s; 30 s of silence counts as stalled, so a stopped container, a hung host or a pulled cable all show within half a minute.</li>
-          <li>With no <code>state.db</code> behind the backend, a setup card names the directory and the fixes. A locked page shows only the token form.</li>
+          <li>A running session is green even while it is busy: <strong>active</strong> is a halo ring and link particles now, not a red fill that read as failure.</li>
+          <li>Every node and link colour is a token with a light-theme value that clears 3:1 on the page, where the old dark hexes fell to 1.3:1. Switching theme repaints the 3D background too.</li>
         </ul>
       </div>
       <div class="card">
-        <h3><span class="dot" style="background:var(--accent)"></span>A header on a diet</h3>
+        <h3><span class="dot" style="background:var(--accent)"></span>Labels you can read</h3>
         <ul>
-          <li>Desktop: brand, health pill, the single worst check, tokens, controls, on one row. Every check still lives in the pill's popover, which closes on <kbd>Esc</kbd> or a click outside.</li>
-          <li>Phone: one row with a "…" sheet for the controls; the red and amber counts sit in the map / panel bar; every control is at least 40 px tall.</li>
-          <li>Inline SVG icons instead of OS emoji, with a word beside each on wide screens. Tabs wrap instead of hiding; the panel's left edge drags.</li>
+          <li>Text stays about 11 px on screen at any zoom. The overview labels the hub, the platforms, running and waiting sessions and the newest four; zoom in and everything is labelled.</li>
+          <li>A label that would overprint another is hidden; nothing outside the hovered or selected neighbourhood keeps one. Tool labels say <code>write_file ×3 · 1 failed</code>.</li>
         </ul>
       </div>
       <div class="card">
-        <h3><span class="dot" style="background:var(--violet)"></span>Keyboard, screen reader, motion</h3>
+        <h3><span class="dot" style="background:var(--violet)"></span>Depth</h3>
         <ul>
-          <li>Cards, attention lines, section headers, trace steps, kanban cards, cron jobs and incidents are real controls that answer <kbd>Tab</kbd>, <kbd>Enter</kbd> and <kbd>Space</kbd>; section headers announce whether they are open; toasts are a live region.</li>
-          <li>Reduced motion from the system setting or a switch in the help card: no breathing nodes, particles, rotation or pulsing dots, and 2D by default.</li>
+          <li>A stem from every session to the floor ring, so height (start time) reads at any angle; the overview sits at 42°; a ring marks the selection; fog follows the camera distance.</li>
+          <li>The overview fits the sessions and platforms to 62 % of the canvas instead of 40 %, and the hub is accent-coloured in both themes.</li>
         </ul>
       </div>
       <div class="card">
-        <h3><span class="dot" style="background:var(--amber)"></span>Triage and type</h3>
+        <h3><span class="dot" style="background:var(--amber)"></span>Phone and performance</h3>
         <ul>
-          <li>The attention list is grouped into needs action, watch and info with counts, says since when, and a line can be muted on this device until it changes. The diagnostics link is marked "safe to share".</li>
-          <li>A 24-hour clock everywhere, a 12 px floor for body text, light-theme accents at 5:1 or better, and a "N more" pill when the strip of running sessions overflows.</li>
+          <li>The phone map refits on rotation, labels only the sessions that matter when zoomed out, and keeps the history trail out of the way.</li>
+          <li>Label textures are redrawn only when they change instead of twice per label per frame; the 2D canvas pauses its loop under reduced motion.</li>
         </ul>
       </div>
     </div>
