@@ -8,13 +8,10 @@ import { STATUS, TYPE, ageAlpha, linkFill, nodeFill, palette, withAlpha } from '
 import { layoutTargets, LAYOUT, setSpread } from './layout.js'
 import { useCameraPose } from './hooks/useCameraPose.js'
 import { useTimeAxis3d, useRings2d } from './hooks/useTimeAxis.js'
+import { cullLabels2d, cullLabels3d, labelHeight, labelText, labelVisible3d, rankByStart } from './labels.js'
 
 const LABELLED = new Set(['hub', 'source', 'session', 'subagent', 'cron', 'model'])
-// 3D label heights at the default camera distance; the render loop scales them with distance so a zoomed-out
-// picture does not shrink its text to dust and a close-up does not fill the screen with it
-const LABEL_HEIGHT = { hub: 8, source: 6, tool: 3.2, session: 4.2, subagent: 4, cron: 4, model: 4 }
-const LABEL_REF_DISTANCE = 420          // camera distance at which labels are their base size
-const LABEL_FAR = 1400                  // beyond this, only the hub and platforms keep their labels
+// label sizing and the overview budget live in labels.js (shared with the 2D painter and unit-tested)
 
 // ---- shape grammar: one geometry per node role (colour is reserved for state) ----
 const GEOMETRY = {
@@ -26,6 +23,7 @@ const GEOMETRY = {
   model:    new THREE.CylinderGeometry(1, 1, 1.1, 24),      // engine / drum
   cron:     new THREE.ConeGeometry(1, 2, 18),               // pointer on a dial
 }
+const V = new THREE.Vector3()                    // scratch vector for label projection
 export const radiusOf = n => Math.cbrt(n.val || 3) * (n.type === 'hub' ? 3.8 : n.type === 'source' ? 3.2 : n.type === 'model' ? 2.8 : 2.4)
 
 /**
@@ -48,6 +46,7 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
   const styleRef = useRef({ colorOf: () => '#fff', emphasised: () => true })
   const prevSpread = useRef(spread)
   const [size, setSize] = useState({ w: 800, h: 600 })
+  const sizeRef = useRef(size); sizeRef.current = size
   const [hover, setHover] = useState(null)
 
   useEffect(() => {
@@ -98,6 +97,7 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
     const visible = nodes.filter(n => n.type !== 'model' || linked.has(n.id))
     setSpread(spread)
     layoutTargets(visible, links, windowSec, view)      // writes tx/ty/tz (+ fx/fy/fz for pinned nodes)
+    rankByStart(visible)                                 // labelRank: which sessions keep a label in the overview
     // spacing changed: move everything immediately (pinned → anchor, others scale), then let forces refine
     if (prevSpread.current !== spread) {
       const ratio = spread / (prevSpread.current || 1)
@@ -274,7 +274,7 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
     return withAlpha(nodeFill(n), a)
   }, [windowSec, emphasised, theme])
   const haloOf = useCallback(n => (n.active && showActive ? withAlpha(palette().active, emphasised(n) ? 0.8 : 0.12) : null), [showActive, emphasised])
-  styleRef.current = { colorOf, haloOf, emphasised, selected, focusId, hoverId: hover }
+  styleRef.current = { colorOf, haloOf, emphasised, selected, focusId, hoverId: hover, searching: !!q }
 
   const linkColor = useCallback(l => {
     const s = typeof l.source === 'object' ? l.source : nodesRef.current.get(l.source)
@@ -334,10 +334,8 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
     }
     let label = null
     if (LABELLED.has(n.type) || n.type === 'tool') {
-      const text = n.collapsedCount ? `${n.label} (+${n.collapsedCount})` : n.type === 'tool' ? `${n.label}${n.errors ? ` ✕${n.errors}` : ''} ×${n.calls}` : n.label
-      label = new SpriteText(text.length > 34 ? text.slice(0, 33) + '…' : text)
-      label.textHeight = LABEL_HEIGHT[n.type] || LABEL_HEIGHT.session
-      label.userData.base = label.textHeight
+      label = new SpriteText(labelText(n))
+      label.textHeight = 4                      // the render loop sets the real height from the camera distance
       label.backgroundColor = palette().halo; label.padding = 0.6; label.borderRadius = 1   // halo: readable over links and the floor in both themes
       label.position.y = -(r + (n.type === 'hub' ? 7 : 3.5))
       if (n.type === 'tool') label.visible = false
@@ -351,15 +349,22 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
     let raf
     const tick = () => {
       const t = performance.now()
-      const { colorOf, haloOf, emphasised, selected } = styleRef.current
+      const { colorOf, haloOf, emphasised, selected, hoverId, searching } = styleRef.current
       const cam = fgRef.current?.camera?.()
-      for (const { mesh, wire, halo, label, node } of meshes.current.values()) {
+      const { w: canvasW, h: canvasH } = sizeRef.current
+      const pal = palette()
+      const candidates = []                             // labels that pass the distance rule; occlusion decides next
+      for (const entry of meshes.current.values()) {
+        const { mesh, wire, halo, label, node } = entry
         const css = colorOf(node)
-        const m = css.match(/rgba\((\d+),(\d+),(\d+),([\d.]+)\)/)
-        if (m) {
-          mesh.material.color.setRGB(m[1] / 255, m[2] / 255, m[3] / 255)
-          mesh.material.opacity = +m[4]
-          mesh.material.emissive?.setRGB(m[1] / 255 * 0.25, m[2] / 255 * 0.25, m[3] / 255 * 0.25)
+        if (css !== entry.css) {                          // parse the colour string only when it changes
+          entry.css = css
+          const m = css.match(/rgba\((\d+),(\d+),(\d+),([\d.]+)\)/)
+          if (m) {
+            mesh.material.color.setRGB(m[1] / 255, m[2] / 255, m[3] / 255)
+            mesh.material.opacity = +m[4]
+            mesh.material.emissive?.setRGB(m[1] / 255 * 0.25, m[2] / 255 * 0.25, m[3] / 255 * 0.25)
+          }
         }
         const still = stillRef.current
         const breathe = node.status === 'running' && !still ? 1 + 0.12 * Math.sin(t / 420) : 1
@@ -373,20 +378,30 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
         }
         if (node.type !== 'source') mesh.rotation.y = !still && (node.type === 'tool' || node.type === 'subagent') ? t / 4000 : 0
         if (wire && !still) { wire.rotation.y = t / 6000; wire.rotation.x = t / 9000 }
+        if (wire && entry.accent !== pal.accent) { entry.accent = pal.accent; wire.material.color.set(pal.accent) }
         if (label) {
-          const pal = palette()
-          label.color = withAlpha(pal.text, emphasised(node) ? 0.95 : 0.12)
+          // every SpriteText setter re-rasterises its canvas, so write only on change (and the height in half-unit steps)
+          const col = withAlpha(pal.text, emphasised(node) ? 0.95 : 0.12)
+          if (entry.labelCol !== col) { entry.labelCol = col; label.color = col }
           if (label.backgroundColor !== pal.halo) label.backgroundColor = pal.halo
-          if (wire && wire.material.color.getStyle() !== pal.accent) wire.material.color.set(pal.accent)
-          if (cam && node.x != null) {                       // scale with distance; far away, keep only the structure's names
+          if (cam && node.x != null) {
             const dist = Math.hypot(cam.position.x - node.x, cam.position.y - node.y, cam.position.z - (node.z || 0))
-            const k = Math.min(2.4, Math.max(0.7, dist / LABEL_REF_DISTANCE))
-            label.textHeight = label.userData.base * k
-            const structural = node.type === 'hub' || node.type === 'source'
-            if (node.type !== 'tool') label.visible = structural || dist < LABEL_FAR || node.id === selected || node.id === styleRef.current.hoverId
+            const h = labelHeight(dist, canvasH, node.type)
+            if (entry.labelH !== h) { entry.labelH = h; label.textHeight = h }
+            if (labelVisible3d(node, dist, { selected, hover: hoverId, searching, dimmed: !emphasised(node) })) candidates.push(entry); else label.visible = false
           }
-          if (node.type === 'tool') label.visible = !!node.fanned || node.id === styleRef.current.hoverId
         }
+      }
+      if (cam && candidates.length) {
+        // screen-space occlusion: project each candidate and hide the ones that would overprint a higher-priority label
+        const projected = []
+        for (const e of candidates) {
+          V.set(e.node.x, e.node.y - radiusOf(e.node) - 3.5, e.node.z || 0).project(cam)
+          if (V.z > 1) { e.label.visible = false; continue }
+          projected.push({ n: e.node, sx: (V.x + 1) / 2 * canvasW, sy: (1 - V.y) / 2 * canvasH, e })
+        }
+        cullLabels3d(projected, { selected, hover: hoverId })
+        for (const p of projected) p.e.label.visible = !!p.n.labelOn
       }
       raf = requestAnimationFrame(tick)
     }
@@ -403,18 +418,21 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
     if (n.id === selected) { ctx.lineWidth = 1.5 / scale; ctx.strokeStyle = palette().text; ctx.stroke() }
     const halo = haloOf(n)
     if (halo) { ctx.beginPath(); ctx.arc(n.x, n.y, r * breathe * 1.5, 0, 2 * Math.PI); ctx.lineWidth = 1.2 / scale; ctx.strokeStyle = halo; ctx.stroke() }
-    const showToolLabel = n.type === 'tool' && (n.fanned || n.id === hover)
-    // labels appear as you zoom in: structure always, sessions from a modest zoom, selected or hovered ones always
-    if (showToolLabel || (LABELLED.has(n.type) && (scale > 1.1 || n.type === 'hub' || n.type === 'source' || n.id === selected || n.id === hover))) {
-      const text = n.collapsedCount ? `${n.label} (+${n.collapsedCount})` : n.type === 'tool' ? `${n.label}${n.errors ? ` ✕${n.errors}` : ''} ×${n.calls}` : n.label
+    if (n.labelOn) {                                   // decided per frame by the occlusion pass in framePre
       ctx.font = `${Math.max(3, 11 / scale)}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'top'
-      const t = text.length > 40 ? text.slice(0, 39) + '…' : text
+      const t = labelText(n)
       ctx.lineWidth = 3 / scale; ctx.lineJoin = 'round'; ctx.strokeStyle = withAlpha(palette().bg, emphasised(n) ? 0.85 : 0.15)
       ctx.strokeText(t, n.x, n.y + r + 1.5)                                        // halo keeps labels legible over links in both themes
       ctx.fillStyle = withAlpha(palette().text, emphasised(n) ? 0.95 : 0.15)
       ctx.fillText(t, n.x, n.y + r + 1.5)
     }
   }, [colorOf, haloOf, emphasised, selected, hover, theme, reduceMotion])
+  // 2D: rings under the graph, then the label occlusion pass (labels are ~11 px on screen whatever the zoom,
+  // so they are placed by priority and the ones that would overprint another are hidden for this frame)
+  const framePre = useCallback((ctx, scale) => {
+    paintRings(ctx, scale)
+    cullLabels2d(data.nodes, { selected, hover, fontSize: Math.max(3, 11 / scale), radiusOf, emphasised })
+  }, [paintRings, data, selected, hover, emphasised])
 
   const common = {
     ref: fgRef, graphData: data, width: size.w, height: size.h, nodeId: 'id',
@@ -434,7 +452,7 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
         ? <ForceGraph3D {...common} backgroundColor={bg} showNavInfo={false}
             nodeThreeObject={threeObject} nodeThreeObjectExtend={false} linkOpacity={0.8} />
         : <ForceGraph2D {...common} backgroundColor={bg} nodeCanvasObject={paint2d} nodeCanvasObjectMode={() => 'replace'}
-            linkDirectionalArrowLength={0} autoPauseRedraw={false} onRenderFramePre={paintRings} />}
+            linkDirectionalArrowLength={0} autoPauseRedraw={false} onRenderFramePre={framePre} />}
     </div>
   )
 }
