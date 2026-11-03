@@ -135,6 +135,18 @@ section .wrap { display: grid; gap: 22px; }
 .card ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
 .card strong { color: var(--fg); font-weight: 600; }
 
+/* folded feature cards */
+.more { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+.more summary { cursor: pointer; padding: 16px 18px; display: grid; gap: 4px; font-family: var(--display); font-weight: 600; font-size: 19px; list-style: none; }
+.more summary::-webkit-details-marker { display: none; }
+.more summary > span:first-child::before { content: "+"; display: inline-grid; place-items: center; width: 24px; height: 24px; margin-right: 10px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); font-size: 16px; line-height: 1; }
+.more[open] summary > span:first-child::before { content: "−"; }
+.more summary .muted { font: 15px/1.5 var(--body); font-weight: 400; }
+.more summary:hover { background: var(--panel2); border-radius: 10px; }
+.more[open] summary { border-bottom: 1px solid var(--line); border-radius: 10px 10px 0 0; }
+.more > .grid { padding: 16px; }
+.more > .grid .card { background: var(--panel2); }
+
 /* grammar triad */
 .triad { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
 .triad .card { border-top: 3px solid var(--accent); }
@@ -328,14 +340,6 @@ footer .wrap > div { display: flex; flex-wrap: wrap; gap: 16px; align-items: cen
         </ul>
       </div>
       <div class="card">
-        <h3>Compacted conversations</h3>
-        <ul>
-          <li>When Hermes compacts a long chat it ends the session and continues in a child. Keryx folds that lineage into <strong>one node</strong>: it starts when the first segment started and is coloured by the latest one.</li>
-          <li>The trace shows every segment with a ⟲ marker where the context was compacted.</li>
-          <li>Branches you made with <code>/branch</code> stay separate, joined to their origin; delegated subagents keep their purple link.</li>
-        </ul>
-      </div>
-      <div class="card">
         <h3>Session detail</h3>
         <ul>
           <li>Opens with four lines, status, request, latest step and the context gauge, and the command that resumes the conversation in a terminal; the trace comes next.</li>
@@ -363,6 +367,27 @@ footer .wrap > div { display: flex; flex-wrap: wrap; gap: 16px; align-items: cen
           <li>The search box (<kbd>⌘K</kbd>) matches titles and digests, and from three characters also searches <strong>inside the conversations</strong> through Hermes' own full-text index, with snippets.</li>
           <li><strong>Analytics</strong>: daily trend of sessions, tool calls, failures, tokens and cost over 7 to 365 days; a <strong>year heatmap</strong> with streak; model share; Hermes' <strong>skill ledger</strong> (uses, views, last use).</li>
           <li><strong>Logs</strong>: filterable tails of every log file Hermes writes, by level and keyword. A line logged inside a session links to that session.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Notifications</h3>
+        <ul>
+          <li>In-app toasts, desktop notifications if you allow them, and optional short sounds.</li>
+          <li>Fires when Hermes replies and waits for you, a session fails or is orphaned by a restart, a session goes quiet, a delegation finishes or fails, a cron job fails or misses its trigger, or the error log turns red.</li>
+          <li>Click a toast to jump to the node.</li>
+        </ul>
+      </div>
+    </div>
+
+    <details class="more">
+      <summary><span>Everything else Keryx shows</span><span class="muted">7 more: compacted conversations, attention and context, the kanban board, the model's reasoning, memory, navigation and keyboard, links into the Hermes dashboard</span></summary>
+      <div class="grid">
+      <div class="card">
+        <h3>Compacted conversations</h3>
+        <ul>
+          <li>When Hermes compacts a long chat it ends the session and continues in a child. Keryx folds that lineage into <strong>one node</strong>: it starts when the first segment started and is coloured by the latest one.</li>
+          <li>The trace shows every segment with a ⟲ marker where the context was compacted.</li>
+          <li>Branches you made with <code>/branch</code> stay separate, joined to their origin; delegated subagents keep their purple link.</li>
         </ul>
       </div>
       <div class="card">
@@ -396,14 +421,6 @@ footer .wrap > div { display: flex; flex-wrap: wrap; gap: 16px; align-items: cen
         </ul>
       </div>
       <div class="card">
-        <h3>Notifications</h3>
-        <ul>
-          <li>In-app toasts, desktop notifications if you allow them, and optional short sounds.</li>
-          <li>Fires when Hermes replies and waits for you, a session fails or is orphaned by a restart, a session goes quiet, a delegation finishes or fails, a cron job fails or misses its trigger, or the error log turns red.</li>
-          <li>Click a toast to jump to the node.</li>
-        </ul>
-      </div>
-      <div class="card">
         <h3>Navigation</h3>
         <ul>
           <li>Every selection is a browser history entry that remembers the selection, the tab and the camera pose. <kbd>Backspace</kbd> goes back, <kbd>Shift</kbd>+<kbd>Backspace</kbd> forward; <kbd>Alt</kbd>+<kbd>←</kbd> and trackpad swipes work too. <kbd>[</kbd> and <kbd>]</kbd> change tab, <kbd>↑</kbd> <kbd>↓</kbd> walk the session list, <kbd>?</kbd> in the header reopens the first-run card.</li>
@@ -420,7 +437,8 @@ footer .wrap > div { display: flex; flex-wrap: wrap; gap: 16px; align-items: cen
           <li>A redacted <strong>diagnostics</strong> download, marked "safe to share" (counts, versions, states, ids, masked error lines; no messages, prompts, memory or keys), to attach to bug reports.</li>
         </ul>
       </div>
-    </div>
+      </div>
+    </details>
 
     <div class="two">
       <figure class="shot" style="margin:0">
@@ -620,6 +638,10 @@ cd keryx
 </footer>
 
 <script>
+// Open the folded feature cards when a link into them is followed.
+const more = document.querySelector('.more');
+const openMore = () => { const t = location.hash && document.querySelector(location.hash); if (t && more && more.contains(t)) more.open = true; };
+addEventListener('hashchange', openMore); openMore();
 // Code blocks: a copy button, only where the clipboard API exists.
 if (navigator.clipboard) {
   for (const pre of document.querySelectorAll('pre')) {
