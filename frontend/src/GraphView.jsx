@@ -4,7 +4,7 @@ import ForceGraph2D from 'react-force-graph-2d'
 import SpriteText from 'three-spritetext'
 import * as THREE from 'three'
 import { forceCollide, forceX, forceY, forceZ } from 'd3-force-3d'
-import { ACTIVE, STATUS, TYPE, ageAlpha, nodeBaseColor, palette, withAlpha } from './util.js'
+import { STATUS, TYPE, ageAlpha, linkFill, nodeFill, palette, withAlpha } from './util.js'
 import { layoutTargets, LAYOUT, setSpread } from './layout.js'
 import { useCameraPose } from './hooks/useCameraPose.js'
 import { useTimeAxis3d, useRings2d } from './hooks/useTimeAxis.js'
@@ -267,19 +267,20 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
   }, [q, matches, focusId, neighbours])
 
   const showActive = !hidden?.has('flag:active')
+  // fill = status (or role) colour, always; "active" is a halo ring on top, so a running session stays green
   const colorOf = useCallback(n => {
-    const base = n.active && showActive ? ACTIVE : nodeBaseColor(n)
-    let a = n.type === 'hub' || n.type === 'source' || n.type === 'model' ? 1 : ageAlpha(n.age, windowSec)
+    let a = n.type === 'hub' || n.type === 'source' || n.type === 'model' ? 1 : ageAlpha(n.age, windowSec, palette().ageFloor)
     if (!emphasised(n)) a *= 0.18
-    return withAlpha(base, a)
-  }, [windowSec, emphasised, showActive])
-  styleRef.current = { colorOf, emphasised, selected, focusId, hoverId: hover }
+    return withAlpha(nodeFill(n), a)
+  }, [windowSec, emphasised, theme])
+  const haloOf = useCallback(n => (n.active && showActive ? withAlpha(palette().active, emphasised(n) ? 0.8 : 0.12) : null), [showActive, emphasised])
+  styleRef.current = { colorOf, haloOf, emphasised, selected, focusId, hoverId: hover }
 
   const linkColor = useCallback(l => {
     const s = typeof l.source === 'object' ? l.source : nodesRef.current.get(l.source)
     const t = typeof l.target === 'object' ? l.target : nodesRef.current.get(l.target)
     const emph = (s && emphasised(s)) && (t && emphasised(t))
-    const base = l.active && showActive ? ACTIVE : l.errors > 0 ? '#f85149' : l.kind === 'spawn' ? '#c3a6ff' : l.kind === 'branch' ? '#8fd3c5' : l.kind === 'model' ? '#f778ba' : '#8ea0bf'
+    const base = l.active && showActive ? palette().active : linkFill(l)
     // model links stay whisper-faint unless their session is in focus
     const modelFaint = l.kind === 'model' && !(focusId && (s?.id === focusId || t?.id === focusId))
     const a = (l.kind === 'platform' ? 0.7 : ageAlpha(l.age, windowSec, 0.15) * 0.75) * (emph ? 1 : 0.1) * (modelFaint ? 0.25 : 1)
@@ -321,6 +322,10 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
     if (n.type === 'source') mesh.rotation.x = Math.PI / 2          // ring lies flat on the floor plane
     if (n.type === 'cron') mesh.rotation.x = Math.PI                 // cone points down toward its platform
     group.add(mesh)
+    // "active" halo: a translucent shell that the render loop shows while the node was touched in the last 5 min
+    const halo = new THREE.Mesh(GEOMETRY.session, new THREE.MeshBasicMaterial({ color: palette().active, transparent: true, opacity: 0.25, depthWrite: false }))
+    halo.scale.setScalar(r * 1.55); halo.visible = false
+    group.add(halo)
     let wire = null
     if (n.type === 'hub') {
       wire = new THREE.Mesh(GEOMETRY.hub, new THREE.MeshBasicMaterial({ color: palette().accent, wireframe: true, transparent: true, opacity: 0.35 }))
@@ -338,7 +343,7 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
       if (n.type === 'tool') label.visible = false
       group.add(label)
     }
-    meshes.current.set(n.id, { group, mesh, wire, label, node: n })
+    meshes.current.set(n.id, { group, mesh, wire, halo, label, node: n })
     return group
   }, [])
 
@@ -346,9 +351,9 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
     let raf
     const tick = () => {
       const t = performance.now()
-      const { colorOf, emphasised, selected } = styleRef.current
+      const { colorOf, haloOf, emphasised, selected } = styleRef.current
       const cam = fgRef.current?.camera?.()
-      for (const { mesh, wire, label, node } of meshes.current.values()) {
+      for (const { mesh, wire, halo, label, node } of meshes.current.values()) {
         const css = colorOf(node)
         const m = css.match(/rgba\((\d+),(\d+),(\d+),([\d.]+)\)/)
         if (m) {
@@ -360,6 +365,12 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
         const breathe = node.status === 'running' && !still ? 1 + 0.12 * Math.sin(t / 420) : 1
         const sel = node.id === selected ? 1.35 : 1
         mesh.scale.setScalar(radiusOf(node) * breathe * sel)
+        if (halo) {
+          const h = haloOf(node)
+          const hm = h && h.match(/rgba\((\d+),(\d+),(\d+),([\d.]+)\)/)
+          halo.visible = !!hm
+          if (hm) { halo.material.color.setRGB(hm[1] / 255, hm[2] / 255, hm[3] / 255); halo.material.opacity = +hm[4] * 0.3; halo.scale.setScalar(radiusOf(node) * breathe * sel * 1.55) }
+        }
         if (node.type !== 'source') mesh.rotation.y = !still && (node.type === 'tool' || node.type === 'subagent') ? t / 4000 : 0
         if (wire && !still) { wire.rotation.y = t / 6000; wire.rotation.x = t / 9000 }
         if (label) {
@@ -390,6 +401,8 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
     const breathe = n.status === 'running' && !reduceMotion ? 1 + 0.12 * Math.sin(performance.now() / 420) : 1
     drawShape(ctx, n.type, n.x, n.y, r * breathe, col)
     if (n.id === selected) { ctx.lineWidth = 1.5 / scale; ctx.strokeStyle = palette().text; ctx.stroke() }
+    const halo = haloOf(n)
+    if (halo) { ctx.beginPath(); ctx.arc(n.x, n.y, r * breathe * 1.5, 0, 2 * Math.PI); ctx.lineWidth = 1.2 / scale; ctx.strokeStyle = halo; ctx.stroke() }
     const showToolLabel = n.type === 'tool' && (n.fanned || n.id === hover)
     // labels appear as you zoom in: structure always, sessions from a modest zoom, selected or hovered ones always
     if (showToolLabel || (LABELLED.has(n.type) && (scale > 1.1 || n.type === 'hub' || n.type === 'source' || n.id === selected || n.id === hover))) {
@@ -401,7 +414,7 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
       ctx.fillStyle = withAlpha(palette().text, emphasised(n) ? 0.95 : 0.15)
       ctx.fillText(t, n.x, n.y + r + 1.5)
     }
-  }, [colorOf, emphasised, selected, hover, theme, reduceMotion])
+  }, [colorOf, haloOf, emphasised, selected, hover, theme, reduceMotion])
 
   const common = {
     ref: fgRef, graphData: data, width: size.w, height: size.h, nodeId: 'id',

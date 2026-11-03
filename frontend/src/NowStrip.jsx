@@ -26,7 +26,7 @@ export default function NowStrip({ now, selected, onSelect }) {
         <div key={r.id} className={`card ${selected === 'session:' + r.id ? 'sel' : ''}`} role="listitem">
           <div className="t" {...pressable(() => onSelect('session:' + r.id), { className: 't', 'aria-label': `${r.status}: ${r.title}. Open its details`, 'aria-pressed': selected === 'session:' + r.id })}>
             <span className={`tag ${r.status}`}>{r.status}</span>
-            <Shape type={r.is_subagent ? 'subagent' : 'session'} color={STATUS[r.status]?.color || '#9aa7b8'} />
+            <Shape type={r.is_subagent ? 'subagent' : 'session'} color={STATUS[r.status]?.color || 'var(--muted)'} />
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.title}</span>
           </div>
           <div className="cardbody" onClick={() => onSelect('session:' + r.id)}>

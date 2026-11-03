@@ -13,7 +13,7 @@ export default function FirstRun({ onClose, onLegend, reduceMotion, setReduceMot
       <h2>How to read this</h2>
       <p><b>Shape</b> says what a thing is, <b>colour</b> says how it is doing, <b>position</b> says when it started: Hermes in the middle, the platforms it talks on around it, each conversation in its platform's wedge, fresh work near the centre (2D) or on top (3D).</p>
       <div className="fr-row">
-        {['hub', 'source', 'session', 'subagent', 'tool', 'model', 'cron'].map(k => <span key={k}><Shape type={k} color={k === 'hub' ? 'var(--text)' : TYPE[k].color} />{k}</span>)}
+        {['hub', 'source', 'session', 'subagent', 'tool', 'model', 'cron'].map(k => <span key={k}><Shape type={k} color={TYPE[k].color} />{k}</span>)}
       </div>
       <div className="fr-row">
         {Object.entries(STATUS).map(([k, v]) => <span key={k}><Shape type="session" color={v.color} />{v.label}</span>)}

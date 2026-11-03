@@ -4,7 +4,7 @@ import { pressable } from './a11y.js'
 import { applyMutes, groupBySeverity, loadMutes, saveMutes, signature, summarise } from './attention.js'
 import { useClock } from './hooks/useTick.js'
 import Section from './Section.jsx'
-import { ACTIVE, STATUS, TYPE, ago, contextLevel, dur, fmtT, num, plural } from './util.js'
+import { STATUS, TYPE, ago, contextLevel, dur, fmtT, num, plural } from './util.js'
 import Shape from './Shapes.jsx'
 import { nodeBaseColor } from './util.js'
 import Analytics from './Analytics.jsx'
@@ -310,7 +310,7 @@ function Overview({ cost, status, graph, hidden, toggleHidden, showAll, onSelect
         <tr><td colSpan="2" className="small">colour = how a session is doing</td></tr>
         {Object.entries(STATUS).map(([k, v]) => <LegendRow key={k} id={`status:${k}`} hidden={hidden} toggle={toggleHidden}
           glyph={<><Shape type="session" color={v.color} /><Shape type="subagent" color={v.color} /></>} name={k.replace(/_/g, ' ')} desc={v.label} />)}
-        <LegendRow id="flag:active" hidden={hidden} toggle={toggleHidden} glyph={<><Shape type="session" color={ACTIVE} /><Shape type="tool" color={ACTIVE} /></>} name="active" desc="any node or link touched in the last 5 min, with particles" />
+        <LegendRow id="flag:active" hidden={hidden} toggle={toggleHidden} glyph={<><Shape type="session" color="var(--s-running)" halo /><Shape type="tool" color="var(--n-tool)" halo /></>} name="active" desc="halo ring and link particles on anything touched in the last 5 min; the fill keeps its status colour" />
       </tbody></table>
       </Section>
       <Section id="layout" title="Reading the layout">
