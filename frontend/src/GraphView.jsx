@@ -9,6 +9,7 @@ import { layoutTargets, LAYOUT, setSpread } from './layout.js'
 import { useCameraPose } from './hooks/useCameraPose.js'
 import { useTimeAxis3d, useRings2d } from './hooks/useTimeAxis.js'
 import { cullLabels2d, cullLabels3d, labelHeight, labelText, labelVisible3d, rankByStart } from './labels.js'
+import { fogRange, overviewPose, stemSegments } from './depth.js'
 
 const LABELLED = new Set(['hub', 'source', 'session', 'subagent', 'cron', 'model'])
 // label sizing and the overview budget live in labels.js (shared with the 2D painter and unit-tested)
@@ -24,6 +25,7 @@ const GEOMETRY = {
   cron:     new THREE.ConeGeometry(1, 2, 18),               // pointer on a dial
 }
 const V = new THREE.Vector3()                    // scratch vector for label projection
+const RING = new THREE.RingGeometry(1, 1.12, 48)  // selection / hover ring, scaled per node
 export const radiusOf = n => Math.cbrt(n.val || 3) * (n.type === 'hub' ? 3.8 : n.type === 'source' ? 3.2 : n.type === 'model' ? 2.8 : 2.4)
 
 /**
@@ -114,6 +116,28 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
 
   useTimeAxis3d(fgRef, view, windowSec, band, spread, theme)
 
+  // ---- 3D depth cues: stems from each session to the floor ring, fog tied to the camera distance ----
+  const stems = useRef(null)                 // { line, buf } in the scene; positions refreshed every frame
+  useEffect(() => {
+    const fg = fgRef.current
+    if (!fg || view !== '3d') return
+    const t = setTimeout(() => {
+      const scene = fg.scene?.()
+      if (!scene) return
+      const pal = palette()
+      if (stems.current) scene.remove(stems.current.line)
+      const buf = new Float32Array(6 * 2048)
+      const geo = new THREE.BufferGeometry()
+      geo.setAttribute('position', new THREE.BufferAttribute(buf, 3))
+      geo.setDrawRange(0, 0)
+      const line = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: pal.muted, transparent: true, opacity: 0.28 }))
+      scene.add(line)
+      stems.current = { line, buf }
+      scene.fog = new THREE.Fog(pal.bg, 400, 1200)
+    }, 80)
+    return () => clearTimeout(t)
+  }, [view, theme])
+
   const paintRings = useRings2d(view, windowSec, band, theme)
 
   // report what is actually drawn (band / legend / collapse filters) for the stats bar
@@ -148,7 +172,7 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
     const fg = fgRef.current
     if (!fg) return
     if (view === '3d') {
-      const t = setTimeout(() => fg.cameraPosition({ x: 0, y: 230, z: 380 }, { x: 0, y: 0, z: 0 }, 0), 50)
+      const t = setTimeout(() => fg.cameraPosition(overviewPose(215), { x: 0, y: 0, z: 0 }, 0), 50)
       return () => clearTimeout(t)
     }
   }, [view])
@@ -163,7 +187,8 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
       const cam = fg.camera(), ctl = fg.controls()
       if (cam) cam.up.set(0, 1, 0)
       if (ctl?.target) ctl.target.set(0, -15, 0)
-      fg.cameraPosition({ x: 0, y: span * 1.05, z: span * 1.75 }, { x: 0, y: -15, z: 0 }, ms)
+      const p = overviewPose(span)
+      fg.cameraPosition({ x: p.x, y: p.y - 15, z: p.z }, { x: 0, y: -15, z: 0 }, ms)
     } else {
       fg.zoomToFit(ms, 50)
     }
@@ -326,6 +351,10 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
     const halo = new THREE.Mesh(GEOMETRY.session, new THREE.MeshBasicMaterial({ color: palette().active, transparent: true, opacity: 0.25, depthWrite: false }))
     halo.scale.setScalar(r * 1.55); halo.visible = false
     group.add(halo)
+    // selection ring: a flat annulus turned to face the camera each frame; also used, fainter, for hover
+    const ring = new THREE.Mesh(RING, new THREE.MeshBasicMaterial({ color: palette().accent, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false }))
+    ring.visible = false
+    group.add(ring)
     let wire = null
     if (n.type === 'hub') {
       wire = new THREE.Mesh(GEOMETRY.hub, new THREE.MeshBasicMaterial({ color: palette().accent, wireframe: true, transparent: true, opacity: 0.35 }))
@@ -341,7 +370,7 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
       if (n.type === 'tool') label.visible = false
       group.add(label)
     }
-    meshes.current.set(n.id, { group, mesh, wire, halo, label, node: n })
+    meshes.current.set(n.id, { group, mesh, wire, halo, ring, label, node: n })
     return group
   }, [])
 
@@ -354,8 +383,25 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
       const { w: canvasW, h: canvasH } = sizeRef.current
       const pal = palette()
       const candidates = []                             // labels that pass the distance rule; occlusion decides next
+      // fog and stems follow the camera and the layout
+      const fg3 = fgRef.current
+      const scene = fg3?.scene?.()
+      if (cam && scene?.fog) {
+        const tgt = fg3.controls?.()?.target
+        const dist = tgt ? cam.position.distanceTo(tgt) : cam.position.length()
+        const { near, far } = fogRange(dist)
+        scene.fog.near = near; scene.fog.far = far
+        if (scene.fog.color.getHexString() !== pal.bg.replace('#', '')) scene.fog.color.set(pal.bg)
+      }
+      if (stems.current) {
+        const { line, buf } = stems.current
+        const k = stemSegments(Array.from(meshes.current.values(), e => e.node), buf)
+        line.geometry.setDrawRange(0, k * 2)
+        line.geometry.attributes.position.needsUpdate = true
+        if (line.material.color.getHexString() !== pal.muted.replace('#', '')) line.material.color.set(pal.muted)
+      }
       for (const entry of meshes.current.values()) {
-        const { mesh, wire, halo, label, node } = entry
+        const { mesh, wire, halo, ring, label, node } = entry
         const css = colorOf(node)
         if (css !== entry.css) {                          // parse the colour string only when it changes
           entry.css = css
@@ -375,6 +421,17 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
           const hm = h && h.match(/rgba\((\d+),(\d+),(\d+),([\d.]+)\)/)
           halo.visible = !!hm
           if (hm) { halo.material.color.setRGB(hm[1] / 255, hm[2] / 255, hm[3] / 255); halo.material.opacity = +hm[4] * 0.3; halo.scale.setScalar(radiusOf(node) * breathe * sel * 1.55) }
+        }
+        if (ring) {
+          const isSel = node.id === selected, isHover = node.id === hoverId && !isSel
+          ring.visible = isSel || isHover
+          if (ring.visible && cam) {
+            ring.quaternion.copy(cam.quaternion)                // face the camera
+            ring.scale.setScalar(radiusOf(node) * sel * breathe * 1.6)
+            ring.material.opacity = isSel ? 0.9 : 0.45
+            if (entry.ringCol !== pal.accent) { entry.ringCol = pal.accent; ring.material.color.set(pal.accent) }
+          }
+          if (label) label.position.y = -(radiusOf(node) * (ring.visible ? sel * 1.7 : 1) + (node.type === 'hub' ? 7 : 3.5))   // below the ring when there is one
         }
         if (node.type !== 'source') mesh.rotation.y = !still && (node.type === 'tool' || node.type === 'subagent') ? t / 4000 : 0
         if (wire && !still) { wire.rotation.y = t / 6000; wire.rotation.x = t / 9000 }
@@ -398,10 +455,11 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
         for (const e of candidates) {
           V.set(e.node.x, e.node.y - radiusOf(e.node) - 3.5, e.node.z || 0).project(cam)
           if (V.z > 1) { e.label.visible = false; continue }
-          projected.push({ n: e.node, sx: (V.x + 1) / 2 * canvasW, sy: (1 - V.y) / 2 * canvasH, e })
+          projected.push({ n: e.node, sx: (V.x + 1) / 2 * canvasW, sy: (1 - V.y) / 2 * canvasH, aspect: e.label.scale.x / (e.label.scale.y || 1), e })
         }
         cullLabels3d(projected, { selected, hover: hoverId })
         for (const p of projected) p.e.label.visible = !!p.n.labelOn
+        if (window.__keryxDebug) window.__keryx.labels = projected.map(p => ({ label: p.n.label, sx: p.sx | 0, sy: p.sy | 0, aspect: +p.aspect.toFixed(2), on: p.n.labelOn, h: p.e.label.textHeight }))
       }
       raf = requestAnimationFrame(tick)
     }
@@ -431,7 +489,9 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
   // so they are placed by priority and the ones that would overprint another are hidden for this frame)
   const framePre = useCallback((ctx, scale) => {
     paintRings(ctx, scale)
-    cullLabels2d(data.nodes, { selected, hover, fontSize: Math.max(3, 11 / scale), radiusOf, emphasised })
+    const fontSize = Math.max(3, 11 / scale)
+    ctx.font = `${fontSize}px sans-serif`
+    cullLabels2d(data.nodes, { selected, hover, fontSize, radiusOf, emphasised, measure: t => ctx.measureText(t).width })
   }, [paintRings, data, selected, hover, emphasised])
 
   const common = {
@@ -446,11 +506,16 @@ export default function GraphView({ graph, view, windowSec, selected, onSelect, 
   }
 
   const bg = palette().bg
+  const lights = useMemo(() => {
+    const key = new THREE.DirectionalLight(0xffffff, 0.85 * Math.PI)
+    key.position.set(0.6, 1, 0.8)                  // upper front-right: spheres get a terminator, cones a lit face
+    return [new THREE.AmbientLight(0xcccccc, 0.8 * Math.PI), key]
+  }, [])
   return (
     <div className="canvas" ref={wrapRef} role="region" aria-label="Activity graph. It is drawn on a canvas and cannot be read by a screen reader; the same sessions, tools and jobs are listed in the Sessions, Tasks and Board tabs.">
       {view === '3d'
         ? <ForceGraph3D {...common} backgroundColor={bg} showNavInfo={false}
-            nodeThreeObject={threeObject} nodeThreeObjectExtend={false} linkOpacity={0.8} />
+            nodeThreeObject={threeObject} nodeThreeObjectExtend={false} linkOpacity={0.8} lights={lights} />
         : <ForceGraph2D {...common} backgroundColor={bg} nodeCanvasObject={paint2d} nodeCanvasObjectMode={() => 'replace'}
             linkDirectionalArrowLength={0} autoPauseRedraw={false} onRenderFramePre={framePre} />}
     </div>
