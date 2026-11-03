@@ -36,8 +36,28 @@ export function stemSegments(nodes, out, floor = floorY()) {
   return k
 }
 
-/** Default camera pose: a 42° elevation reads the height axis, where 31° flattened it. */
-export function overviewPose(span) {
-  return { x: 0, y: span * 1.45, z: span * 1.6 }
+/** Default camera pose at distance `dist` from the target: a 42° elevation reads the height axis, where 31° flattened it. */
+export const ELEVATION = 42 * Math.PI / 180
+export function overviewPose(dist) {
+  return { x: 0, y: dist * Math.sin(ELEVATION), z: dist * Math.cos(ELEVATION) }
 }
-export const SPAN_MIN = () => LAYOUT.sessionRadius + 60
+
+const TAN_HALF_FOV = Math.tan((75 / 2) * Math.PI / 180)   // react-force-graph-3d's camera fov
+export const FILL = 0.62                                    // the structure's bounding sphere spans this much of the shorter canvas edge
+
+/** Radius of the structure worth framing: sessions, platforms, tools and cron jobs, around the orbit target. */
+export function structureRadius(nodes, target = { x: 0, y: -15, z: 0 }) {
+  let r = LAYOUT.sessionRadius + 30
+  for (const n of nodes) {
+    if (n.type === 'model' || n.x == null) continue                // the model shelf sits high and would inflate the fit
+    r = Math.max(r, Math.hypot(n.x - target.x, (n.y ?? 0) - target.y, (n.z || 0) - target.z))
+  }
+  return r
+}
+
+/** Camera distance that fits a bounding sphere of `radius` into FILL of the view, whichever edge is shorter. */
+export function fitDistance(radius, width, height) {
+  const aspect = Math.max(0.2, (width || 1) / (height || 1))
+  const halfTan = TAN_HALF_FOV * Math.min(1, aspect)             // the horizontal half-angle is narrower on a portrait canvas
+  return radius / (FILL * halfTan)
+}

@@ -10,7 +10,7 @@ export default function Shape({ type, color = 'var(--text)', size = 14, halo = f
   const fill = { style: { fill: color } }
   const ring = halo ? <circle cx={c} cy={c} r={r * 1.55} style={{ fill: 'none', stroke: 'var(--active)', strokeWidth: 1.2 }} /> : null
   switch (type) {
-    case 'hub': return <svg {...common}>{ring}<circle cx={c} cy={c} r={r * 0.75} {...fill} /><circle cx={c} cy={c} r={r * 1.2} style={{ fill: 'none', stroke: 'var(--accent)', strokeWidth: 1, opacity: .7 }} /></svg>
+    case 'hub': return <svg {...common}>{ring}<circle cx={c} cy={c} r={r * 0.75} {...fill} /><circle cx={c} cy={c} r={r * 1.2} style={{ fill: 'none', stroke: 'var(--text)', strokeWidth: 1, opacity: .6 }} /></svg>
     case 'source': return <svg {...common}>{ring}<circle cx={c} cy={c} r={r} style={{ fill: 'none', stroke: color, strokeWidth: s * 0.22 }} /></svg>
     case 'subagent': return <svg {...common}>{ring}<polygon points={`${c},${c - r * 1.2} ${c + r},${c} ${c},${c + r * 1.2} ${c - r},${c}`} {...fill} /></svg>
     case 'tool': return <svg {...common}>{ring}<rect x={c - r * 0.85} y={c - r * 0.85} width={r * 1.7} height={r * 1.7} {...fill} /></svg>
