@@ -279,7 +279,7 @@ def write_gateway_state(root: Path, **over) -> None:
                          "writer_pid": 163, "needs_attention": False, "retrying_since": None},
             "whatsapp": {"state": "retrying", "error_code": "whatsapp_bridge_exited",
                          "error_message": "WhatsApp bridge process exited unexpectedly (token=abc123)", "updated_at": iso(NOW - 9 * 86400),
-                         "writer_pid": 170, "needs_attention": False, "retrying_since": None},
+                         "writer_pid": 163, "needs_attention": False, "retrying_since": None},
             "api_server": {"state": "connected", "error_code": None, "error_message": None, "updated_at": iso(NOW - 60),
                            "needs_attention": False, "listener_base": "http://127.0.0.1:8642",
                            "metrics": {"host": "127.0.0.1", "port": 8642, "active_runs": 1, "stored_runs": 4, "last_request_at": iso(NOW - 120),

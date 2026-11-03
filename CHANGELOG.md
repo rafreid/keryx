@@ -27,6 +27,12 @@ Nothing changed in what Keryx reads; the picture got honest colours, legible lab
   under the toolbar, the history trail hidden (the browser's back button does the same).
   ([#49](https://github.com/rafreid/keryx/pull/49))
 
+## Unreleased
+
+- A platform adapter removed from Hermes no longer shows as a retrying or failed check for ever: the
+  gateway never prunes `gateway_state.json`, so Keryx now ignores platform records written by a gateway
+  process that is not the running one, and says so on the gateway check.
+
 ## 2.8
 
 A usability release from a full UX audit of 2.7: twenty-two findings, all addressed. Nothing changed
